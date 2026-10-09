@@ -92,7 +92,7 @@ class TwoSPRT(Procedure):
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.alpha0, self.alpha1, self.input = alpha0, alpha1, input
         self.a0, self.a1 = thresholds if thresholds is not None else (math.log(1.0 / alpha0), math.log(1.0 / alpha1))
-        if self.a0 <= 0 or self.a1 <= 0:
+        if not (0 < self.a0 < math.inf and 0 < self.a1 < math.inf):
             raise ValueError("thresholds must be positive")
         if theta_star is None:
             theta_star = kiefer_weiss_point(family, self.theta0, self.theta1, self.a0, self.a1)

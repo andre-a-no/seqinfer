@@ -116,10 +116,17 @@ class TMixtureSPRT(Procedure):
         delta = v - state.mean
         mean = state.mean + delta / n
         m2 = state.m2 + delta * (v - mean)
-        if n < 2 or m2 <= 0.0:
+        if n < 2:
             sd = t = None
             log_bf = 0.0
             lower = upper = None
+        elif m2 <= 0.0:
+            # Identical observations: the Bayes factor at its limit t^2 -> infinity
+            # (or t = 0 if they sit exactly at theta0), and a zero-width interval.
+            sd, t = 0.0, None
+            r = 1.0 + n * self.effect**2
+            log_bf = -0.5 * math.log(r) if mean == self.theta0 else 0.5 * (n - 1) * math.log(r)
+            lower = upper = mean if self.critical_t(n) is not None else None
         else:
             sd = math.sqrt(m2 / (n - 1))
             t = (mean - self.theta0) * math.sqrt(n) / sd

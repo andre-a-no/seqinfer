@@ -39,7 +39,7 @@ class Gaussian:
     """Normal observations with unknown mean and known standard deviation."""
 
     def __init__(self, sigma: float = 1.0):
-        if sigma <= 0:
+        if not (sigma > 0 and math.isfinite(sigma)):
             raise ValueError("sigma must be positive")
         self.sigma = float(sigma)
 

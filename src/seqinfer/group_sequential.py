@@ -35,6 +35,12 @@ from dataclasses import dataclass
 from statistics import NormalDist
 
 _N = NormalDist()
+_SQRT2 = math.sqrt(2.0)
+
+
+def _upper(x: float) -> float:
+    """1 - Phi(x), through erfc so that small tails keep their relative accuracy."""
+    return 0.5 * math.erfc(x / _SQRT2)
 _LOWER = -10.0  # B(t) / sqrt(t) below this is never reached in practice
 
 
@@ -45,7 +51,7 @@ def spending_function(kind, alpha: float) -> Callable[[float], float]:
         return custom
     if kind == "obrien-fleming":
         z = _N.inv_cdf(1.0 - alpha / 2.0)
-        return lambda t: 0.0 if t <= 0 else 2.0 - 2.0 * _N.cdf(z / math.sqrt(t))
+        return lambda t: 0.0 if t <= 0 else 2.0 * _upper(z / math.sqrt(t))
     if kind == "pocock":
         return lambda t: alpha * math.log(1.0 + (math.e - 1.0) * t)
     if isinstance(kind, tuple) and len(kind) == 2 and kind[0] == "power" and kind[1] > 0:
@@ -82,9 +88,9 @@ class _Recursion:
         upper = b * math.sqrt(t)
         p = 0.0
         for x, m in zip(self.xs, self.mass, strict=True):
-            p += m * (1.0 - _N.cdf((upper - x - mu) / sd))
+            p += m * _upper((upper - x - mu) / sd)
             if self.two_sided:
-                p += m * _N.cdf((-upper - x - mu) / sd)
+                p += m * _upper((upper + x + mu) / sd)
         return p
 
     def cross_below(self, t: float, f: float) -> float:
@@ -92,7 +98,7 @@ class _Recursion:
         sd = math.sqrt(t - self.t)
         mu = self.drift * (t - self.t)
         lower = f * math.sqrt(t)
-        return sum(m * _N.cdf((lower - x - mu) / sd) for x, m in zip(self.xs, self.mass, strict=True))
+        return sum(m * _upper((x + mu - lower) / sd) for x, m in zip(self.xs, self.mass, strict=True))
 
     def advance(self, t: float, b: float, f: float | None = None) -> None:
         """Move to t, keeping only paths that crossed neither boundary."""

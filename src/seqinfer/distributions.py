@@ -39,41 +39,106 @@ def _beta_continued_fraction(a: float, b: float, x: float) -> float:
     raise ArithmeticError("incomplete beta continued fraction did not converge")
 
 
-def regularized_beta(x: float, a: float, b: float) -> float:
-    """I_x(a, b)."""
+def _lgamma_ratio(z: float, a: float) -> float:
+    """log Gamma(z + a) - log Gamma(z), accurate when z is large (no cancellation of two huge lgammas)."""
+    if z < 1e4:
+        return math.lgamma(z + a) - math.lgamma(z)
+    w = z + a
+    # Stirling: lgamma(x) = (x - 1/2) log x - x + log(2 pi)/2 + 1/(12 x) - 1/(360 x^3) + ...
+    main = (z - 0.5) * math.log1p(a / z) + a * math.log(w) - a
+    return main + (1.0 / w - 1.0 / z) / 12.0 - (1.0 / w**3 - 1.0 / z**3) / 360.0
+
+
+def _log_inverse_beta(a: float, b: float) -> float:
+    """log Gamma(a + b) - log Gamma(a) - log Gamma(b), i.e. -log B(a, b)."""
+    big, small = (a, b) if a >= b else (b, a)
+    return _lgamma_ratio(big, small) - math.lgamma(small)
+
+
+def regularized_beta(
+    x: float, a: float, b: float, y: float | None = None, logs: tuple[float, float] | None = None
+) -> float:
+    """I_x(a, b).
+
+    Pass y = 1 - x, and the pair (log x, log y), when they are known more
+    accurately than they can be computed from x: with a or b large, the
+    rounding of x is multiplied by them in the prefactor.
+    """
+    if y is None:
+        y = 1.0 - x
     if x <= 0.0:
         return 0.0
-    if x >= 1.0:
+    if y <= 0.0:
         return 1.0
-    log_front = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log1p(-x)
+    log_x, log_y = logs if logs is not None else (math.log(x), math.log(y))
+    log_front = _log_inverse_beta(a, b) + a * log_x + b * log_y
     if x < (a + 1.0) / (a + b + 2.0):
         return math.exp(log_front) * _beta_continued_fraction(a, b, x) / a
-    return 1.0 - math.exp(log_front) * _beta_continued_fraction(b, a, 1.0 - x) / b
+    return 1.0 - math.exp(log_front) * _beta_continued_fraction(b, a, y) / b
+
+
+def _upper_tail(t: float, df: float) -> float:
+    """P(T > t) for t >= 0, without forming t*t (which overflows) or 1 - (something near 1).
+
+    P(T > t) = I_x(df/2, 1/2) / 2 with x = df / (df + t^2); x and 1 - x are
+    both formed from s = t / sqrt(df) so that each keeps its precision.
+    """
+    s = t / math.sqrt(df)
+    a = 0.5 * df
+    if s > 1e100:
+        # x underflows; use the leading term of I_x(a, 1/2) as x -> 0, relative error of order x.
+        log_x = -2.0 * math.log(s) - math.log1p(1.0 / (s * s))
+        return 0.5 * math.exp(_log_inverse_beta(a, 0.5) + a * log_x - math.log(a))
+    if s < 1.0:
+        s2 = s * s
+        x, y = 1.0 / (1.0 + s2), s2 / (1.0 + s2)
+        logs = (-math.log1p(s2), 2.0 * math.log(s) - math.log1p(s2)) if s > 0.0 else (0.0, -math.inf)
+    else:
+        r2 = 1.0 / (s * s)
+        x, y = r2 / (1.0 + r2), 1.0 / (1.0 + r2)
+        logs = (-2.0 * math.log(s) - math.log1p(r2), -math.log1p(r2))
+    return 0.5 * regularized_beta(x, a, 0.5, y, logs)
 
 
 def t_cdf(t: float, df: float) -> float:
     """P(T <= t) for Student's t with `df` degrees of freedom."""
-    if df <= 0:
+    if not df > 0:
         raise ValueError("degrees of freedom must be positive")
-    tail = 0.5 * regularized_beta(df / (df + t * t), 0.5 * df, 0.5)
+    if math.isnan(t):
+        return math.nan
+    if t == 0.0:
+        return 0.5
+    if math.isinf(t):
+        return 1.0 if t > 0 else 0.0
+    tail = _upper_tail(abs(t), df)
     return 1.0 - tail if t > 0 else tail
 
 
 def t_ppf(p: float, df: float) -> float:
-    """The p-quantile of Student's t."""
+    """The p-quantile of Student's t.
+
+    Solved on the smaller tail, so quantiles far out (p = 1e-300) keep
+    their relative accuracy; p close to 1 is limited by the precision of
+    1 - p itself.
+    """
     if not 0.0 < p < 1.0:
         raise ValueError("p must lie in (0, 1)")
-    lo, hi = -1.0, 1.0
-    while t_cdf(lo, df) > p:
-        lo *= 2.0
-    while t_cdf(hi, df) < p:
-        hi *= 2.0
-    for _ in range(200):
-        mid = 0.5 * (lo + hi)
-        if t_cdf(mid, df) < p:
+    if not df > 0:
+        raise ValueError("degrees of freedom must be positive")
+    if p == 0.5:
+        return 0.0
+    tail, sign = (p, -1.0) if p < 0.5 else (1.0 - p, 1.0)
+    lo, hi = 0.0, 1.0
+    while _upper_tail(hi, df) > tail:
+        lo, hi = hi, 2.0 * hi
+        if math.isinf(hi):
+            return sign * math.inf
+    for _ in range(400):
+        mid = math.sqrt(lo * hi) if lo > 0.0 and hi > 4.0 * lo else 0.5 * (lo + hi)
+        if _upper_tail(mid, df) > tail:
             lo = mid
         else:
             hi = mid
-        if hi - lo <= 1e-13 * max(1.0, abs(mid)):
+        if hi - lo <= 2e-16 * hi:
             break
-    return 0.5 * (lo + hi)
+    return sign * 0.5 * (lo + hi)

@@ -4,6 +4,7 @@
 """Page's CUSUM change-point detector."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..core import Procedure
@@ -36,7 +37,7 @@ class CUSUM(Procedure):
         family.check(theta1)
         if theta0 == theta1:
             raise ValueError("need theta0 != theta1: with equal parameters the statistic never moves")
-        if threshold <= 0:
+        if not (threshold > 0 and math.isfinite(threshold)):
             raise ValueError("threshold must be positive")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.threshold, self.input = float(threshold), input

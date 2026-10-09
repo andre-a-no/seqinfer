@@ -45,8 +45,8 @@ class SPRT(Procedure):
     ):
         family.check(theta0)
         family.check(theta1)
-        if theta0 == theta1 or not (0 < alpha < 1 and 0 < beta < 1):
-            raise ValueError("need theta0 != theta1 and error rates in (0, 1)")
+        if theta0 == theta1 or not (0 < alpha < 1 and 0 < beta < 1) or alpha + beta >= 1:
+            raise ValueError("need theta0 != theta1, error rates in (0, 1) and alpha + beta < 1")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.alpha, self.beta, self.input = alpha, beta, input
         self.upper = math.log((1.0 - beta) / alpha)

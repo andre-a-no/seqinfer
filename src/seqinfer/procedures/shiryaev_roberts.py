@@ -52,7 +52,7 @@ class ShiryaevRoberts(Procedure):
         family.check(theta1)
         if theta0 == theta1:
             raise ValueError("need theta0 != theta1")
-        if not threshold > 1:
+        if not 1 < threshold < math.inf:
             raise ValueError("threshold A must exceed 1")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.threshold, self.input = float(threshold), input

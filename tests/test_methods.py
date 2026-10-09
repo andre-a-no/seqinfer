@@ -528,6 +528,62 @@ class GroupSequential(unittest.TestCase):
             GroupSequentialTest(1.0, analyses=[10, 5], bounds=[2.0, 2.0])
 
 
+class ProcedureReviewRegressions(unittest.TestCase):
+    """Defects found by review of the procedures; each test reproduces one."""
+
+    def test_sprt_refuses_error_rates_that_invert_its_boundaries(self):
+        with self.assertRaises(ValueError):
+            SPRT(Gaussian(1.0), 0.0, 1.0, alpha=0.7, beta=0.7)
+
+    def test_parameters_must_be_finite(self):
+        from seqinfer.procedures import CUSUM, LocalLevelKalman
+
+        for make in (
+            lambda: Gaussian(float("nan")),
+            lambda: Gaussian(float("inf")),
+            lambda: CUSUM(Gaussian(1.0), 0.0, 1.0, threshold=float("nan")),
+            lambda: ShiryaevRoberts(Gaussian(1.0), 0.0, 1.0, threshold=float("inf")),
+            lambda: LocalLevelKalman(float("nan"), 1.0),
+        ):
+            with self.assertRaises(ValueError):
+                make()
+
+    def test_t_boundaries_for_large_z(self):
+        from seqinfer.procedures import GroupSequentialTest
+
+        proc = GroupSequentialTest(None, [5, 10], [8.0, 2.0])
+        self.assertAlmostEqual(proc.bound_at(0) / 8333.2793582, 1.0, places=9)  # mpmath
+        self.assertEqual(GroupSequentialTest(None, [5, 10], [40.0, 2.0]).bound_at(0), math.inf)
+        GroupSequentialTest(None, [5, 10], [8.5, 2.0])  # used to raise
+
+    def test_identical_observations_away_from_theta0_are_evidence_against_it(self):
+        from seqinfer.procedures import GroupSequentialTest, TMixtureSPRT
+
+        gs = GroupSequentialTest(None, [5, 10], [2.5, 2.0])
+        state = gs.initial_state()
+        for _ in range(5):
+            state, out = gs.step(state, {"x": 1.0}, None)
+        self.assertEqual(out.decision, REJECT_H0)
+        tm = TMixtureSPRT(0.0)
+        state = tm.initial_state()
+        for _ in range(30):
+            state, out = tm.step(state, {"x": 1.0}, None)
+        self.assertEqual(out.decision, REJECT_H0)
+        self.assertEqual((out.lower, out.upper), (1.0, 1.0))
+
+    def test_student_t_extremes(self):
+        from seqinfer.distributions import _upper_tail, t_cdf, t_ppf
+
+        # references from mpmath at 50 digits
+        self.assertAlmostEqual(t_cdf(1e-8, 5) - 0.5, 3.7960669e-9, delta=1e-15)
+        self.assertEqual(t_ppf(0.5, 1), 0.0)
+        self.assertAlmostEqual(t_cdf(0.5, 1e9), 0.6914624612190029, delta=1e-15)
+        self.assertAlmostEqual(t_cdf(-1e155, 1) / 3.1830988618379067e-156, 1.0, places=12)
+        self.assertAlmostEqual(t_ppf(1e-300, 1) / -3.1830988618379067e299, 1.0, places=11)
+        self.assertAlmostEqual(_upper_tail(1e10, 5) / 9.490167245562362e-50, 1.0, places=12)
+        self.assertAlmostEqual(_upper_tail(8.0, 1e5) / 6.286959938128186e-16, 1.0, places=10)
+
+
 class ExponentialDesign(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

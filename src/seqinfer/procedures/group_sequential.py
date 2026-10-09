@@ -30,7 +30,6 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import pairwise
-from statistics import NormalDist
 
 from ..contracts import InputContract
 from ..core import Procedure
@@ -129,7 +128,13 @@ class GroupSequentialTest(Procedure):
         """A boundary for Z, as a boundary for the statistic actually used at sample size n."""
         if self.sigma is not None or not math.isfinite(z):
             return z
-        return t_ppf(NormalDist().cdf(z), n - 1)
+        # Work with the smaller tail, and through erfc: Phi(z) rounds to 1 above z = 8.3, and
+        # NormalDist().cdf(-z) = (1 + erf(-z / sqrt 2)) / 2 loses the tail to cancellation.
+        tail = 0.5 * math.erfc(abs(z) / math.sqrt(2.0))
+        if tail == 0.0:  # beyond every attainable t statistic
+            return math.copysign(math.inf, z)
+        t = t_ppf(tail, n - 1)
+        return -t if z > 0 else t
 
     def bound_at(self, k: int) -> float:
         """Efficacy boundary for the statistic at analysis k (0-based)."""
@@ -146,17 +151,18 @@ class GroupSequentialTest(Procedure):
             new = GroupSequentialState(n, mean, m2, k, None)
             return new, GroupSequentialOutput(n, mean, None, None, None, None)
         scale = self.sigma if self.sigma is not None else math.sqrt(m2 / (n - 1))
-        if scale == 0.0:  # estimated variance of identical observations: no evidence either way
-            z = 0.0
-        else:
+        if scale > 0.0:
             z = (mean - self.theta0) * math.sqrt(n) / scale
+        else:  # identical observations: t is infinite unless they sit exactly at theta0
+            z = 0.0 if mean == self.theta0 else math.copysign(math.inf, mean - self.theta0)
         bound = self.bound_at(k)
         crossed = abs(z) >= bound if self.two_sided else z >= bound
         futile = self._futility is not None and z <= self._futility[k]
         last = k + 1 == len(self.analyses)
         decision = REJECT_H0 if crossed else ACCEPT_H0 if futile or last else None
         new = GroupSequentialState(n, mean, m2, k + 1, decision)
-        return new, GroupSequentialOutput(n, mean, k + 1, z, bound, decision)
+        reported = z if math.isfinite(z) else None  # JSON has no infinity; the decision says it all
+        return new, GroupSequentialOutput(n, mean, k + 1, reported, bound if math.isfinite(bound) else None, decision)
 
     def is_terminal(self, state: GroupSequentialState) -> bool:
         return state.decision is not None

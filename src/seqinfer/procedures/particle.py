@@ -37,7 +37,7 @@ class BootstrapParticleFilter(Procedure):
     randomized = True
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, particles: int = 256):
-        if q < 0 or r <= 0 or p0 < 0 or particles < 2:
+        if not (0 <= q < math.inf and 0 < r < math.inf and 0 <= p0 < math.inf and math.isfinite(m0)) or particles < 2:
             raise ValueError("need q >= 0, r > 0, p0 >= 0 and at least two particles")
         self.q, self.r, self.m0, self.p0, self.size = float(q), float(r), float(m0), float(p0), int(particles)
 
