@@ -1541,8 +1541,12 @@ $\theta^*$, and for discrete data it moves in small steps because the
 attainable error probabilities do, so the gain over the first-order
 point is small and the characterisation holds only approximately. For
 normal data, $\theta_0=0$ against $\theta_1=0.5$ with error
-probabilities $0.05$ and $0.2$, the bisection converges to
-$\theta^*=0.347$ with the maximum at $0.346$.
+probabilities $0.05$ and $0.2$ and $H=60$, the search returns
+$\theta^*=0.340$ with a maximum expected sample size of $17.13$,
+attained at $0.347$, against $17.15$ for the first-order point
+$\theta^*=0.289$. Each candidate is designed in full, so on the default
+lattice the search took about two hours, against a minute and a half for
+a single design.
 
 For discrete data there is a further limit. The plans that are optimal
 for some pair of multipliers are non-randomised, and near the smallest
@@ -1783,7 +1787,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$183$ tests in total; the remainder cover transactional updates,
+$198$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
