@@ -620,6 +620,7 @@ class SecondReviewNumerics(unittest.TestCase):
             (3000.0, 1e16, -4500008.923281211),
             (1e155, 1e16, -3.384800086701247e18),  # was -inf
             (1e50, 1e200, -5.000000000000001e99),
+            (1e300, 1e16, -6.723548471542614e18),  # t / sqrt(df) squared once overflowed
         ):
             self.assertAlmostEqual(_log_upper_tail(t, df) / ref, 1.0, places=13, msg=f"t={t}, df={df}")
         for t, df, ref in ((37.0, 1e15, -689.0305855764212), (37.0, 2e15, -689.030585576656)):

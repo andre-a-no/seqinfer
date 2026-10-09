@@ -122,8 +122,8 @@ def _log_huge_df_tail(t: float, df: float) -> float:
     P(T > t) = f(t) (1 + t^2/df) / t (1 + O(1/t^2)), f the density: the error of
     the logarithm is below 1e-6, against a logarithm below -2e6.
     """
-    s2 = (t / math.sqrt(df)) ** 2
-    log1p_s2 = math.log1p(s2) if math.isfinite(s2) else 2.0 * (math.log(t) - 0.5 * math.log(df))
+    s = t / math.sqrt(df)
+    log1p_s2 = math.log1p(s * s) if s < 1e150 else 2.0 * math.log(s)
     log_density = _lgamma_ratio(0.5 * df, 0.5) - 0.5 * math.log(df * math.pi) - 0.5 * (df + 1.0) * log1p_s2
     return log_density - math.log(t) + log1p_s2
 
