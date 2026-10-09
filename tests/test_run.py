@@ -1,6 +1,9 @@
 """Run semantics: transactional updates, lifecycle, contracts, delivery, restore checks."""
 import asyncio
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from dataclasses import dataclass
 
 from seqinfer import (
@@ -21,7 +24,12 @@ from seqinfer import (
     run_sync,
 )
 from seqinfer.procedures import SPRT, BootstrapParticleFilter, Gaussian, LocalLevelKalman, MeanDifference
-from seqinfer.sources import as_async, from_values
+from seqinfer.sources import ObservationLog, as_async, from_values, replay, skip_to
+
+try:
+    import numpy
+except ImportError:  # numpy is optional: it only appears here as a source of foreign number types
+    numpy = None
 
 
 @dataclass(frozen=True)
@@ -245,6 +253,126 @@ class AsyncRuntime(unittest.TestCase):
             asyncio.run(run_async(run, [broken()]))
         self.assertEqual(run.t, 1)
         self.assertIs(run.status, RunStatus.RUNNING)  # a source error is not an inference error
+
+
+class ContractMessages(unittest.TestCase):
+    """Contracts are strict; a rejection says what to change in the adapter."""
+
+    def rejection(self, contract, value):
+        with self.assertRaises(ContractViolation) as caught:
+            contract.validate(value)
+        return str(caught.exception)
+
+    def test_bool_is_not_a_binary_value(self):
+        message = self.rejection(InputContract("x", kind="binary"), True)
+        self.assertIn("got bool True", message)
+        self.assertIn("int(value)", message)
+
+    def test_strings_are_parsed_in_the_adapter(self):
+        self.assertIn("parse strings in the adapter", self.rejection(InputContract("x"), "3.5"))
+
+    @unittest.skipIf(numpy is None, "numpy is not installed")
+    def test_numpy_scalars_are_rejected_with_a_conversion_hint(self):
+        # float64 subclasses float; it is rejected all the same, like float32 and int64
+        for value in (numpy.float64(1.0), numpy.float32(1.0), numpy.int64(1)):
+            with self.subTest(type=type(value).__name__):
+                message = self.rejection(InputContract("x"), value)
+                self.assertIn(f"numpy.{type(value).__name__}", message)
+                self.assertIn("value.item()", message)
+
+    @unittest.skipIf(numpy is None, "numpy is not installed")
+    def test_numpy_vectors_are_rejected_with_a_conversion_hint(self):
+        message = self.rejection(InputContract("v", shape=(2,)), numpy.array([1.0, 2.0]))
+        self.assertIn(".tolist()", message)
+
+
+class LogRestore(unittest.TestCase):
+    """The observation log is part of the run's persistent state."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.source = list(from_values("x", [0.5] * 30))
+
+    def make(self, log):
+        return Run(FragileSum(), delivery=Delivery("strict"), log=log, run_id="r", clock=lambda: 0.0)
+
+    def crash_after_checkpoint(self, path):
+        """Run 20 observations, checkpoint, run 10 more, then 'crash'."""
+        run = self.make(ObservationLog(path))
+        run_sync(run, self.source[:20])
+        checkpoint = json.loads(json.dumps(run.checkpoint()))
+        run_sync(run, self.source[20:])
+        return checkpoint
+
+    def test_restore_reopens_the_log_and_moves_the_abandoned_tail_aside(self):
+        path = self.dir / "arrivals.jsonl"
+        checkpoint = self.crash_after_checkpoint(path)
+        self.assertEqual(checkpoint["log"]["path"], str(path))
+        self.assertEqual(checkpoint["log"]["count"], 20)
+
+        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), clock=lambda: 0.0)
+        self.assertEqual(resumed.log.path, str(path))
+        self.assertEqual(len(list(replay(path))), 20)
+        event = resumed.provenance["events"][-1]
+        self.assertEqual(event["log"], str(path))
+        self.assertEqual(len(list(replay(event["log_orphaned"]))), 10)
+
+        run_sync(resumed, skip_to(self.source, resumed.delivery.positions()))
+        straight = self.make(ObservationLog(self.dir / "straight.jsonl"))
+        run_sync(straight, self.source)
+        self.assertEqual(path.read_bytes(), (self.dir / "straight.jsonl").read_bytes())
+        self.assertEqual(resumed.history_digest, straight.history_digest)
+
+        again = self.make(None)
+        run_sync(again, replay(path))
+        self.assertEqual(again.history_digest, straight.history_digest)
+
+    def test_a_log_that_does_not_match_the_checkpoint_is_refused(self):
+        path = self.dir / "arrivals.jsonl"
+        checkpoint = self.crash_after_checkpoint(path)
+        lines = path.read_text().splitlines(keepends=True)
+        for label, content in (
+            ("truncated", "".join(lines[:15])),
+            ("edited", lines[0].replace("0.5", "0.25") + "".join(lines[1:])),
+        ):
+            with self.subTest(label):
+                path.write_text(content)
+                with self.assertRaises(IncompatibleCheckpoint):
+                    Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"))
+                self.assertEqual(path.read_text(), content)  # a refused restore changes nothing
+
+    def test_a_moved_log_can_be_passed_explicitly(self):
+        path = self.dir / "arrivals.jsonl"
+        checkpoint = self.crash_after_checkpoint(path)
+        moved = path.rename(self.dir / "moved.jsonl")
+        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=ObservationLog(moved))
+        self.assertEqual(len(list(replay(moved))), 20)
+        self.assertEqual(resumed.log.path, str(moved))
+
+    def test_continuing_without_a_log_is_explicit(self):
+        checkpoint = self.crash_after_checkpoint(self.dir / "arrivals.jsonl")
+        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=None)
+        self.assertIsNone(resumed.log)
+        self.assertIsNone(resumed.provenance["events"][-1]["log"])
+
+    def test_in_memory_log(self):
+        log = ObservationLog()
+        run = self.make(log)
+        run_sync(run, self.source[:20])
+        checkpoint = run.checkpoint()
+        run_sync(run, self.source[20:])
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"))
+        Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=log)
+        self.assertEqual(len(list(log)), 20)
+
+    def test_a_new_run_refuses_a_used_log(self):
+        path = self.dir / "arrivals.jsonl"
+        self.crash_after_checkpoint(path)
+        with self.assertRaises(ValueError):
+            self.make(ObservationLog(path))
 
 
 if __name__ == "__main__":

@@ -22,10 +22,13 @@ from .core import Observation, Procedure, StatInput, statistical_rng
 from .delivery import Delivery
 from .errors import ContractViolation, IncompatibleCheckpoint, LifecycleError
 from .rng import SplitMix64
+from .sources import ObservationLog
 from .topology import Independent, Topology
 
 CHECKPOINT_FORMAT = "seqinfer.checkpoint/1"
 _GENESIS = hashlib.sha256(b"seqinfer.history/1").hexdigest()
+#: Default of `Run.restore(log=...)`: reopen the log recorded in the checkpoint.
+FROM_CHECKPOINT: Any = object()
 
 
 class RunStatus(str, Enum):
@@ -62,6 +65,11 @@ class Run:
     ):
         if on_invalid not in ("raise", "skip"):
             raise ValueError("on_invalid must be 'raise' or 'skip'")
+        if isinstance(log, ObservationLog) and not log.is_empty():
+            raise ValueError(
+                f"log {log.path or '(in memory)'} already holds records; a new run needs an empty log. "
+                f"To continue a run, use Run.restore with its checkpoint"
+            )
         self.procedure = procedure
         self.topology = topology if topology is not None else Independent()
         self.delivery = delivery if delivery is not None else Delivery()
@@ -236,6 +244,7 @@ class Run:
                 "topology": {"spec": self.topology.spec(), "state": self.topology.state()},
                 "delivery": {"spec": self.delivery.spec(), "state": self.delivery.state()},
                 "history_digest": self.history_digest,
+                "log": self.log.state() if hasattr(self.log, "state") else None,
                 "counters": self.counters,
                 "provenance": self.provenance,
             }
@@ -250,7 +259,7 @@ class Run:
         topology: Topology | None = None,
         delivery: Delivery | None = None,
         consumers: Sequence[Consumer] = (),
-        log: Any = None,
+        log: Any = FROM_CHECKPOINT,
         clock: Callable[[], float] = time.time,
     ) -> "Run":
         """Continue an existing run from a checkpoint.
@@ -260,6 +269,13 @@ class Run:
         from an old state, construct `Run(..., initial_state=...,
         initialized_from=...)` instead: the numbers may be identical, the
         provenance is not.
+
+        The observation log is restored together with the run.  By default
+        the log recorded in the checkpoint is reopened from its path; pass
+        an ObservationLog to use a moved copy, or ``log=None`` to continue
+        without one.  Either way the log is verified against the checkpoint
+        and cut back to it, and records written after the checkpoint are
+        moved to a sidecar file named in the restore event.
         """
         if checkpoint.get("format") != CHECKPOINT_FORMAT:
             raise IncompatibleCheckpoint(f"unsupported checkpoint format {checkpoint.get('format')!r}")
@@ -272,6 +288,19 @@ class Run:
         ):
             if _normalize(mine) != theirs:
                 raise IncompatibleCheckpoint(f"{label} mismatch: checkpoint has {theirs}, got {_normalize(mine)}")
+        log_state = checkpoint.get("log")
+        if log is FROM_CHECKPOINT:
+            if log_state is None:
+                log = None
+            elif log_state["path"] is None:
+                raise IncompatibleCheckpoint(
+                    "the checkpointed run had an in-memory observation log; pass that ObservationLog "
+                    "as log=..., or log=None to continue without one"
+                )
+            else:
+                log = ObservationLog(log_state["path"])
+        if log is not None and log_state is None and not (isinstance(log, ObservationLog) and log.is_empty()):
+            raise IncompatibleCheckpoint("the checkpointed run had no observation log; a log attached now must be empty")
         prov = checkpoint["provenance"]
         run = cls(
             procedure,
@@ -282,7 +311,6 @@ class Run:
             run_id=checkpoint["run_id"],
             initial_state=procedure.decode_state(checkpoint["state"]),
             on_invalid=prov["on_invalid"],
-            log=log,
             clock=clock,
         )
         topology.restore(checkpoint["topology"]["state"])
@@ -293,8 +321,15 @@ class Run:
         run.history_digest = checkpoint["history_digest"]
         run.counters = dict(checkpoint["counters"])
         run.provenance = json.loads(json.dumps(prov))
+        orphaned = log.restore(log_state) if log is not None and log_state is not None else None
+        run.log = log
         run.status = RunStatus.PAUSED
-        run._event("restore", checkpoint=checkpoint_id(checkpoint))
+        run._event(
+            "restore",
+            checkpoint=checkpoint_id(checkpoint),
+            log=getattr(log, "path", None) if log is not None else None,
+            log_orphaned=orphaned,
+        )
         return run
 
 
