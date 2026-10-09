@@ -11,6 +11,7 @@ from typing import Any
 from .contracts import InputContract, validate_input
 from .core import Procedure, StatInput
 from .errors import ContractViolation
+from .transforms import identity_of
 
 
 @dataclass(frozen=True)
@@ -31,15 +32,23 @@ class Chain(Procedure):
     handles the whole input X_t by its `on_invalid` policy.
     """
 
-    def __init__(self, first: Procedure, second: Procedure, link: Callable[[Any], StatInput | None], link_name: str):
-        self.first, self.second, self.link, self.link_name = first, second, link, link_name
+    def __init__(
+        self,
+        first: Procedure,
+        second: Procedure,
+        link: Callable[[Any], StatInput | None],
+        link_name: str | None = None,
+    ):
+        self.first, self.second, self.link = first, second, link
+        self.link_identity = identity_of(link, link_name)
+        self.link_name = link_name or self.link_identity["name"]
         self.name = f"chain({first.name},{second.name})"
         self.version = f"{first.version}+{second.version}"
         self.randomized = first.randomized or second.randomized
         self.joint_inputs = first.joint_inputs
 
     def config(self) -> dict:
-        return {"first": self.first.identity(), "second": self.second.identity(), "link": self.link_name}
+        return {"first": self.first.identity(), "second": self.second.identity(), "link": self.link_identity}
 
     def inputs(self) -> Mapping[str, InputContract]:
         return self.first.inputs()

@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from .errors import IncompatibleCheckpoint
-from .run import CHECKPOINT_FORMAT
+from .run import validate_checkpoint
 
 
 def save_checkpoint(path: str | os.PathLike, checkpoint: dict) -> None:
@@ -42,8 +42,13 @@ def _fsync_directory(directory: Path) -> None:
 
 
 def load_checkpoint(path: str | os.PathLike) -> dict:
-    with open(path, encoding="utf-8") as f:
-        checkpoint: dict = json.load(f)
-    if checkpoint.get("format") != CHECKPOINT_FORMAT:
-        raise IncompatibleCheckpoint(f"{path}: unsupported checkpoint format {checkpoint.get('format')!r}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            checkpoint: dict = json.load(f)
+    except json.JSONDecodeError as error:
+        raise IncompatibleCheckpoint(f"{path}: not valid JSON ({error})") from error
+    try:
+        validate_checkpoint(checkpoint)
+    except IncompatibleCheckpoint as error:
+        raise IncompatibleCheckpoint(f"{path}: {error}") from error
     return checkpoint

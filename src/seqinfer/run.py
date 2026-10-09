@@ -68,6 +68,73 @@ def _u64(value: int | None) -> str | None:
     return None if value is None else f"{value:016x}"
 
 
+_HEX64 = frozenset("0123456789abcdef")
+
+#: Required top-level fields of a checkpoint and their JSON types.
+_FIELDS: dict[str, tuple[type, ...]] = {
+    "format": (str,),
+    "run_id": (str,),
+    "t": (int,),
+    "terminal": (bool,),
+    "procedure": (dict,),
+    "rng": (str, type(None)),
+    "topology": (dict,),
+    "delivery": (dict,),
+    "history_digest": (str,),
+    "counters": (dict,),
+    "provenance": (dict,),
+}
+
+
+def validate_checkpoint(checkpoint: Any) -> None:
+    """Check the structure of a checkpoint; raise IncompatibleCheckpoint naming the first problem.
+
+    A checkpoint is data that may have been edited, truncated or written by
+    another version, so it is checked before any of it is trusted.
+    """
+
+    def bad(what: str) -> IncompatibleCheckpoint:
+        return IncompatibleCheckpoint(f"malformed checkpoint: {what}")
+
+    if not isinstance(checkpoint, dict):
+        raise bad(f"expected a JSON object, got {type(checkpoint).__name__}")
+    if checkpoint.get("format") != CHECKPOINT_FORMAT:
+        raise IncompatibleCheckpoint(f"unsupported checkpoint format {checkpoint.get('format')!r}")
+    for name, types in _FIELDS.items():
+        if name not in checkpoint:
+            raise bad(f"missing field {name!r}")
+        value = checkpoint[name]
+        if not isinstance(value, types) or (types == (int,) and isinstance(value, bool)):
+            raise bad(f"field {name!r} has type {type(value).__name__}")
+    if "state" not in checkpoint:
+        raise bad("missing field 'state'")
+    if checkpoint["t"] < 0:
+        raise bad("negative step count")
+    rng = checkpoint["rng"]
+    if rng is not None and (len(rng) != 16 or not set(rng) <= _HEX64):
+        raise bad("random state is not 16 hexadecimal digits")
+    digest = checkpoint["history_digest"]
+    if len(digest) != 64 or not set(digest) <= _HEX64:
+        raise bad("history digest is not a SHA-256 hex digest")
+    for part in ("topology", "delivery"):
+        if not {"spec", "state"} <= set(checkpoint[part]):
+            raise bad(f"{part} needs 'spec' and 'state'")
+    prov = checkpoint["provenance"]
+    for name in ("seed", "on_invalid", "events"):
+        if name not in prov:
+            raise bad(f"provenance lacks {name!r}")
+    if not isinstance(prov["on_invalid"], str) or not isinstance(prov["events"], list):
+        raise bad("provenance fields have the wrong type")
+    if prov["seed"] is not None and not (isinstance(prov["seed"], str) and prov["seed"].lstrip("-").isdigit()):
+        raise bad("seed is not a decimal string")
+    log = checkpoint.get("log")
+    if log is not None:
+        if not isinstance(log, dict) or not {"path", "count", "offset", "digest"} <= set(log):
+            raise bad("log position needs path, count, offset and digest")
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in checkpoint["counters"].values()):
+        raise bad("counters must be integers")
+
+
 def _normalize(obj: Any) -> Any:
     return json.loads(json.dumps(obj))
 
@@ -389,8 +456,7 @@ class Run:
         exception class is recorded by name only, so that class has to be
         passed again as ``on_invalid``.
         """
-        if checkpoint.get("format") != CHECKPOINT_FORMAT:
-            raise IncompatibleCheckpoint(f"unsupported checkpoint format {checkpoint.get('format')!r}")
+        validate_checkpoint(checkpoint)
         topology = topology if topology is not None else Independent()
         delivery = delivery if delivery is not None else Delivery()
         for label, mine, theirs in (
@@ -434,13 +500,16 @@ class Run:
             consumers=consumers,
             seed=None if prov["seed"] is None else int(prov["seed"]),
             run_id=checkpoint["run_id"],
-            initial_state=procedure.decode_state(checkpoint["state"]),
+            initial_state=_decoded(procedure, checkpoint["state"]),
             on_invalid=on_invalid,
             max_invalid_streak=prov.get("max_invalid_streak"),
             clock=clock,
         )
-        topology.restore(checkpoint["topology"]["state"])
-        delivery.restore(checkpoint["delivery"]["state"])
+        try:
+            topology.restore(checkpoint["topology"]["state"])
+            delivery.restore(checkpoint["delivery"]["state"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise IncompatibleCheckpoint(f"malformed checkpoint: buffers cannot be restored ({error!r})") from error
         run.rng_state = None if checkpoint["rng"] is None else int(checkpoint["rng"], 16)
         run.t = checkpoint["t"]
         run.terminal = checkpoint["terminal"]
@@ -458,6 +527,15 @@ class Run:
             log_discarded=discarded,
         )
         return run
+
+
+def _decoded(procedure: Procedure, data: Any) -> Any:
+    try:
+        return procedure.decode_state(data)
+    except (KeyError, TypeError, ValueError) as error:
+        raise IncompatibleCheckpoint(
+            f"malformed checkpoint: {procedure.name} cannot decode its state ({error!r})"
+        ) from error
 
 
 def checkpoint_id(checkpoint: dict) -> str:

@@ -295,6 +295,80 @@ class ContractMessages(unittest.TestCase):
         self.assertIn(".tolist()", message)
 
 
+class TransformIdentity(unittest.TestCase):
+    def test_transforms_are_recorded_by_name_version_and_config(self):
+        from seqinfer import Difference, Field
+
+        topo = PositionalPair(("a", "b")).map(Difference("a", "b"))
+        self.assertEqual(
+            topo.spec()["map"], {"name": "difference", "version": "1", "config": {"a": "a", "b": "b", "out": "x"}}
+        )
+        chain = Chain(FragileSum(), FragileSum(), link=Field("n"))
+        self.assertEqual(chain.config()["link"]["config"], {"field": "n", "out": "x"})
+
+    def test_a_changed_transform_refuses_to_restore(self):
+        from seqinfer import Difference
+
+        proc = SPRT(Gaussian(1.0), 0.0, 0.5)
+        run = Run(proc, topology=PositionalPair(("a", "b")).map(Difference("a", "b")))
+        run.offer(Observation("a", 1.0))
+        checkpoint = run.checkpoint()
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(proc, checkpoint, topology=PositionalPair(("a", "b")).map(Difference("b", "a")))
+        Run.restore(proc, checkpoint, topology=PositionalPair(("a", "b")).map(Difference("a", "b")))
+
+    def test_plain_functions_are_marked_name_only(self):
+        topo = PositionalPair(("a", "b")).map(lambda x: {"x": x["a"]}, "first")
+        self.assertEqual(topo.spec()["map"], {"name": "first", "identity": "name only"})
+        with self.assertRaises(ValueError):
+            PositionalPair(("a", "b")).map(lambda x: x)
+
+
+class MalformedCheckpoints(unittest.TestCase):
+    def setUp(self):
+        run = Run(FragileSum())
+        run.step({"x": 1.0})
+        self.good = run.checkpoint()
+
+    def damaged(self, change):
+        cp = json.loads(json.dumps(self.good))
+        change(cp)
+        return cp
+
+    def test_every_kind_of_damage_is_an_incompatible_checkpoint(self):
+        damages = {
+            "not an object": lambda cp: cp.clear(),
+            "missing state": lambda cp: cp.pop("state"),
+            "missing provenance": lambda cp: cp.pop("provenance"),
+            "t as string": lambda cp: cp.update(t="1"),
+            "negative t": lambda cp: cp.update(t=-1),
+            "bad digest": lambda cp: cp.update(history_digest="x" * 64),
+            "bad rng": lambda cp: cp.update(rng="zz"),
+            "topology without state": lambda cp: cp["topology"].pop("state"),
+            "provenance without seed": lambda cp: cp["provenance"].pop("seed"),
+            "float counter": lambda cp: cp["counters"].update(invalid_skipped=1.5),
+            "state of the wrong shape": lambda cp: cp.update(state={"unexpected": 1}),
+            "broken log position": lambda cp: cp.update(log={"path": None}),
+        }
+        for label, change in damages.items():
+            with self.subTest(label), self.assertRaises(IncompatibleCheckpoint):
+                Run.restore(FragileSum(), self.damaged(change))
+        Run.restore(FragileSum(), self.good)  # the undamaged one still works
+
+    def test_load_checkpoint_reports_bad_files(self):
+        from seqinfer import load_checkpoint, save_checkpoint
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cp.json"
+            path.write_text("{ not json")
+            with self.assertRaises(IncompatibleCheckpoint):
+                load_checkpoint(path)
+            save_checkpoint(path, self.damaged(lambda cp: cp.pop("counters")))
+            with self.assertRaises(IncompatibleCheckpoint) as caught:
+                load_checkpoint(path)
+            self.assertIn("counters", str(caught.exception))
+
+
 class StreamFailure(Exception):
     """An application's own error type for invalid input."""
 

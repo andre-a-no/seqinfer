@@ -32,15 +32,18 @@ from .numerics import equivalent
 from .persistence import load_checkpoint, save_checkpoint
 from .pipeline import Chain
 from .rng import SplitMix64
-from .run import Run, RunStatus, checkpoint_id
+from .run import Run, RunStatus, checkpoint_id, validate_checkpoint
 from .runtime import run_async, run_sync
 from .topology import Independent, KeyJoin, PositionalPair, TimeAlign, difference
+from .transforms import Difference, Field, Transform
 from .version import __version__
 
 __all__ = [
     "Chain",
     "ContractViolation",
     "Delivery",
+    "Difference",
+    "Field",
     "IncompatibleCheckpoint",
     "Independent",
     "InputContract",
@@ -60,6 +63,7 @@ __all__ = [
     "SeqInferError",
     "SplitMix64",
     "TimeAlign",
+    "Transform",
     "__version__",
     "checkpoint_id",
     "difference",
@@ -69,5 +73,6 @@ __all__ = [
     "run_sync",
     "save_checkpoint",
     "trajectory",
+    "validate_checkpoint",
     "validate_input",
 ]

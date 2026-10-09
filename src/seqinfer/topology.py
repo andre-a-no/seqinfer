@@ -25,6 +25,7 @@ from typing import Any
 
 from .core import Observation
 from .errors import ContractViolation, OrderingError
+from .transforms import Difference, identity_of
 
 
 class Topology(ABC):
@@ -44,8 +45,12 @@ class Topology(ABC):
     def restore(self, state: Any) -> None:
         return None
 
-    def map(self, fn: Callable[[dict], dict | None], name: str) -> Topology:
-        """Apply a stateless, named transformation to every emitted input."""
+    def map(self, fn: Callable[[dict], dict | None], name: str | None = None) -> Topology:
+        """Apply a stateless transformation to every emitted input.
+
+        `fn` should be a `Transform`, whose name, version and configuration
+        are recorded; a plain function needs a `name`, and only that is.
+        """
         return Mapped(self, fn, name)
 
 
@@ -198,12 +203,13 @@ class TimeAlign(_Buffered):
 class Mapped(Topology):
     """A topology followed by a stateless map or filter (return None to drop)."""
 
-    def __init__(self, inner: Topology, fn: Callable[[dict], dict | None], name: str):
+    def __init__(self, inner: Topology, fn: Callable[[dict], dict | None], name: str | None = None):
         self.inner, self.fn, self.name = inner, fn, name
+        self.map_identity = identity_of(fn, name)
         self.confluent = inner.confluent
 
     def spec(self) -> dict:
-        return {"type": "mapped", "map": self.name, "inner": self.inner.spec()}
+        return {"type": "mapped", "map": self.map_identity, "inner": self.inner.spec()}
 
     def push(self, obs: Observation) -> list[dict]:
         out = []
@@ -220,6 +226,6 @@ class Mapped(Topology):
         self.inner.restore(state)
 
 
-def difference(a: str, b: str, out: str = "x") -> Callable[[dict], dict]:
+def difference(a: str, b: str, out: str = "x") -> Difference:
     """Map a paired input {a, b} to the single input {out: a - b}."""
-    return lambda x: {out: x[a] - x[b]}
+    return Difference(a, b, out)
