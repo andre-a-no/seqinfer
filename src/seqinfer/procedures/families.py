@@ -1,16 +1,45 @@
-"""One-parameter likelihood families used by the likelihood-ratio procedures."""
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
+"""One-parameter likelihood families used by the likelihood-ratio procedures.
+
+A family provides the log likelihood ratio of one observation, the
+Kullback-Leibler divergence, a parameter check and the input contract.
+Gaussian (known variance), Bernoulli, Poisson and Exponential are
+exponential families: the sum of the observations is sufficient, which is
+what `seqinfer.design` relies on.
+"""
 from __future__ import annotations
 
 import math
+from typing import Protocol
 
 from ..contracts import InputContract
+
+
+class Family(Protocol):
+    """What the likelihood-ratio procedures need from a one-parameter family."""
+
+    def spec(self) -> dict: ...
+
+    def contract(self, name: str) -> InputContract: ...
+
+    def check(self, theta: float) -> None: ...
+
+    def llr(self, x: float, num: float, den: float) -> float:
+        """log f_num(x) - log f_den(x)."""
+        ...
+
+    def kl(self, a: float, b: float) -> float:
+        """Kullback-Leibler divergence from theta=a to theta=b."""
+        ...
 
 
 class Gaussian:
     """Normal observations with unknown mean and known standard deviation."""
 
     def __init__(self, sigma: float = 1.0):
-        if sigma <= 0:
+        if not (sigma > 0 and math.isfinite(sigma)):
             raise ValueError("sigma must be positive")
         self.sigma = float(sigma)
 
@@ -51,3 +80,43 @@ class Bernoulli:
 
     def kl(self, a: float, b: float) -> float:
         return a * math.log(a / b) + (1.0 - a) * math.log((1.0 - a) / (1.0 - b))
+
+
+class Poisson:
+    """Counts with unknown rate."""
+
+    def spec(self) -> dict:
+        return {"family": "poisson"}
+
+    def contract(self, name: str) -> InputContract:
+        return InputContract(name, kind="integer", lower=0)
+
+    def check(self, theta: float) -> None:
+        if not (math.isfinite(theta) and theta > 0):
+            raise ValueError("rate must be positive and finite")
+
+    def llr(self, x: float, num: float, den: float) -> float:
+        return x * math.log(num / den) - (num - den)
+
+    def kl(self, a: float, b: float) -> float:
+        return a * math.log(a / b) - a + b
+
+
+class Exponential:
+    """Non-negative durations with unknown rate (mean 1/rate)."""
+
+    def spec(self) -> dict:
+        return {"family": "exponential"}
+
+    def contract(self, name: str) -> InputContract:
+        return InputContract(name, kind="real", lower=0)
+
+    def check(self, theta: float) -> None:
+        if not (math.isfinite(theta) and theta > 0):
+            raise ValueError("rate must be positive and finite")
+
+    def llr(self, x: float, num: float, den: float) -> float:
+        return math.log(num / den) - (num - den) * x
+
+    def kl(self, a: float, b: float) -> float:
+        return math.log(a / b) + b / a - 1.0

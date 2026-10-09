@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Data topology: how logical inputs are related before inference.
 
 A topology operator turns delivered observations into statistical inputs.
@@ -17,10 +20,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from .core import Observation
 from .errors import ContractViolation, OrderingError
+from .transforms import Difference, identity_of
 
 
 class Topology(ABC):
@@ -40,8 +45,12 @@ class Topology(ABC):
     def restore(self, state: Any) -> None:
         return None
 
-    def map(self, fn: Callable[[dict], dict | None], name: str) -> "Topology":
-        """Apply a stateless, named transformation to every emitted input."""
+    def map(self, fn: Callable[[dict], dict | None], name: str | None = None) -> Topology:
+        """Apply a stateless transformation to every emitted input.
+
+        `fn` should be a `Transform`, whose name, version and configuration
+        are recorded; a plain function needs a `name`, and only that is.
+        """
         return Mapped(self, fn, name)
 
 
@@ -105,8 +114,12 @@ class KeyJoin(_Buffered):
 
     def push(self, obs: Observation) -> list[dict]:
         self._check(obs)
-        if obs.key is None:
-            raise ContractViolation("key join needs a key on every observation")
+        if type(obs.key) not in (str, int):
+            raise ContractViolation(
+                f"key join needs a str or int key on every observation, got {type(obs.key).__name__} {obs.key!r}; "
+                f"keys are stored in checkpoints as JSON, so build a composite key as a string in the adapter, "
+                f"e.g. f\"{{subject}}/{{visit}}\""
+            )
         row = self._partial.setdefault(obs.key, {})
         if obs.input in row:
             raise OrderingError(f"key {obs.key!r}: input {obs.input!r} was observed twice")
@@ -187,22 +200,50 @@ class TimeAlign(_Buffered):
         self.unmatched = int(state["unmatched"])
 
 
+class TransformFailure(ContractViolation):
+    """A transformation failed on some inputs; `emitted` holds the inputs that did map."""
+
+    def __init__(self, message: str, *, emitted: list[dict], failures: list[str]):
+        super().__init__(message)
+        self.emitted, self.failures = emitted, failures
+
+
 class Mapped(Topology):
     """A topology followed by a stateless map or filter (return None to drop)."""
 
-    def __init__(self, inner: Topology, fn: Callable[[dict], dict | None], name: str):
+    def __init__(self, inner: Topology, fn: Callable[[dict], dict | None], name: str | None = None):
         self.inner, self.fn, self.name = inner, fn, name
+        self.map_identity = identity_of(fn, name)
         self.confluent = inner.confluent
 
     def spec(self) -> dict:
-        return {"type": "mapped", "map": self.name, "inner": self.inner.spec()}
+        return {"type": "mapped", "map": self.map_identity, "inner": self.inner.spec()}
 
     def push(self, obs: Observation) -> list[dict]:
+        """Map every input the inner topology emits.
+
+        A transformation that fails on an input (a value of the wrong type
+        that reached it before any contract could see it, a missing field)
+        makes that input invalid, not the run: the failure is raised as a
+        TransformFailure that still carries the inputs that did map, so a
+        run that skips invalid input loses only the bad one.
+        """
+        failures: list[str] = []
+        try:
+            inputs = self.inner.push(obs)
+        except TransformFailure as inner_failure:
+            inputs, failures = list(inner_failure.emitted), list(inner_failure.failures)
         out = []
-        for x in self.inner.push(obs):
-            y = self.fn(x)
+        for x in inputs:
+            try:
+                y = self.fn(x)
+            except Exception as error:
+                failures.append(f"{self.map_identity['name']} failed on {x!r}: {type(error).__name__}: {error}")
+                continue
             if y is not None:
                 out.append(y)
+        if failures:
+            raise TransformFailure("; ".join(failures), emitted=out, failures=failures)
         return out
 
     def state(self) -> Any:
@@ -212,6 +253,6 @@ class Mapped(Topology):
         self.inner.restore(state)
 
 
-def difference(a: str, b: str, out: str = "x") -> Callable[[dict], dict]:
+def difference(a: str, b: str, out: str = "x") -> Difference:
     """Map a paired input {a, b} to the single input {out: a - b}."""
-    return lambda x: {out: x[a] - x[b]}
+    return Difference(a, b, out)

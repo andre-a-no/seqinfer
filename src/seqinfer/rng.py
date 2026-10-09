@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Statistical random state.
 
 The random state R_t of a randomized procedure is part of its mathematical
@@ -23,7 +26,7 @@ class SplitMix64:
         self.state = int(state) & _MASK
 
     @classmethod
-    def for_role(cls, seed: int, role: str) -> "SplitMix64":
+    def for_role(cls, seed: int, role: str) -> SplitMix64:
         """Derive an independent stream for a named role.
 
         Roles keep statistical, simulation and execution randomness apart:
@@ -33,7 +36,7 @@ class SplitMix64:
         digest = hashlib.sha256(f"{int(seed)}/{role}".encode()).digest()
         return cls(int.from_bytes(digest[:8], "big"))
 
-    def copy(self) -> "SplitMix64":
+    def copy(self) -> SplitMix64:
         return SplitMix64(self.state)
 
     def next_u64(self) -> int:

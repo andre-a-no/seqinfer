@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Error classes, one per architectural boundary (paper, Table 2)."""
 
 
@@ -7,6 +10,10 @@ class SeqInferError(Exception):
 
 class ContractViolation(SeqInferError):
     """A statistical input does not satisfy the procedure's input contract."""
+
+
+class InvalidInputStreak(SeqInferError):
+    """Too many consecutive invalid inputs: the source, not a message, is probably broken."""
 
 
 class OrderingError(SeqInferError):

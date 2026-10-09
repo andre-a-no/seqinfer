@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """The conformance invariants of the paper, as executable tests.
 
 I1 synchronous/asynchronous equivalence     I5 consumer non-interference
@@ -37,7 +40,9 @@ from .helpers import cases, fixed_clock, reference, summary
 def full_run(case):
     _, make_proc, make_topo, make_delivery, observations, seed = case
     rec = Recorder()
-    run = Run(make_proc(), topology=make_topo(), delivery=make_delivery(), consumers=[rec], seed=seed, clock=fixed_clock)
+    run = Run(
+        make_proc(), topology=make_topo(), delivery=make_delivery(), consumers=[rec], seed=seed, clock=fixed_clock
+    )
     run_sync(run, observations, stop_on_terminal=False)
     return summary(run, rec)
 
@@ -141,7 +146,7 @@ class ReplayEquivalence(unittest.TestCase):
         for i in range(0, len(clean), 5):
             block = clean[i:i + 5]
             rnd.shuffle(block)
-            messy += block + [rnd.choice(block)]  # out of order, plus a duplicate
+            messy += [*block, rnd.choice(block)]  # out of order, plus a duplicate
 
         def make(log=None):
             rec = Recorder()
@@ -149,9 +154,9 @@ class ReplayEquivalence(unittest.TestCase):
             return Run(proc, delivery=Delivery("sequence"), consumers=[rec], log=log, run_id="r"), rec
 
         with tempfile.TemporaryDirectory() as tmp:
-            log = ObservationLog(Path(tmp) / "arrivals.jsonl")
-            live, live_rec = make(log)
-            run_sync(live, messy, stop_on_terminal=False)
+            with ObservationLog(Path(tmp) / "arrivals.jsonl") as log:
+                live, live_rec = make(log)
+                run_sync(live, messy, stop_on_terminal=False)
             self.assertEqual(live.delivery.duplicates, 14)
 
             again, again_rec = make()
@@ -205,7 +210,8 @@ class ConsumerNonInterference(unittest.TestCase):
                     seed=seed,
                     clock=fixed_clock,
                 )
-                run_sync(run, observations, stop_on_terminal=False)
+                with self.assertLogs("seqinfer", "WARNING"):
+                    run_sync(run, observations, stop_on_terminal=False)
                 self.assertEqual(summary(run, rec), full_run(case))
                 self.assertIs(run.status, RunStatus.RUNNING)
                 self.assertEqual(len(run.consumer_errors), run.t)
@@ -286,9 +292,11 @@ class TopologySemantics(unittest.TestCase):
                 ia, ib, arrival = 0, 0, []
                 while ia < len(a) or ib < len(b):
                     if ib >= len(b) or (ia < len(a) and rnd.random() < 0.5):
-                        arrival.append(a[ia]); ia += 1
+                        arrival.append(a[ia])
+                        ia += 1
                     else:
-                        arrival.append(b[ib]); ib += 1
+                        arrival.append(b[ib])
+                        ib += 1
                 self.assertEqual(self.emitted(make(), arrival), baseline)
 
 

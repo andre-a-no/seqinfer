@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Kalman filter for the local-level model, optionally with a known control input.
 
     z_t = z_{t-1} + u_t + w_t,   w_t ~ N(0, q)
@@ -9,6 +12,7 @@ changes the observation process is itself observed.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
@@ -37,7 +41,7 @@ class LocalLevelKalman(Procedure):
     version = "1"
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, control: bool = False):
-        if q < 0 or r <= 0 or p0 < 0:
+        if not (0 <= q < math.inf and 0 < r < math.inf and 0 <= p0 < math.inf and math.isfinite(m0)):
             raise ValueError("need q >= 0, r > 0 and p0 >= 0")
         self.q, self.r, self.m0, self.p0, self.control = float(q), float(r), float(m0), float(p0), control
 

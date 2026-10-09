@@ -1,10 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Page's CUSUM change-point detector."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import require_finite
+from .families import Family
 
 
 @dataclass(frozen=True)
@@ -27,10 +32,12 @@ class CUSUM(Procedure):
     name = "cusum"
     version = "1"
 
-    def __init__(self, family, theta0: float, theta1: float, threshold: float, input: str = "x"):
+    def __init__(self, family: Family, theta0: float, theta1: float, threshold: float, input: str = "x"):
         family.check(theta0)
         family.check(theta1)
-        if threshold <= 0:
+        if theta0 == theta1:
+            raise ValueError("need theta0 != theta1: with equal parameters the statistic never moves")
+        if not (threshold > 0 and math.isfinite(threshold)):
             raise ValueError("threshold must be positive")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.threshold, self.input = float(threshold), input

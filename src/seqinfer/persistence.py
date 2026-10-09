@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Checkpoint storage.  Checkpoints are plain JSON values; this module only moves them to disk."""
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from .errors import IncompatibleCheckpoint
-from .run import CHECKPOINT_FORMAT
+from .run import validate_checkpoint
 
 
 def save_checkpoint(path: str | os.PathLike, checkpoint: dict) -> None:
@@ -24,11 +27,28 @@ def save_checkpoint(path: str | os.PathLike, checkpoint: dict) -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Make the rename durable.  POSIX only: Windows cannot open a directory."""
+    if os.name != "posix":
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def load_checkpoint(path: str | os.PathLike) -> dict:
-    with open(path, encoding="utf-8") as f:
-        checkpoint = json.load(f)
-    if checkpoint.get("format") != CHECKPOINT_FORMAT:
-        raise IncompatibleCheckpoint(f"{path}: unsupported checkpoint format {checkpoint.get('format')!r}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            checkpoint: dict = json.load(f)
+    except json.JSONDecodeError as error:
+        raise IncompatibleCheckpoint(f"{path}: not valid JSON ({error})") from error
+    try:
+        validate_checkpoint(checkpoint)
+    except IncompatibleCheckpoint as error:
+        raise IncompatibleCheckpoint(f"{path}: {error}") from error
     return checkpoint

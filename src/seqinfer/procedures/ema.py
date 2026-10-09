@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Exponential moving average: a stateful transformation, so also a procedure."""
 from __future__ import annotations
 
@@ -5,6 +8,7 @@ from dataclasses import dataclass
 
 from ..contracts import InputContract
 from ..core import Procedure
+from ..numerics import require_finite
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,7 @@ class EMA(Procedure):
         v = x[self.input]
         if state.n == 0:
             return EMAState(1, v), EMAOutput(1, v, 0.0)
-        value = state.value + self.alpha * (v - state.value)
+        value = require_finite(state.value + self.alpha * (v - state.value), "moving average")
         return EMAState(state.n + 1, value), EMAOutput(state.n + 1, value, v - state.value)
 
     def decode_state(self, data) -> EMAState:

@@ -1,13 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Input contracts: what a valid statistical input is."""
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import ContractViolation
 
 _KINDS = ("real", "integer", "binary")
+#: Exactly these types are numbers.  Subclasses (bool, numpy.float64, IntEnum)
+#: are rejected so that every value has one unambiguous meaning in the history.
+_NUMBER_TYPES = (int, float)
+#: Largest integer every binary64-based implementation holds exactly.
+_MAX_EXACT_INT = 2**53
 
 
 @dataclass(frozen=True)
@@ -45,8 +54,13 @@ class InputContract:
         }
 
     def _check_scalar(self, v: Any) -> None:
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
-            raise ContractViolation(f"input {self.name!r}: expected a number, got {type(v).__name__}")
+        if type(v) not in _NUMBER_TYPES:
+            raise ContractViolation(f"input {self.name!r}: {_explain_type(v, self.kind)}")
+        if type(v) is int and abs(v) > _MAX_EXACT_INT:  # before isfinite, which overflows on huge ints
+            raise ContractViolation(
+                f"input {self.name!r}: integer {v} exceeds 2**53 and cannot be recorded exactly in the history; "
+                f"pass it as a float if rounding is acceptable"
+            )
         if not math.isfinite(v):
             raise ContractViolation(f"input {self.name!r}: non-finite value {v!r}")
         if self.kind == "integer" and v != int(v):
@@ -62,10 +76,43 @@ class InputContract:
         if not self.shape:
             self._check_scalar(value)
             return
-        if not isinstance(value, (list, tuple)) or len(value) != self.shape[0]:
-            raise ContractViolation(f"input {self.name!r}: expected a vector of length {self.shape[0]}")
+        if type(value) not in (list, tuple):
+            hint = " (convert it in the adapter with .tolist())" if hasattr(value, "tolist") else ""
+            raise ContractViolation(
+                f"input {self.name!r}: expected a list or tuple of length {self.shape[0]}, "
+                f"got {_type_name(value)}{hint}"
+            )
+        if len(value) != self.shape[0]:
+            raise ContractViolation(
+                f"input {self.name!r}: expected a vector of length {self.shape[0]}, got {len(value)}"
+            )
         for v in value:
             self._check_scalar(v)
+
+
+def _type_name(v: Any) -> str:
+    t = type(v)
+    return t.__qualname__ if t.__module__ == "builtins" else f"{t.__module__}.{t.__qualname__}"
+
+
+def _explain_type(v: Any, kind: str) -> str:
+    """Why a value is not accepted as a number, and what the adapter should do about it."""
+    got = f"got {_type_name(v)} {v!r}"
+    target = "float" if kind == "real" else "int"
+    if isinstance(v, bool):
+        return (
+            f"expected int or float, {got}; booleans are not numbers here. "
+            f"Convert explicitly in the adapter, e.g. int(value)"
+        )
+    if hasattr(v, "item") and hasattr(v, "dtype"):
+        return (
+            f"expected a built-in int or float, {got}. "
+            f"Convert in the adapter with value.item() or {target}(value), "
+            f"so that the type recorded in the history is unambiguous"
+        )
+    if isinstance(v, str):
+        return f"expected int or float, {got}; parse strings in the adapter, not in the procedure"
+    return f"expected a built-in int or float, {got}; convert it in the adapter with {target}(value)"
 
 
 def validate_input(procedure, x: Any) -> None:

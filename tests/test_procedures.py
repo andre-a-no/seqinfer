@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Statistical and numerical behavior of the reference procedures."""
 import json
 import math
@@ -21,7 +24,7 @@ from seqinfer.procedures import (
     TwoSPRT,
     kiefer_weiss_point,
 )
-from seqinfer.sources import from_values, gaussian
+from seqinfer.sources import gaussian
 
 from .helpers import cases, chain_ema_cusum
 
@@ -125,7 +128,7 @@ class KieferWeiss(unittest.TestCase):
         rnd = random.Random(0)
         for theta in (-0.5, 0.0, 0.25, 0.5, 1.0):
             for _ in range(300):
-                self.assertLessEqual(decide(proc, lambda: rnd.gauss(theta, 1.0)).n, n_max)
+                self.assertLessEqual(decide(proc, lambda theta=theta: rnd.gauss(theta, 1.0)).n, n_max)
         self.assertIsNone(TwoSPRT(Bernoulli(), 0.2, 0.5).max_sample_size())
 
     def test_error_probabilities_respect_the_bound(self):
@@ -222,7 +225,7 @@ class Filtering(unittest.TestCase):
         ys = [{"y": o.value} for o in gaussian("y", lambda i: math.sin(i / 10), 0.5, seed=4, n=60)]
         exact = trajectory(LocalLevelKalman(q=0.05, r=0.25), ys)
         approx = trajectory(BootstrapParticleFilter(q=0.05, r=0.25, particles=2000), ys, seed=1)
-        err = [abs(a[1].mean - e[1].mean) for a, e in zip(approx, exact)]
+        err = [abs(a[1].mean - e[1].mean) for a, e in zip(approx, exact, strict=True)]
         self.assertLess(max(err), 0.1)
         self.assertLess(statistics.fmean(err), 0.03)
 
@@ -253,11 +256,37 @@ class TwoSample(unittest.TestCase):
             history = []
             while ia < len(a) or ib < len(b):
                 if ib >= len(b) or (ia < len(a) and rnd.random() < 0.6):
-                    history.append({"a": a[ia]}); ia += 1
+                    history.append({"a": a[ia]})
+                    ia += 1
                 else:
-                    history.append({"b": b[ib]}); ib += 1
+                    history.append({"b": b[ib]})
+                    ib += 1
             self.assertEqual(final(history)[0], state)  # bitwise: the samples update disjoint state
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortableArithmetic(unittest.TestCase):
+    def test_the_inference_path_does_not_use_the_builtin_float_sum(self):
+        """sum() of floats changed in Python 3.12; trajectories must not depend on the Python version."""
+        import ast
+        from pathlib import Path
+
+        import seqinfer
+
+        root = Path(seqinfer.__file__).parent
+        files = [*sorted((root / "procedures").glob("*.py")), *(root / n for n in ("numerics.py", "core.py", "run.py"))]
+        offenders = []
+        for path in files:
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "sum":
+                    offenders.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(offenders, [], "use numerics.ordered_sum (or neumaier_add) for floats")
+
+    def test_ordered_sum_is_left_to_right(self):
+        from seqinfer.numerics import ordered_sum
+
+        values = [1e16, 1.0, -1e16, 1.0]
+        self.assertEqual(ordered_sum(values), ((1e16 + 1.0) - 1e16) + 1.0)

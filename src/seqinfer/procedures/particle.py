@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Bootstrap particle filter for the local-level model: a randomized procedure.
 
 All randomness is drawn from the statistical random state R_t that the run
@@ -11,7 +14,7 @@ from dataclasses import dataclass
 
 from ..contracts import InputContract
 from ..core import Procedure
-from ..numerics import logsumexp, require_finite
+from ..numerics import logsumexp, ordered_sum, require_finite
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,7 @@ class BootstrapParticleFilter(Procedure):
     randomized = True
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, particles: int = 256):
-        if q < 0 or r <= 0 or p0 < 0 or particles < 2:
+        if not (0 <= q < math.inf and 0 < r < math.inf and 0 <= p0 < math.inf and math.isfinite(m0)) or particles < 2:
             raise ValueError("need q >= 0, r > 0, p0 >= 0 and at least two particles")
         self.q, self.r, self.m0, self.p0, self.size = float(q), float(r), float(m0), float(p0), int(particles)
 
@@ -50,15 +53,15 @@ class BootstrapParticleFilter(Procedure):
     def step(self, state: ParticleState, x, rng):
         y = x["y"]
         size = self.size
-        cloud = state.particles or tuple(rng.normal(self.m0, math.sqrt(self.p0)) for _ in range(size))
+        prior = state.particles or tuple(rng.normal(self.m0, math.sqrt(self.p0)) for _ in range(size))
         sd = math.sqrt(self.q)
-        cloud = [p + rng.normal(0.0, sd) for p in cloud]
+        cloud = [p + rng.normal(0.0, sd) for p in prior]
         logw = [-0.5 * (y - p) ** 2 / self.r for p in cloud]
         norm = require_finite(logsumexp(logw), "log normalizing constant")
         w = [math.exp(lw - norm) for lw in logw]
-        mean = sum(wi * p for wi, p in zip(w, cloud))
-        var = sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud))
-        ess = 1.0 / sum(wi * wi for wi in w)
+        mean = ordered_sum(wi * p for wi, p in zip(w, cloud, strict=True))
+        var = ordered_sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud, strict=True))
+        ess = 1.0 / ordered_sum(wi * wi for wi in w)
         # systematic resampling: one uniform draw
         u = rng.random() / size
         resampled, i, cum = [], 0, w[0]

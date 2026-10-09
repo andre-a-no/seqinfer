@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Wald's sequential probability ratio test."""
 from __future__ import annotations
 
@@ -6,6 +9,7 @@ from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import neumaier_add, require_finite
+from .families import Family
 
 REJECT_H0 = "reject_h0"
 ACCEPT_H0 = "accept_h0"
@@ -36,11 +40,13 @@ class SPRT(Procedure):
     name = "sprt"
     version = "1"
 
-    def __init__(self, family, theta0: float, theta1: float, alpha: float = 0.05, beta: float = 0.05, input: str = "x"):
+    def __init__(
+        self, family: Family, theta0: float, theta1: float, alpha: float = 0.05, beta: float = 0.05, input: str = "x"
+    ):
         family.check(theta0)
         family.check(theta1)
-        if theta0 == theta1 or not (0 < alpha < 1 and 0 < beta < 1):
-            raise ValueError("need theta0 != theta1 and error rates in (0, 1)")
+        if theta0 == theta1 or not (0 < alpha < 1 and 0 < beta < 1) or alpha + beta >= 1:
+            raise ValueError("need theta0 != theta1, error rates in (0, 1) and alpha + beta < 1")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.alpha, self.beta, self.input = alpha, beta, input
         self.upper = math.log((1.0 - beta) / alpha)

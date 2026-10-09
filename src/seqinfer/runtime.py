@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Runtimes: disposable machinery that moves observations into a run.
 
 Nothing here is checkpointed.  Both runtimes end in the same place, a
@@ -7,7 +10,7 @@ no asynchronous interface and no internal locking.
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterable, Iterable, Sequence
+from collections.abc import AsyncIterable, Iterable, Sequence
 
 from .core import Observation
 from .run import Run, RunStatus
@@ -29,6 +32,8 @@ def run_sync(run: Run, source: Iterable[Observation], *, stop_on_terminal: bool 
     """Pull observations from `source` and offer them in order.  Returns the number consumed."""
     _attach(run, "sync/pull")
     consumed = 0
+    if stop_on_terminal and run.terminal:  # pull nothing from a run that has already stopped
+        return consumed
     for obs in source:
         run.offer(obs)
         consumed += 1
@@ -50,11 +55,17 @@ async def run_async(
     Each producer pushes into one bounded queue; a single consumer drains
     it into the run.  `overflow="block"` applies backpressure to producers.
     `overflow="drop"` discards observations when the queue is full; that
-    changes the observation history, so drops are counted on the run and
-    end up in its provenance.
+    changes the observation history, so drops are counted on the run
+    (``counters["dropped_by_runtime"]``) and recorded in its checkpoint.
     """
     if overflow not in ("block", "drop"):
         raise ValueError("overflow must be 'block' or 'drop'")
+    if overflow == "drop" and run.delivery.policy != "arrival":
+        raise ValueError(
+            f"overflow='drop' cannot be combined with delivery policy {run.delivery.policy!r}: "
+            f"a dropped sequence number leaves a gap that the policy waits on forever. "
+            f"Use overflow='block', or Delivery('arrival')"
+        )
     _attach(run, f"async/push/{overflow}")
     queue: asyncio.Queue = asyncio.Queue(maxsize)
 

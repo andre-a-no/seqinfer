@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Lorden's 2-SPRT for the Kiefer-Weiss problem.
 
 The Kiefer-Weiss problem asks for the test of theta0 against theta1 that,
@@ -23,11 +26,11 @@ from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import neumaier_add, require_finite
-from .families import Gaussian
+from .families import Family, Gaussian
 from .sprt import ACCEPT_H0, REJECT_H0
 
 
-def kiefer_weiss_point(family, theta0: float, theta1: float, a0: float, a1: float) -> float:
+def kiefer_weiss_point(family: Family, theta0: float, theta1: float, a0: float, a1: float) -> float:
     """Intermediate point at which both boundaries are reached at the same rate.
 
     Solves a0 / KL(theta, theta0) = a1 / KL(theta, theta1) on (theta0, theta1)
@@ -73,7 +76,7 @@ class TwoSPRT(Procedure):
 
     def __init__(
         self,
-        family,
+        family: Family,
         theta0: float,
         theta1: float,
         alpha0: float = 0.05,
@@ -89,7 +92,7 @@ class TwoSPRT(Procedure):
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)
         self.alpha0, self.alpha1, self.input = alpha0, alpha1, input
         self.a0, self.a1 = thresholds if thresholds is not None else (math.log(1.0 / alpha0), math.log(1.0 / alpha1))
-        if self.a0 <= 0 or self.a1 <= 0:
+        if not (0 < self.a0 < math.inf and 0 < self.a1 < math.inf):
             raise ValueError("thresholds must be positive")
         if theta_star is None:
             theta_star = kiefer_weiss_point(family, self.theta0, self.theta1, self.a0, self.a1)

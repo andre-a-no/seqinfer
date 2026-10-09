@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """seqinfer: sequential statistical inference, separated from experimental runtime.
 
     Procedure infers; consumers act.
@@ -19,6 +22,7 @@ from .delivery import Delivery
 from .errors import (
     ContractViolation,
     IncompatibleCheckpoint,
+    InvalidInputStreak,
     LifecycleError,
     NumericalError,
     OrderingError,
@@ -28,19 +32,22 @@ from .numerics import equivalent
 from .persistence import load_checkpoint, save_checkpoint
 from .pipeline import Chain
 from .rng import SplitMix64
-from .run import Run, RunStatus, checkpoint_id
+from .run import Run, RunStatus, checkpoint_id, validate_checkpoint
 from .runtime import run_async, run_sync
 from .topology import Independent, KeyJoin, PositionalPair, TimeAlign, difference
-
-__version__ = "0.1.0"
+from .transforms import Difference, Field, Transform
+from .version import __version__
 
 __all__ = [
     "Chain",
     "ContractViolation",
     "Delivery",
+    "Difference",
+    "Field",
     "IncompatibleCheckpoint",
     "Independent",
     "InputContract",
+    "InvalidInputStreak",
     "JsonlSink",
     "KeyJoin",
     "LifecycleError",
@@ -56,6 +63,8 @@ __all__ = [
     "SeqInferError",
     "SplitMix64",
     "TimeAlign",
+    "Transform",
+    "__version__",
     "checkpoint_id",
     "difference",
     "equivalent",
@@ -64,5 +73,6 @@ __all__ = [
     "run_sync",
     "save_checkpoint",
     "trajectory",
+    "validate_checkpoint",
     "validate_input",
 ]

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Shared fixtures: procedures, observation histories and trace helpers."""
 import json
 import random
@@ -16,11 +19,18 @@ from seqinfer.procedures import (
     CUSUM,
     EMA,
     SPRT,
+    BettingMeanTest,
     BootstrapParticleFilter,
     Gaussian,
+    GroupSequentialTest,
     LocalLevelKalman,
     MeanDifference,
+    NormalMixtureSPRT,
     PlanTest,
+    Poisson,
+    SequentialSignTest,
+    ShiryaevRoberts,
+    TMixtureSPRT,
     TwoSPRT,
 )
 from seqinfer.sources import from_values, gaussian, interleave
@@ -138,6 +148,55 @@ def cases():
             Independent,
             Delivery,
             list(gaussian("x", 0.25, 1.0, seed=12, n=n)),
+            None,
+        ),
+        (
+            "mixture_sprt_confidence_sequence",
+            lambda: NormalMixtureSPRT(1.0, 0.5, stop_on_reject=False),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.3, 1.0, seed=13, n=n)),
+            None,
+        ),
+        ("shiryaev_roberts", lambda: ShiryaevRoberts(Gaussian(1.0), 0.0, 1.5, 1e4), Independent, Delivery, shift, None),
+        (
+            "betting_mean_bounded",
+            lambda: BettingMeanTest(0.5, 0.0, 10.0, alpha=1e-6),
+            Independent,
+            Delivery,
+            list(from_values("x", [(i * 7919 % 101) / 10.1 for i in range(n)])),
+            None,
+        ),
+        (
+            "paired_sign_test",
+            lambda: SequentialSignTest(0.0, alpha=1e-6),
+            lambda: PositionalPair(("a", "b")).map(difference("a", "b"), "a-b"),
+            Delivery,
+            unbalanced_pairs(n, lead=5, seed=14),
+            None,
+        ),
+        (
+            "group_sequential",
+            lambda: GroupSequentialTest(1.0, analyses=[20, 40, 60, 80], bounds=[4.3, 3.0, 2.5, 2.2]),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.3, 1.0, seed=24, n=n)),
+            None,
+        ),
+        (
+            "t_mixture_unknown_variance",
+            lambda: TMixtureSPRT(0.0, 0.5, stop_on_reject=False),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.4, 3.0, seed=32, n=n)),
+            None,
+        ),
+        (
+            "poisson_sprt",
+            lambda: SPRT(Poisson(), 2.0, 2.5, 1e-4, 1e-4),
+            Independent,
+            Delivery,
+            list(from_values("x", [(i * 37) % 5 for i in range(n)])),
             None,
         ),
     ]

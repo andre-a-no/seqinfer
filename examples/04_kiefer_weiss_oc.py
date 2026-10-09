@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Operating characteristics of the SPRT and the 2-SPRT (Table 5 of the paper).
 
 Gaussian observations with unit variance, theta0 = 0 against theta1 = 0.5,
@@ -13,11 +16,14 @@ transition function and nothing else.  Calibration and evaluation use
 separate random streams.
 
 Usage: python examples/04_kiefer_weiss_oc.py [replications]
+
+The default 20000 replications take several minutes; pass e.g. 2000 for a
+quick look (with correspondingly wider Monte Carlo error).
 """
 import sys
 
 from seqinfer import SplitMix64
-from seqinfer.procedures import ACCEPT_H0, REJECT_H0, SPRT, Gaussian, TwoSPRT
+from seqinfer.procedures import REJECT_H0, SPRT, Gaussian, TwoSPRT
 
 REPS = int(sys.argv[1]) if len(sys.argv) > 1 else 20_000
 SEED = 20261003
