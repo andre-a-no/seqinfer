@@ -200,6 +200,14 @@ class TimeAlign(_Buffered):
         self.unmatched = int(state["unmatched"])
 
 
+class TransformFailure(ContractViolation):
+    """A transformation failed on some inputs; `emitted` holds the inputs that did map."""
+
+    def __init__(self, message: str, *, emitted: list[dict], failures: list[str]):
+        super().__init__(message)
+        self.emitted, self.failures = emitted, failures
+
+
 class Mapped(Topology):
     """A topology followed by a stateless map or filter (return None to drop)."""
 
@@ -212,11 +220,30 @@ class Mapped(Topology):
         return {"type": "mapped", "map": self.map_identity, "inner": self.inner.spec()}
 
     def push(self, obs: Observation) -> list[dict]:
+        """Map every input the inner topology emits.
+
+        A transformation that fails on an input (a value of the wrong type
+        that reached it before any contract could see it, a missing field)
+        makes that input invalid, not the run: the failure is raised as a
+        TransformFailure that still carries the inputs that did map, so a
+        run that skips invalid input loses only the bad one.
+        """
+        failures: list[str] = []
+        try:
+            inputs = self.inner.push(obs)
+        except TransformFailure as inner_failure:
+            inputs, failures = list(inner_failure.emitted), list(inner_failure.failures)
         out = []
-        for x in self.inner.push(obs):
-            y = self.fn(x)
+        for x in inputs:
+            try:
+                y = self.fn(x)
+            except Exception as error:
+                failures.append(f"{self.map_identity['name']} failed on {x!r}: {type(error).__name__}: {error}")
+                continue
             if y is not None:
                 out.append(y)
+        if failures:
+            raise TransformFailure("; ".join(failures), emitted=out, failures=failures)
         return out
 
     def state(self) -> Any:

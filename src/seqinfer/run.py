@@ -270,7 +270,7 @@ class Run:
                         inputs = self.topology.push(delivered)
                     except ContractViolation as violation:
                         self._invalid(violation, "topology", observation=delivered)
-                        continue
+                        inputs = list(getattr(violation, "emitted", []))  # what did map still counts
                     for x in inputs:
                         event = self._apply(x, delivered)
                         if event is not None:

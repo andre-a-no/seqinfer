@@ -464,6 +464,20 @@ class InvalidInputPolicy(unittest.TestCase):
         self.assertEqual(run.counters["invalid_skipped"], 2)
         self.assertIs(run.status, RunStatus.RUNNING)
 
+    def test_a_transform_failing_on_bad_data_skips_only_that_input(self):
+        from seqinfer import Difference
+
+        run = Run(MeanDifference(), topology=PositionalPair(("a", "b")).map(Difference("a", "b", out="a")))
+        for v in (1.0, "broken", 3.0):  # the "a" side runs ahead; a string slipped through an adapter
+            run.offer(Observation("a", v))
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            for v in (0.5, 0.5, 0.5):  # three pairs are emitted, the middle one cannot be differenced
+                run.offer(Observation("b", v))
+        self.assertIs(run.status, RunStatus.RUNNING)
+        self.assertEqual((run.t, run.counters["invalid_skipped"]), (2, 1))
+        self.assertEqual(run.state.mean_a, 1.5)  # (1 - 0.5 + 3 - 0.5) / 2
+        self.assertIn("difference failed", logs.output[0])
+
     def test_consumer_failures_are_reported_as_warnings(self):
         def broken(event):
             raise RuntimeError("disk full")
