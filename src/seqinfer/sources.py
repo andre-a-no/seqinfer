@@ -50,6 +50,46 @@ def from_values(
         )
 
 
+def from_csv(
+    path: str | os.PathLike[str],
+    input: str,
+    value: str,
+    *,
+    convert: Callable[[str], Any] = float,
+    source: str = "",
+    seq: str | None = None,
+    time: str | None = None,
+    key: str | None = None,
+    start: int = 0,
+) -> Iterator[Observation]:
+    """Read observations of one logical input from a CSV file with a header row.
+
+    `value` names the column that holds the observation.  CSV holds text,
+    so every value is converted explicitly with `convert` (float by
+    default; int for counts); a value that does not convert raises
+    ValueError naming the line, instead of reaching the procedure as a
+    string.  `seq`, `time` and `key` name optional columns; without `seq`
+    rows are numbered from `start` in file order.
+    """
+    import csv
+
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        header = reader.fieldnames or []
+        for column in (value, seq, time, key):
+            if column is not None and column not in header:
+                raise ValueError(f"{path}: no column {column!r} (columns: {header})")
+        for i, row in enumerate(reader):
+            line = i + 2  # the header is line 1
+            try:
+                v = convert(row[value])
+                n = int(row[seq]) if seq is not None else start + i
+                t = float(row[time]) if time is not None else None
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"{path}, line {line}: {error}") from error
+            yield Observation(input, v, source, n, row[key] if key is not None else None, t)
+
+
 def gaussian(
     input: str,
     mean: float | Callable[[int], float],

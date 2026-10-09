@@ -324,6 +324,33 @@ class TransformIdentity(unittest.TestCase):
             PositionalPair(("a", "b")).map(lambda x: x)
 
 
+class CsvSource(unittest.TestCase):
+    def test_reads_converts_and_numbers_rows(self):
+        from seqinfer.sources import from_csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "data.csv"
+            path.write_text("t,patient,y\n0.5,p1,1.25\n1.5,p2,-2\n")
+            rows = list(from_csv(path, "y", "y", time="t", key="patient"))
+            got = [(o.value, o.seq, o.time, o.key) for o in rows]
+            self.assertEqual(got, [(1.25, 0, 0.5, "p1"), (-2.0, 1, 1.5, "p2")])
+            run = Run(FragileSum(), on_invalid="raise")
+            run_sync(run, from_csv(path, "x", "t"))
+            self.assertEqual(run.state.total, 2.0)
+
+    def test_bad_values_and_columns_name_the_line(self):
+        from seqinfer.sources import from_csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "data.csv"
+            path.write_text("y\n1\nn/a\n")
+            with self.assertRaises(ValueError) as caught:
+                list(from_csv(path, "y", "y"))
+            self.assertIn("line 3", str(caught.exception))
+            with self.assertRaises(ValueError):
+                list(from_csv(path, "y", "missing"))
+
+
 class MalformedCheckpoints(unittest.TestCase):
     def setUp(self):
         run = Run(FragileSum())
