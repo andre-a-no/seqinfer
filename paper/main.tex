@@ -1512,8 +1512,9 @@ the multipliers by Broyden's method takes a few passes. The resulting
 plan is executed by the same plan executor. For $\theta_0=0.3$ against
 $\theta_1=0.5$ with $\alpha_0=\alpha_1=0.05$ and $H=150$, it attains
 error probabilities $0.0498$ and $0.0496$ and a maximum expected sample
-size of $45.2$, against $52.9$ for Wald's SPRT calibrated to the same
-error probabilities. The value of the Lagrangian obtained by backward
+size of $45.2$, against $50.8$ for Wald's SPRT with thresholds
+calibrated to the same error probabilities ($56.9$ with Wald's
+approximate thresholds $\pm\log 19$). The value of the Lagrangian obtained by backward
 induction agrees with the forward evaluation of the plan to machine
 precision, and the exact operating characteristic agrees with
 simulation through the executor. For a normal mean, $\theta_0=0$ against
@@ -1708,7 +1709,7 @@ same contracts, and implementations in different languages need not
 have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
-standard library and comprises about $5\,200$ lines, with one module per
+standard library and comprises about $5\,600$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1740,8 +1741,11 @@ a test martingale for every $\sigma$~\cite{lai1976,perezortiz2024}, both
 with an always-valid $p$-value and a confidence sequence, and two
 nonparametric
 tests by betting~\cite{shafer2021,waudbysmith2024,ramdas2023}, one for the
-mean of bounded observations and a sign test for the median, both valid
-for every distribution satisfying the null hypothesis. For change-point
+mean of bounded observations and a sign test of
+$P(X>m)=P(X<m)$, both valid for every distribution satisfying the null
+hypothesis. The sign test is a test of the median only when the
+distribution has no atom at $m$: with ties at $m$, the median can be
+$m$ while the signs are unbalanced, and the test then rejects. For change-point
 detection: CUSUM~\cite{page1954} and the Shiryaev--Roberts
 procedure~\cite{shiryaev1963,roberts1966,pollak1985}. For filtering and
 estimation: a Kalman filter for the local-level model with an optional

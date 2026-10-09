@@ -83,8 +83,11 @@ class TMixtureSPRT(Procedure):
     ):
         if not math.isfinite(theta0):
             raise ValueError("theta0 must be finite")
-        if not (effect > 0 and math.isfinite(effect)):
-            raise ValueError("effect (prior sd of the standardised effect) must be positive")
+        if not (0 < effect <= 1e100):
+            raise ValueError(
+                "effect (prior sd of the standardised effect) must lie in (0, 1e100]; "
+                "larger values overflow n * effect^2"
+            )
         if not 0 < alpha < 1:
             raise ValueError("alpha must lie in (0, 1)")
         self.theta0, self.effect, self.alpha = float(theta0), float(effect), float(alpha)

@@ -587,6 +587,110 @@ class ProcedureReviewRegressions(unittest.TestCase):
         self.assertAlmostEqual(_upper_tail(8.0, 1e5) / 6.286959938128186e-16, 1.0, places=10)
 
 
+class ThirdReviewNumerics(unittest.TestCase):
+    """Defects found by the third review; each test reproduces one."""
+
+    def test_far_tails_with_huge_df(self):
+        from seqinfer.distributions import _log_upper_tail, t_cdf
+
+        # the continued fraction did not converge here; references from mpmath's 2F1 at 50 digits
+        for t, df, ref in (
+            (1e10, 1e15, -5756467732460133.0),
+            (10**10.5, 1e13, -92103403769777.72),
+            (1e11, 1e14, -921034037697635.2),
+            (10**11.5, 1e15, -9210340376976200.0),
+        ):
+            self.assertAlmostEqual(_log_upper_tail(t, df) / ref, 1.0, places=14, msg=f"t={t}, df={df}")
+        self.assertEqual(t_cdf(-1e10, 1e15), 0.0)
+
+    def test_fisher_terms_do_not_overflow(self):
+        from seqinfer.distributions import _log_normal_upper, _log_upper_tail
+
+        t, df = 1.333521432163324e28, 1.7782794100389227e115  # t^11 overflowed: the log tail was +inf
+        self.assertAlmostEqual(_log_upper_tail(t, df) / _log_normal_upper(t), 1.0, places=14)
+
+    def test_sprt_baseline_quoted_in_the_readme(self):
+        from seqinfer.design import maximum_expected_n
+        from seqinfer.procedures import PlanTest
+
+        # Bernoulli 0.3 vs 0.5: Wald's SPRT with thresholds calibrated to errors 0.05, as a plan on the sum
+        up, dn = math.log(5 / 3), math.log(5 / 7)
+
+        def sprt(a, b, horizon=1500):
+            rows = [((b - n * dn) / (up - dn), (a - n * dn) / (up - dn)) for n in range(1, horizon)]
+            end = -horizon * dn / (up - dn)
+            return PlanTest([*rows, (end, end)])
+
+        def errors(a, b):
+            plan = sprt(a, b)
+            return operating_characteristic(plan, Bernoulli(), 0.3).reject, operating_characteristic(
+                plan, Bernoulli(), 0.5
+            ).accept
+
+        a, b = 2.7407160438597202, -2.8049585931003094  # found by alternating bisection
+        e0, e1 = errors(a, b)
+        self.assertLessEqual(max(e0, e1), 0.05)
+        self.assertGreater(errors(a - 0.01, b)[0], 0.05)  # neither threshold can come closer to 0
+        self.assertGreater(errors(a, b + 0.01)[1], 0.05)
+        self.assertAlmostEqual(maximum_expected_n(sprt(a, b), Bernoulli(), 0.3, 0.5)[0], 50.79, places=2)
+
+    def test_continued_fraction_converges(self):
+        from seqinfer.distributions import t_cdf
+
+        # |delta - 1| stuck at 2**-53 for tiny df; the iteration limit was too low for large df
+        self.assertAlmostEqual((t_cdf(0.01, 1e-10) - 0.5) / 3.800451e-10, 1.0, places=4)
+        self.assertEqual(t_cdf(8.912509381e9, 1e13), 1.0)
+        for t, df in ((1e74, 1e300), (1e60, 1e250)):
+            self.assertEqual(t_cdf(t, df), 1.0)
+
+    def test_quantiles_at_extreme_df(self):
+        from seqinfer.distributions import t_isf_log
+
+        # log tails far below -1e100 at df up to the largest float: t is about sqrt(-2 log tail)
+        for log_tail, df in ((-1e148, 1e300), (-1e120, 1e250), (-1e150, 1.7e308)):
+            self.assertAlmostEqual(t_isf_log(log_tail, df) / math.sqrt(-2.0 * log_tail), 1.0, places=12)
+
+    def test_huge_df_asymptotic_has_its_second_term(self):
+        from seqinfer.distributions import _log_upper_tail
+
+        # 120-digit quadrature; without the 1/t^2 term the log was off by 6e-7 and stepped up at the switch
+        for t, df, ref in ((1536.0027, 2e15, -1179660.4023854834), (2500.0, 1e17, -3125008.742887048)):
+            self.assertLess(abs(_log_upper_tail(t, df) - ref), 1e-8)
+
+    def test_neyman_pearson_bound_keeps_tiny_errors(self):
+        from seqinfer.design import _check_attainable, _neyman_pearson_error
+
+        # exact values from mpmath; 1 - power used to leave rounding of 1e-13 and refuse feasible targets
+        for args, ref in (
+            ((0.5, 0.1, 0.05, 200), 4.80956242070674e-36),
+            ((0.3, 0.6, 0.05, 300), 2.1246751364944591e-19),
+        ):
+            self.assertAlmostEqual(_neyman_pearson_error(Bernoulli(), *args) / ref, 1.0, places=9)
+        plan = kiefer_weiss_plan(0.5, 0.1, 0.05, 1e-14, 200)
+        self.assertLessEqual(plan.at_theta1.accept, 1e-14)
+        # the normal bound with alpha0 below the spacing of floats near 1
+        self.assertAlmostEqual(_neyman_pearson_error(Gaussian(), 0.0, 1.0, 1.6e-16, 100), 0.03329288349842, places=10)
+        _check_attainable(Gaussian(), 0.0, 1.0, 1.6e-16, 0.035, 100)
+        self.assertGreater(_neyman_pearson_error(Gaussian(), 0.0, 1.0, 5e-17, 200), 0.0)
+
+    def test_parameters_that_cannot_work_are_refused(self):
+        from seqinfer.group_sequential import group_sequential_design
+        from seqinfer.procedures import TMixtureSPRT
+
+        with self.assertRaises(ValueError):
+            TMixtureSPRT(effect=1e160)  # every step overflowed
+        with self.assertRaises(ValueError):
+            group_sequential_design(0.9, [1.0])  # silently spent 0.5
+        group_sequential_design(0.9, [0.5, 1.0], two_sided=True)
+
+    def test_zero_argument(self):
+        from seqinfer.distributions import _log_upper_tail, _upper_tail
+
+        for df in (1e-3, 0.5, 30.0, 1e20):
+            self.assertEqual(_upper_tail(0.0, df), 0.5)
+            self.assertEqual(_log_upper_tail(0.0, df), math.log(0.5))
+
+
 class SecondReviewNumerics(unittest.TestCase):
     """Defects found by the second review and by fuzzing; each test reproduces one."""
 

@@ -498,7 +498,7 @@ def _neyman_pearson_error(family: Family, theta0: float, theta1: float, alpha0: 
         from statistics import NormalDist
 
         shift = math.sqrt(n) * abs(theta1 - theta0) / family.sigma
-        return 0.5 * math.erfc((shift - NormalDist().inv_cdf(1.0 - alpha0)) / math.sqrt(2.0))
+        return 0.5 * math.erfc((shift + NormalDist().inv_cdf(alpha0)) / math.sqrt(2.0))  # z_alpha0 = -inv_cdf(alpha0)
     if isinstance(family, Bernoulli):
         support = range(n + 1)
 
@@ -516,16 +516,17 @@ def _neyman_pearson_error(family: Family, theta0: float, theta1: float, alpha0: 
         return None
     # reject H0 first where the likelihood ratio of theta1 to theta0 is largest
     order = reversed(support) if theta1 > theta0 else iter(support)
-    size = power = 0.0
+    size = 0.0
     for k in order:
         p0, p1 = math.exp(log_pmf(k, theta0)), math.exp(log_pmf(k, theta1))
         if size + p0 <= alpha0:
             size += p0
-            power += p1
-        else:
-            power += (alpha0 - size) / p0 * p1  # randomise on the boundary
-            break
-    return max(0.0, 1.0 - power)
+            continue
+        # randomise on the boundary; the error is summed over the acceptance region itself,
+        # not as 1 - power, which would leave rounding of order 1e-16 in place of a tiny error
+        beta = (1.0 - (alpha0 - size) / p0) * p1
+        return beta + math.fsum(math.exp(log_pmf(j, theta1)) for j in order)
+    return 0.0
 
 
 def _attainable(family, theta0, theta1, alpha0, alpha1, n) -> bool:

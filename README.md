@@ -55,7 +55,7 @@ nonparametric monitoring, and a group sequential trial.
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
 | Group sequential trials | `GroupSequentialTest` (planned analyses; efficacy and non-binding futility boundaries; known or estimated variance) |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
-| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (median, no moment assumptions; paired data via topology) |
+| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (P(X > m) = P(X < m), the median for data without an atom at m; no moment assumptions; paired data via topology) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
 | Filtering and estimation | `LocalLevelKalman` (with control input), `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
 
@@ -76,7 +76,7 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   itself: θ* is placed where the maximum expected sample size is attained
   (Lorden's characterisation). For response
   rates 30% against 50% at error rates 0.05 it lowers the maximum expected
-  sample size from 52.9 (Wald's SPRT calibrated to the same errors) to
+  sample size from 50.8 (Wald's SPRT calibrated to the same errors) to
   45.2, and to 45.0 with the least favourable θ*. For a normal mean 0
   against 0.5 it needs 31.0 observations on average at θ*, against 31.3
   for Lorden's 2-SPRT with thresholds calibrated to the same errors: the

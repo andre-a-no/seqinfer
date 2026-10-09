@@ -237,6 +237,8 @@ def group_sequential_design(
     if not ts or any(b <= a for a, b in zip([0.0, *ts], ts, strict=False)) or abs(ts[-1] - 1.0) > 1e-12:
         raise ValueError("fractions must increase strictly and end at 1")
     side = alpha / 2.0 if two_sided else alpha
+    if side >= 0.5:
+        raise ValueError("a one-sided alpha must be below 0.5: the efficacy boundary has to be positive")
     spend = spending_function(spending, side)
     cumulative = [spend(t) for t in ts]
     if abs(cumulative[-1] - side) > 1e-9 or any(b < a for a, b in zip([0.0, *cumulative], cumulative, strict=False)):

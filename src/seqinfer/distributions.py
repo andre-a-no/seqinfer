@@ -14,12 +14,12 @@ import math
 
 
 def _beta_continued_fraction(a: float, b: float, x: float) -> float:
-    tiny, eps = 1e-300, 1e-16
+    tiny, eps = 1e-300, 2.3e-16  # two units in the last place: |delta - 1| can stick at 2**-53
     qab, qap, qam = a + b, a + 1.0, a - 1.0
     c, d = 1.0, 1.0 - qab * x / qap
     d = 1.0 / (d if abs(d) > tiny else tiny)
     h = d
-    for m in range(1, 1000):
+    for m in range(1, 20000):
         m2 = 2 * m
         aa = m * (b - m) * x / ((qam + m2) * (a + m2))
         d = 1.0 + aa * d
@@ -37,6 +37,25 @@ def _beta_continued_fraction(a: float, b: float, x: float) -> float:
         if abs(delta - 1.0) < eps:
             return h
     raise ArithmeticError("incomplete beta continued fraction did not converge")
+
+
+def _beta_factor(a: float, b: float, x: float) -> float:
+    """F with I_x(a, b) = x^a (1 - x)^b F / (a B(a, b)); F = 2F1(a + b, 1; a + 1; x).
+
+    The continued fraction converges slowly, or not at all, when a is huge and
+    x small (a t tail far out with df beyond 1e13).  For b <= 1 the terms of the
+    hypergeometric series shrink at least by the factor x, so for x <= 1/2 the
+    series converges in about 55 terms whatever a is.
+    """
+    if b <= 1.0 and x <= 0.5:
+        total, term, n = 1.0, 1.0, 0.0
+        while True:
+            term *= (a + b + n) / (a + 1.0 + n) * x
+            total += term
+            n += 1.0
+            if term <= 1e-17 * total:
+                return total
+    return _beta_continued_fraction(a, b, x)
 
 
 _SQRT2 = math.sqrt(2.0)
@@ -80,8 +99,8 @@ def regularized_beta(
     log_x, log_y = logs if logs is not None else (math.log(x), math.log(y))
     log_front = _log_inverse_beta(a, b) + a * log_x + b * log_y
     if x < (a + 1.0) / (a + b + 2.0):
-        return math.exp(log_front) * _beta_continued_fraction(a, b, x) / a
-    return 1.0 - math.exp(log_front) * _beta_continued_fraction(b, a, y) / b
+        return math.exp(log_front) * _beta_factor(a, b, x) / a
+    return 1.0 - math.exp(log_front) * _beta_factor(b, a, y) / b
 
 
 def _log_normal_upper(z: float) -> float:
@@ -104,11 +123,16 @@ def _fisher_correction(t: float, df: float) -> float:
 
     The coefficients were checked against 120-digit evaluations of the incomplete beta function.
     """
-    t2 = t * t
-    g1 = t * (t2 + 1.0) / 4.0
-    g2 = t * (((3.0 * t2 - 7.0) * t2 - 5.0) * t2 - 3.0) / 96.0
-    g3 = t * (((((t2 - 11.0) * t2 + 14.0) * t2 + 6.0) * t2 - 3.0) * t2 - 15.0) / 384.0
-    return (g1 + (g2 + g3 / df) / df) / df
+    # g1/df + g2/df^2 + g3/df^3 with g1 = t(t^2 + 1)/4, g2 = t(3t^6 - 7t^4 - 5t^2 - 3)/96,
+    # g3 = t(t^10 - 11t^8 + 14t^6 + 6t^4 - 3t^2 - 15)/384, in u = t^2/df, w = t^4/df and
+    # v = 1/df: where the expansion applies w is below 1, so nothing overflows or meets 0 * inf
+    root = math.sqrt(df)
+    r2 = t * t / root if t < 1e150 else (t / math.sqrt(root)) ** 2  # t^2 / sqrt(df)
+    u, w, v = r2 / root, r2 * r2, 1.0 / df
+    first = (u + v) / 4.0
+    second = (3.0 * w * u - 7.0 * u * u - 5.0 * u * v - 3.0 * v * v) / 96.0
+    third = (w * w * u - 11.0 * w * u * u + 14.0 * u**3 + 6.0 * u * u * v - 3.0 * u * v * v - 15.0 * v**3) / 384.0
+    return t * (first + second + third)
 
 
 def _normal_applies(t: float, df: float) -> bool:
@@ -119,17 +143,22 @@ def _normal_applies(t: float, df: float) -> bool:
 def _log_huge_df_tail(t: float, df: float) -> float:
     """log P(T > t) for df > 1e15 beyond the reach of Fisher's expansion (t > 2000).
 
-    P(T > t) = f(t) (1 + t^2/df) / t (1 + O(1/t^2)), f the density: the error of
-    the logarithm is below 1e-6, against a logarithm below -2e6.
+    P(T > t) = f(t) (1 + t^2/df) / t * df/(df + 1) * (1 - (1/t^2 - 1/df)/(1 + 1/df) + O(1/t^4)),
+    f the density: the error of the logarithm is below 1e-12, against a logarithm below -2e6.
     """
     s = t / math.sqrt(df)
     log1p_s2 = math.log1p(s * s) if s < 1e150 else 2.0 * math.log(s)
-    log_density = _lgamma_ratio(0.5 * df, 0.5) - 0.5 * math.log(df * math.pi) - 0.5 * (df + 1.0) * log1p_s2
-    return log_density - math.log(t) + log1p_s2
+    log_density = _lgamma_ratio(0.5 * df, 0.5) - 0.5 * (math.log(df) + math.log(math.pi)) - 0.5 * (df + 1.0) * log1p_s2
+    # Laplace: integral of e^-g from t is e^-g(t) / g'(t) (1 - g''(t) / g'(t)^2 + O(t^-4)),
+    # g' = (df + 1) t / (df + t^2), g'' / g'^2 = (df - t^2) / ((df + 1) t^2)
+    correction = math.log1p(-(1.0 / (t * t) - 1.0 / df) / (1.0 + 1.0 / df))
+    return log_density - math.log(t) + log1p_s2 - math.log1p(1.0 / df) + correction
 
 
 def _upper_tail(t: float, df: float) -> float:
     """P(T > t) for t >= 0."""
+    if t == 0.0:
+        return 0.5
     if _normal_applies(t, df):
         return 0.5 * math.erfc(t / _SQRT2)
     if df > _HUGE_DF and not _fisher_applies(t, df):
@@ -170,6 +199,8 @@ def _beta_upper_tail(t: float, df: float) -> float:
 
 def _log_upper_tail(t: float, df: float) -> float:
     """log P(T > t) for t >= 0, also where the tail underflows."""
+    if t == 0.0:
+        return math.log(0.5)
     if _normal_applies(t, df):
         return _log_normal_upper(t)
     if df > _HUGE_DF and not _fisher_applies(t, df):
@@ -190,7 +221,7 @@ def _log_upper_tail(t: float, df: float) -> float:
     # deep in the tail x is small, so I_x comes from the direct continued fraction: take its logarithm
     x, _, (log_x, log_y) = _beta_arguments(t, df)
     log_front = _log_inverse_beta(a, 0.5) + a * log_x + 0.5 * log_y
-    return math.log(0.5) + log_front + math.log(_beta_continued_fraction(a, 0.5, x)) - math.log(a)
+    return math.log(0.5) + log_front + math.log(_beta_factor(a, 0.5, x)) - math.log(a)
 
 
 def _check_df(df: float) -> None:
