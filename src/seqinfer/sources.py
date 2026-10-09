@@ -158,8 +158,10 @@ class ObservationLog:
     holds back (the `sequence` policy) are not in it, so that the log
     position and the source positions in a checkpoint describe the same
     cut.  Invalid values are logged as they were, and a replay skips them
-    as the run did.  With a path, lines are appended as JSON; without
-    one, the log lives in memory.
+    as the run did; an observation delivery cannot handle at all (see
+    `seqinfer.core.envelope_problem`) is never delivered, so never logged.
+    With a path, lines are appended as JSON; without one, the log lives in
+    memory.
 
     The log has a position -- number of records, byte offset and a hash
     chain over the records -- that a run stores in its checkpoint.

@@ -1136,9 +1136,9 @@ round-trips), string escaping and key order. Integers that a binary64
 value cannot hold exactly are refused by the input contracts, and 64-bit
 values such as $R_t$ are stored as strings. The same requirement applies
 earlier, to observations: one whose value cannot be recorded exactly in
-JSON (a non-finite number, an integer beyond $2^{53}$, a key that is not
-a string) is invalid input, rejected before it reaches a topology
-buffer, so that neither the observation log nor a checkpoint ever holds
+JSON (a non-finite number, an integer beyond $2^{53}$, a string that
+UTF-8 cannot encode, a source name that is not a string) is invalid
+input, rejected before it reaches a topology buffer, so that neither the observation log nor a checkpoint ever holds
 a value that a replay would read back differently.
 
 % ------------------------------------------------------------

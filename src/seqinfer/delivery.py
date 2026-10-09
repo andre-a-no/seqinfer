@@ -32,6 +32,10 @@ class Delivery:
     def __init__(self, policy: str = "arrival", *, dedup: bool = True, start: int = 0):
         if policy not in POLICIES:
             raise ValueError(f"unknown delivery policy {policy!r}")
+        if type(start) is not int or abs(start) > 2**53:
+            raise ValueError(f"start must be an int within 2**53, got {start!r}")
+        if type(dedup) is not bool:
+            raise ValueError(f"dedup must be True or False, got {dedup!r}")
         self.policy = policy
         self.dedup = dedup
         self.start = start
@@ -117,7 +121,16 @@ class Delivery:
         }
 
     def restore(self, state: dict) -> None:
-        self._next = {s: int(n) for s, n in state["next"].items()}
-        self._ahead = {s: set(a) for s, a in state.get("ahead", {}).items()}
+        """Restore positions from a checkpoint; a value of the wrong type is refused (ValueError), not converted."""
+
+        def position(n) -> int:
+            if type(n) is not int:
+                raise ValueError(f"sequence position {n!r} is not an integer")
+            return n
+
+        self._next = {s: position(n) for s, n in state["next"].items()}
+        self._ahead = {s: {position(n) for n in a} for s, a in state.get("ahead", {}).items()}
         self._pending = {}
-        self.duplicates = int(state.get("duplicates", 0))
+        self.duplicates = position(state.get("duplicates", 0))
+        if self.duplicates < 0:
+            raise ValueError("negative duplicate count")

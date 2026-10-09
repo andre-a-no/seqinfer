@@ -18,6 +18,7 @@ ordering policy is part of the experiment and is recorded in provenance.
 """
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable, Sequence
@@ -152,8 +153,8 @@ class TimeAlign(_Buffered):
         super().__init__(inputs)
         if len(self.inputs) != 2:
             raise ValueError("time alignment is defined for exactly two inputs")
-        if tolerance < 0:
-            raise ValueError("tolerance must be non-negative")
+        if type(tolerance) not in (int, float) or not (0 <= tolerance < math.inf):
+            raise ValueError(f"tolerance must be a finite non-negative number, got {tolerance!r}")
         self.tolerance = float(tolerance)
         self.unmatched = 0
         self._queues: dict[str, deque] = {n: deque() for n in self.inputs}

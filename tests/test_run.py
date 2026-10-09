@@ -562,6 +562,112 @@ class SecondReviewRegressions(unittest.TestCase):
         Run.restore(MeanDifference(), checkpoint, topology=PositionalPair(("a", "b")), log=log)
 
 
+class ThirdReviewRegressions(unittest.TestCase):
+    """Defects found by the third review of the runtime; each test reproduces one."""
+
+    def assert_invalid(self, run, obs):
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            run.offer(obs)
+        self.assertEqual(logs.records[-1].incident["action"], "skipped")
+        self.assertIs(run.status, RunStatus.RUNNING)
+
+    def test_unrecordable_envelopes_are_invalid_input_and_checkpoints_stay_possible(self):
+        cases = [
+            (Independent, Observation("x", 1.0, seq=2**60)),
+            (Independent, Observation("x", 1.0, source=3, seq=0)),  # was restored as "3": duplicates came back
+            (Independent, Observation("x", 1.0, seq="0")),
+            (Independent, Observation("\ud800", 1.0)),
+            (lambda: KeyJoin(["x", "y"]), Observation("x", 1.0, key=2**60)),
+            (lambda: KeyJoin(["x", "y"]), Observation("x", 1.0, key="\ud800")),
+            (Independent, Observation("x", "\ud800")),
+            (Independent, {"input": "x", "value": 1.0}),  # not an Observation: used to fail the run
+        ]
+        for make, obs in cases:
+            with self.subTest(obs=obs):
+                run = Run(EMA(0.5), topology=make())
+                run.start()
+                self.assert_invalid(run, obs)
+                checkpoint = json.loads(json.dumps(run.checkpoint()))
+                Run.restore(EMA(0.5), checkpoint, topology=make())
+
+    def test_time_beyond_2_53_is_invalid(self):
+        from seqinfer import TimeAlign
+
+        run = Run(EMA(0.5), topology=TimeAlign(["x", "y"], 1.0))
+        run.start()
+        self.assert_invalid(run, Observation("x", 1.0, time=2**60))
+        run.checkpoint()
+
+    def test_constructor_arguments_are_checked(self):
+        from seqinfer import TimeAlign
+
+        with self.assertRaises(TypeError):
+            Run(EMA(0.5), log="path.jsonl")
+        with self.assertRaises(ValueError):
+            Run(EMA(0.5), run_id=5)
+        for bad in (2**60, "0", 1.5):
+            with self.subTest(start=bad), self.assertRaises(ValueError):
+                Delivery(start=bad)
+        for bad in (float("nan"), float("inf"), -1.0):
+            with self.subTest(tolerance=bad), self.assertRaises(ValueError):
+                TimeAlign(["a", "b"], bad)
+
+    def test_restore_cross_checks_derived_fields(self):
+        sprt = SPRT(Gaussian(1.0), 0.0, 1.0, 0.05, 0.05)
+        run = Run(sprt)
+        run.start()
+        for _ in range(40):
+            run.offer(Observation("x", 3.0))
+        self.assertTrue(run.terminal)
+        checkpoint = json.loads(json.dumps(run.checkpoint()))
+        checkpoint["terminal"] = False
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "terminal"):
+            Run.restore(sprt, checkpoint)
+
+        pf = BootstrapParticleFilter(0.1, 1.0, particles=8)
+        checkpoint = json.loads(json.dumps(Run(pf, seed=1).checkpoint()))
+        checkpoint["rng"] = None
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "random state"):
+            Run.restore(pf, checkpoint)
+        checkpoint = json.loads(json.dumps(Run(EMA(0.5)).checkpoint()))
+        checkpoint["rng"] = "0123456789abcdef"
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "random state"):
+            Run.restore(EMA(0.5), checkpoint)
+
+    def test_tampered_buffers_are_refused(self):
+        def taken(topology, *observations):
+            run = Run(EMA(0.5), topology=topology)
+            run.start()
+            for obs in observations:
+                run.offer(obs)
+            return json.loads(json.dumps(run.checkpoint()))
+
+        pair = lambda: PositionalPair(["a", "b"])
+        edits = [
+            (Independent, lambda c: c["delivery"]["state"].update(next=[])),
+            (Independent, lambda c: c["delivery"]["state"].update(next={"a": 2.7})),
+            (Independent, lambda c: c["delivery"]["state"].update(duplicates=-1)),
+            (pair, lambda c: c["topology"]["state"].update(a="xy")),
+            (pair, lambda c: c["topology"]["state"].update(c=[1.0])),
+            (Independent, lambda c: c["counters"].update(invalid_skipped=-1)),
+            (Independent, lambda c: c.update(consumer_errors="x")),
+        ]
+        for make, edit in edits:
+            checkpoint = taken(make(), Observation("x" if make is Independent else "a", 1.0, seq=0))
+            Run.restore(EMA(0.5), json.loads(json.dumps(checkpoint)), topology=make())  # untouched: fine
+            edit(checkpoint)
+            with self.subTest(checkpoint=checkpoint), self.assertRaises(IncompatibleCheckpoint):
+                Run.restore(EMA(0.5), checkpoint, topology=make())
+
+    def test_the_incident_that_stops_a_streak_says_so(self):
+        run = Run(EMA(0.5), max_invalid_streak=2)
+        run.start()
+        with self.assertLogs("seqinfer", "WARNING") as logs, self.assertRaises(InvalidInputStreak):
+            run.offer(Observation("x", "a"))
+            run.offer(Observation("x", "b"))
+        self.assertEqual([r.incident["action"] for r in logs.records], ["skipped", "stopped"])
+
+
 class StreamFailure(Exception):
     """An application's own error type for invalid input."""
 

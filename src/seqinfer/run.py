@@ -25,7 +25,7 @@ from typing import Any
 from .canonical import canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
-from .core import Observation, Procedure, StatInput, checked_step, recording_problem, statistical_rng
+from .core import Observation, Procedure, StatInput, checked_step, envelope_problem, recording_problem, statistical_rng
 from .delivery import Delivery
 from .errors import ContractViolation, IncompatibleCheckpoint, InvalidInputStreak, LifecycleError, NumericalError
 from .rng import SplitMix64
@@ -145,8 +145,19 @@ def validate_checkpoint(checkpoint: Any) -> None:
             raise bad("log digest is not a SHA-256 hex digest")
         if log.get("sync") not in (None, "flush", "fsync"):
             raise bad("log sync must be 'flush' or 'fsync'")
-    if not all(isinstance(v, int) and not isinstance(v, bool) for v in checkpoint["counters"].values()):
-        raise bad("counters must be integers")
+    if not all(type(v) is int and v >= 0 for v in checkpoint["counters"].values()):
+        raise bad("counters must be non-negative integers")
+    errors = checkpoint.get("consumer_errors", [])
+    if not isinstance(errors, list) or not all(isinstance(e, dict) for e in errors):
+        raise bad("consumer_errors must be a list of objects")
+
+
+def _utf8(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _normalize(obj: Any) -> Any:
@@ -173,6 +184,11 @@ class Run:
         policy = _policy_spec(on_invalid)
         if max_invalid_streak is not None and (type(max_invalid_streak) is not int or max_invalid_streak < 1):
             raise ValueError("max_invalid_streak must be a positive integer or None")
+        if log is not None and not isinstance(log, ObservationLog):
+            raise TypeError(f"log must be an ObservationLog or None, got {type(log).__qualname__}; "
+                            f"wrap a path as ObservationLog(path)")
+        if run_id is not None and not (type(run_id) is str and run_id and _utf8(run_id)):
+            raise ValueError("run_id must be a non-empty str")
         if isinstance(log, ObservationLog) and not log.is_empty():
             raise ValueError(
                 f"log {log.path or '(in memory)'} already holds records; a new run needs an empty log. "
@@ -275,8 +291,13 @@ class Run:
         self._enter()
         self._busy = True
         try:
-            events = []
+            events: list[OutputEvent] = []
             try:
+                problem = envelope_problem(obs)
+                if problem is not None:
+                    observation = obs if isinstance(obs, Observation) else None
+                    self._invalid(ContractViolation(problem), "observation", observation=observation)
+                    return events
                 for delivered in self.delivery.push(obs):
                     if self.log is not None:
                         self.log.append(delivered)
@@ -338,10 +359,15 @@ class Run:
             where = f" from source {observation.source!r}"
             if observation.seq is not None:
                 where += f" seq {observation.seq}"
-        action = "skipped" if self.on_invalid == "skip" else "rejected"
+        if self.on_invalid != "skip":
+            action = "rejected"
+        elif self.max_invalid_streak is not None and self.counters["invalid_streak"] + 1 >= self.max_invalid_streak:
+            action = "stopped"  # the last of a streak stops the run
+        else:
+            action = "skipped"
         logger.warning(
-            "run %s: %s invalid input%s after t=%d (%s): %s",
-            self.run_id, action, where, self.t, stage, violation,
+            "run %s: invalid input%s after t=%d (%s), %s: %s",
+            self.run_id, where, self.t, stage, "run stopped" if action == "stopped" else action, violation,
             extra={
                 "incident": {
                     "kind": "invalid_input",
@@ -437,7 +463,7 @@ class Run:
                 "topology": {"spec": self.topology.spec(), "state": self.topology.state()},
                 "delivery": {"spec": self.delivery.spec(), "state": self.delivery.state()},
                 "history_digest": self.history_digest,
-                "log": self.log.state() if hasattr(self.log, "state") else None,
+                "log": self.log.state() if self.log is not None else None,
                 "counters": self.counters,
                 "consumer_errors": self.consumer_errors,
                 "provenance": self.provenance,
@@ -539,8 +565,21 @@ class Run:
         try:
             topology.restore(checkpoint["topology"]["state"])
             delivery.restore(checkpoint["delivery"]["state"])
-        except (KeyError, TypeError, ValueError) as error:
+        except (KeyError, TypeError, ValueError, AttributeError) as error:
             raise IncompatibleCheckpoint(f"malformed checkpoint: buffers cannot be restored ({error!r})") from error
+        for part, restored in (("topology", topology.state()), ("delivery", delivery.state())):
+            if _normalize(restored) != checkpoint[part]["state"]:  # extra, missing or retyped entries
+                raise IncompatibleCheckpoint(f"malformed checkpoint: {part} state does not round-trip")
+        if checkpoint["terminal"] != procedure.is_terminal(run.state):
+            raise IncompatibleCheckpoint(
+                f"malformed checkpoint: terminal is {checkpoint['terminal']}, but the state says "
+                f"{procedure.is_terminal(run.state)}"
+            )
+        if (checkpoint["rng"] is None) == bool(getattr(procedure, "randomized", False)):
+            raise IncompatibleCheckpoint(
+                f"malformed checkpoint: {procedure.name} is "
+                f"{'randomized and needs' if procedure.randomized else 'deterministic and has no'} a random state"
+            )
         run.rng_state = None if checkpoint["rng"] is None else int(checkpoint["rng"], 16)
         run.t = checkpoint["t"]
         run.terminal = checkpoint["terminal"]

@@ -82,26 +82,63 @@ _MAX_EXACT = 2**53
 UNRECORDABLE = "$unrecordable"
 
 
+def _text(v: Any) -> bool:
+    """A str that UTF-8 can encode (no lone surrogates): JSON files and hashes need its bytes."""
+    if type(v) is not str:
+        return False
+    try:
+        v.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _exact_int(v: Any) -> bool:
+    return type(v) is int and abs(v) <= _MAX_EXACT
+
+
 def _plain_value(v: Any) -> bool:
     if type(v) is float:
         return math.isfinite(v)
     if type(v) is int:
         return abs(v) <= _MAX_EXACT
+    if type(v) is str:
+        return _text(v)
     if type(v) in _PLAIN:
         return True
     if type(v) is list:
         return all(_plain_value(x) for x in v)
     if type(v) is dict:
-        return UNRECORDABLE not in v and all(type(k) is str and _plain_value(x) for k, x in v.items())
+        return UNRECORDABLE not in v and all(_text(k) and _plain_value(x) for k, x in v.items())
     return False
+
+
+def envelope_problem(obs: Any) -> str | None:
+    """Why delivery cannot handle an arriving observation, or None if it can.
+
+    Delivery orders and deduplicates by source and sequence number, and
+    checkpoints its position per source, so these must be exact: the input
+    and source names strings, the sequence number None or an int within
+    2**53.  Such an observation is invalid input; it is not delivered, so
+    it is not in the observation log either.
+    """
+    if not isinstance(obs, Observation):
+        return f"expected an Observation, got {type(obs).__qualname__}; adapters wrap values in Observation(...)"
+    if not _text(obs.input):
+        return f"input name {obs.input!r} must be a str"
+    if not _text(obs.source):
+        return f"source {obs.source!r} must be a str (it names the source in checkpoints)"
+    if obs.seq is not None and not _exact_int(obs.seq):
+        return f"sequence number {obs.seq!r} must be None or an int within 2**53"
+    return None
 
 
 def recording_problem(obs: Observation) -> str | None:
     """Why an observation cannot be recorded exactly, or None if it can.
 
     Values must be int, float, str, bool, None, or lists and dicts (with
-    string keys) of these, with floats finite and integers within 2**53;
-    keys str or int; event times finite numbers.
+    string keys) of these, with floats finite, integers within 2**53 and
+    strings encodable as UTF-8; keys str or int; event times finite numbers.
     Anything else -- numpy scalars, Fraction, tuples, UUIDs, subclasses of
     int or float -- would come back from an observation log as something
     else, so a run treats such an observation as invalid input, whether or
@@ -112,10 +149,12 @@ def recording_problem(obs: Observation) -> str | None:
             f"value {obs.value!r} of type {type(obs.value).__qualname__} cannot be recorded exactly; "
             f"convert it in the adapter to int, float (finite), str, bool, None, or a list or dict of these"
         )
-    if obs.key is not None and type(obs.key) not in (str, int):
-        return f"key {obs.key!r} must be a str or an int; build composite keys as strings in the adapter"
-    if obs.time is not None and (type(obs.time) not in (int, float) or not math.isfinite(obs.time)):
-        return f"event time {obs.time!r} must be a finite int or float"
+    if obs.key is not None and not (_text(obs.key) or _exact_int(obs.key)):
+        return (
+            f"key {obs.key!r} must be a str or an int within 2**53; build composite keys as strings in the adapter"
+        )
+    if obs.time is not None and not (_exact_int(obs.time) or (type(obs.time) is float and math.isfinite(obs.time))):
+        return f"event time {obs.time!r} must be a finite float or an int within 2**53"
     return None
 
 

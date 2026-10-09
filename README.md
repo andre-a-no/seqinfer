@@ -119,7 +119,9 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
   makes it fatal; `max_invalid_streak=N` stops the run after N invalid
   inputs in a row, when the source rather than a message is broken. Contracts are strict: `numpy` scalars, booleans and
   strings are refused with a message saying how to convert them. Observations must be exactly recordable in JSON
-  (finite numbers, integers within 2^53, string keys); others are invalid input, so logs and checkpoints always replay.
+  (finite numbers, integers within 2^53, UTF-8 strings, string source names, int sequence numbers); others are
+  invalid input, so logs and checkpoints always replay. One that delivery cannot even order (a source that is not a
+  string, a sequence number that is not an int) is rejected before delivery and is not logged.
 - **Numerical failures are loud.** A transition that overflows or produces a non-finite state or output raises
   `NumericalError` and commits nothing; variance-based tests also raise it when rescaled data make the variance underflow.
 - **Portable digests.** History digests and checkpoint identifiers use
