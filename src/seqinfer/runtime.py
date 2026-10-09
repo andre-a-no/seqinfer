@@ -55,8 +55,8 @@ async def run_async(
     Each producer pushes into one bounded queue; a single consumer drains
     it into the run.  `overflow="block"` applies backpressure to producers.
     `overflow="drop"` discards observations when the queue is full; that
-    changes the observation history, so drops are counted on the run and
-    end up in its provenance.
+    changes the observation history, so drops are counted on the run
+    (``counters["dropped_by_runtime"]``) and recorded in its checkpoint.
     """
     if overflow not in ("block", "drop"):
         raise ValueError("overflow must be 'block' or 'drop'")

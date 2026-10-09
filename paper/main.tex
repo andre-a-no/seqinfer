@@ -902,8 +902,8 @@ per-source sequence-number order, event-time order, or an explicit
 ordering key. A per-source policy does not fix the interleaving
 \emph{between} sources. If the topology is confluent that does not
 matter. If it is not, either a total order is imposed, for instance by
-merging on event time, or the realized arrival order is logged so that
-it can be replayed (\cref{sec:replay}).
+merging on event time, or the realized order of delivery is logged so
+that it can be replayed (\cref{sec:replay}).
 
 % ------------------------------------------------------------
 \subsection{Batching}
@@ -1067,7 +1067,8 @@ make it unusable. The reference implementation therefore skips invalid
 inputs by default: an observation the topology cannot use, a statistical
 input that violates its contract, or one that the transition itself
 finds invalid. Nothing is committed, so skipping is exact. Every such
-input is counted and reported as an incident, whatever the policy.
+input is reported as an incident, whatever the policy, and counted
+when it is skipped.
 Stopping the run on invalid input is an explicit choice, and the
 experimenter may name the error it raises. A separate threshold stops
 the run after a given number of consecutive invalid inputs: one bad
@@ -1101,8 +1102,8 @@ Topology state & observations consumed from sources but not yet applied \\
 Source positions & where each source resumes: file offsets, cursors,
 broker offsets, sequence numbers \\
 History digest & identifies the input history that led to $S_t$ \\
-Arrival log position & record count, byte offset and hash chain of the
-observation log, if one is kept \\
+Observation log position & record count, byte offset and hash chain of
+the observation log, if one is kept \\
 Provenance & see \cref{sec:provenance} \\
 Format version & allows the checkpoint format to evolve \\
 \bottomrule
@@ -1153,12 +1154,15 @@ log that can be discarded once the run has finished.
 \label{sec:replay}
 
 Because a procedure sees only logical inputs, the same input can be
-supplied by a live source, by historical data, by a recorded arrival
-log, or by a simulator. Replay is then ordinary execution with a
+supplied by a live source, by historical data, by a recorded
+observation log, or by a simulator. Replay is then ordinary execution with a
 different adapter. It supports debugging, regression testing, comparison
 of methods on identical histories, and regeneration of figures.
 
-An arrival log is part of the run's persistent state. The checkpoint
+An observation log is part of the run's persistent state. It records
+the observations delivery passes on, not every arrival: duplicates and
+observations still held back are left out, so that its position and the
+source positions describe the same cut. The checkpoint
 records its position, and restoring the checkpoint verifies the log
 against the recorded hash chain and cuts it back to that position:
 observations logged after the checkpoint belong to an execution that
@@ -1498,7 +1502,7 @@ the multipliers by Broyden's method takes a few passes. The resulting
 plan is executed by the same plan executor. For $\theta_0=0.3$ against
 $\theta_1=0.5$ with $\alpha_0=\alpha_1=0.05$ and $H=150$, it attains
 error probabilities $0.0498$ and $0.0496$ and a maximum expected sample
-size of $45.1$, against $52.9$ for Wald's SPRT calibrated to the same
+size of $45.2$, against $52.9$ for Wald's SPRT calibrated to the same
 error probabilities. The value of the Lagrangian obtained by backward
 induction agrees with the forward evaluation of the plan to machine
 precision, and the exact operating characteristic agrees with
@@ -1506,8 +1510,10 @@ simulation through the executor. For a normal mean, $\theta_0=0$ against
 $\theta_1=0.5$ with $\sigma=1$, the plan computed on a lattice of step
 $\sigma/16$ has error probabilities $0.0515\pm0.0015$ when executed on
 simulated normal data, and an expected sample size at $\theta^*$ of
-$31.1$, against $36.9$ for the 2-SPRT with thresholds calibrated to the
-same error probabilities.
+$31.0$. The 2-SPRT with thresholds calibrated to the same error
+probabilities ($a=2.16$) needs $31.3$: in this example Lorden's
+approximation is within about one percent of the optimum, which the
+backward induction makes it possible to quantify.
 
 The modified problem fixes $\theta^*$. The Kiefer--Weiss problem asks
 for the $\theta^*$ at which the resulting test has the smallest maximum
@@ -1608,7 +1614,7 @@ sources redeliver observations from before the checkpoint.
 
 \begin{invariant}[Replay equivalence]
 \label{inv:replay}
-Replaying the recorded arrival history of a run through the same
+Replaying the recorded delivered history of a run through the same
 delivery policy and topology reproduces its trajectory and its history
 digest.
 \end{invariant}
@@ -1794,9 +1800,9 @@ design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the
 gap described in \cref{sec:introduction} calls for. It is a single
-process and has not been evaluated for throughput. Its only adapter for
-recorded data reads CSV files; it contains none for instruments or
-message brokers. Cross-language agreement is
+process and has not been evaluated for throughput. Its adapters read
+CSV files, simulate, and replay recorded observation logs; it contains
+none for instruments or message brokers. Cross-language agreement is
 demonstrated bitwise for the history digest and for the SPRT, but not
 yet for a complete second implementation, nor at the tolerance and
 decision levels for procedures that use transcendental functions, whose

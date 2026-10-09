@@ -432,7 +432,7 @@ def kiefer_weiss_plan(
 ) -> KieferWeissDesign:
     """Optimal plan with at most `horizon` observations; see the module docstring.
 
-    `family` is Bernoulli (default), Poisson or Gaussian.  The returned plan
+    `family` is Bernoulli (default), Poisson, Gaussian or Exponential.  The returned plan
     never exceeds the horizon and has error probabilities at most alpha0
     and alpha1 -- exactly for discrete data, on the lattice for normal data.
     Raises ValueError if no plan within the horizon can meet them.

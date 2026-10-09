@@ -77,8 +77,10 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   (Lorden's characterisation). For response
   rates 30% against 50% at error rates 0.05 it lowers the maximum expected
   sample size from 52.9 (Wald's SPRT calibrated to the same errors) to
-  45.1; for a normal mean 0 against 0.5 the expected sample size at θ* is
-  31.0 against 36.9 for the calibrated 2-SPRT. Seconds for discrete data,
+  45.2, and to 45.0 with the least favourable θ*. For a normal mean 0
+  against 0.5 it needs 31.0 observations on average at θ*, against 31.3
+  for Lorden's 2-SPRT with thresholds calibrated to the same errors: the
+  2-SPRT is already close to optimal there. Seconds for discrete data,
   under ten seconds for normal data.
 
 **Group sequential designs** (`seqinfer.group_sequential`):
