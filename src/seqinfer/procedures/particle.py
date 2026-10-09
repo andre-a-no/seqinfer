@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from ..contracts import InputContract
 from ..core import Procedure
-from ..numerics import logsumexp, require_finite
+from ..numerics import logsumexp, ordered_sum, require_finite
 
 
 @dataclass(frozen=True)
@@ -59,9 +59,9 @@ class BootstrapParticleFilter(Procedure):
         logw = [-0.5 * (y - p) ** 2 / self.r for p in cloud]
         norm = require_finite(logsumexp(logw), "log normalizing constant")
         w = [math.exp(lw - norm) for lw in logw]
-        mean = sum(wi * p for wi, p in zip(w, cloud, strict=True))
-        var = sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud, strict=True))
-        ess = 1.0 / sum(wi * wi for wi in w)
+        mean = ordered_sum(wi * p for wi, p in zip(w, cloud, strict=True))
+        var = ordered_sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud, strict=True))
+        ess = 1.0 / ordered_sum(wi * wi for wi in w)
         # systematic resampling: one uniform draw
         u = rng.random() / size
         resampled, i, cum = [], 0, w[0]

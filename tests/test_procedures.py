@@ -266,3 +266,27 @@ class TwoSample(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortableArithmetic(unittest.TestCase):
+    def test_the_inference_path_does_not_use_the_builtin_float_sum(self):
+        """sum() of floats changed in Python 3.12; trajectories must not depend on the Python version."""
+        import ast
+        from pathlib import Path
+
+        import seqinfer
+
+        root = Path(seqinfer.__file__).parent
+        files = [*sorted((root / "procedures").glob("*.py")), *(root / n for n in ("numerics.py", "core.py", "run.py"))]
+        offenders = []
+        for path in files:
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "sum":
+                    offenders.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(offenders, [], "use numerics.ordered_sum (or neumaier_add) for floats")
+
+    def test_ordered_sum_is_left_to_right(self):
+        from seqinfer.numerics import ordered_sum
+
+        values = [1e16, 1.0, -1e16, 1.0]
+        self.assertEqual(ordered_sum(values), ((1e16 + 1.0) - 1e16) + 1.0)

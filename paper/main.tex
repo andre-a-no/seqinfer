@@ -1222,6 +1222,16 @@ Compensation terms are part of the inferential state. A compensated sum
 that is restored without its compensation term continues with a
 different value than the uninterrupted run.
 
+Bitwise equality is fragile in ways that have nothing to do with the
+statistics. Python's built-in \code{sum} adds floating-point numbers with
+compensation since version~3.12 and without it before, so a particle
+filter whose weights are summed with it follows a different trajectory,
+in the last bits, on different versions of the same language. The
+reference implementation found this through its conformance vectors and
+now sums floats on the inference path only by an explicit left-to-right
+loop, or by the compensated sum whose correction term is stored in the
+state.
+
 The levels can be tested across implementations only if there is
 something to compare against. The reference implementation ships
 language-independent conformance vectors: for each of sixteen cases,

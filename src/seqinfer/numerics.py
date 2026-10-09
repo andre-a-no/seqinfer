@@ -27,6 +27,22 @@ def neumaier_add(total: float, comp: float, x: float) -> tuple[float, float]:
     return t, comp
 
 
+def ordered_sum(values: Iterable[float]) -> float:
+    """Plain left-to-right floating-point sum.
+
+    The built-in `sum` adds floats with compensation since Python 3.12 and
+    without it before, so its last bits depend on the Python version.  A
+    procedure's trajectory must not, and every other language can repeat
+    this loop exactly, so the inference path sums floats only with this
+    function (or with the compensated `neumaier_add`, when the
+    compensation is part of the state).
+    """
+    total = 0.0
+    for v in values:
+        total += v
+    return total
+
+
 def logsumexp(values: Iterable[float]) -> float:
     vals = list(values)
     if not vals:
@@ -34,7 +50,7 @@ def logsumexp(values: Iterable[float]) -> float:
     m = max(vals)
     if math.isinf(m):
         return m
-    return m + math.log(sum(math.exp(v - m) for v in vals))
+    return m + math.log(ordered_sum(math.exp(v - m) for v in vals))
 
 
 def require_finite(value: float, what: str) -> float:
