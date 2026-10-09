@@ -1035,7 +1035,7 @@ consequence. None of them modifies the inferential state.}
 \midrule
 Source error & adapter, runtime & run stays valid \\
 Delivery or ordering error & runtime, topology & run fails \\
-Validation error & input contract & input skipped (counted) or run fails \\
+Validation error & input contract, topology & input skipped and reported, or run fails \\
 Numerical or inference error & procedure & transition not committed; run fails \\
 Serialization error & persistence & previous checkpoint stays valid \\
 Consumer error & consumer & recorded; inference continues \\
@@ -1060,6 +1060,19 @@ nothing to roll back.
 A consumer failure is not an inference failure
 (\cref{pr:consumers}). A visualization that crashes must not invalidate
 an otherwise valid trajectory.
+
+An invalid input is not an inference failure either. A run does not
+control the stream it consumes, and a single malformed message must not
+make it unusable. The reference implementation therefore skips invalid
+inputs by default: an observation the topology cannot use, a statistical
+input that violates its contract, or one that the transition itself
+finds invalid. Nothing is committed, so skipping is exact. Every such
+input is counted and reported as an incident, whatever the policy.
+Stopping the run on invalid input is an explicit choice, and the
+experimenter may name the error it raises. The policy is recorded in
+provenance. Contracts themselves are strict: a value of a foreign
+numeric type, such as a \code{numpy} scalar, is refused with a message
+that says how to convert it in the adapter, rather than interpreted.
 
 % ------------------------------------------------------------
 \subsection{Checkpoints}
@@ -1086,6 +1099,8 @@ Topology state & observations consumed from sources but not yet applied \\
 Source positions & where each source resumes: file offsets, cursors,
 broker offsets, sequence numbers \\
 History digest & identifies the input history that led to $S_t$ \\
+Arrival log position & record count, byte offset and hash chain of the
+observation log, if one is kept \\
 Provenance & see \cref{sec:provenance} \\
 Format version & allows the checkpoint format to evolve \\
 \bottomrule
@@ -1110,6 +1125,13 @@ $h_t=H\bigl(h_{t-1}\,\|\,\mathrm{enc}(X_t)\bigr)$ for a cryptographic
 hash $H$ and a canonical encoding of statistical inputs. Two runs with
 equal digests applied the same input history, up to hash collisions. The digest lets a replay
 be verified without storing the history in the checkpoint.
+For the digest to be comparable across languages, the encoding must not
+depend on how a language prints floating-point numbers. The reference
+implementation uses the JSON Canonicalization Scheme~\cite{rfc8785},
+which fixes number formatting (the shortest representation that
+round-trips), string escaping and key order. Integers that a binary64
+value cannot hold exactly are refused by the input contracts, and 64-bit
+values such as $R_t$ are stored as strings.
 
 % ------------------------------------------------------------
 \subsection{Provenance}
@@ -1133,6 +1155,15 @@ supplied by a live source, by historical data, by a recorded arrival
 log, or by a simulator. Replay is then ordinary execution with a
 different adapter. It supports debugging, regression testing, comparison
 of methods on identical histories, and regeneration of figures.
+
+An arrival log is part of the run's persistent state. The checkpoint
+records its position, and restoring the checkpoint verifies the log
+against the recorded hash chain and cuts it back to that position:
+observations logged after the checkpoint belong to an execution that
+was abandoned. The run does not preserve them. After a restore they are
+delivered again by the sources from their recorded positions, and a
+source that cannot deliver past observations again must be buffered by
+the application, between the source and the run.
 
 A simulator can also close the loop of an adaptive experiment,
 \[
@@ -1188,6 +1219,14 @@ trajectories'' means. We distinguish four levels.
 Compensation terms are part of the inferential state. A compensated sum
 that is restored without its compensation term continues with a
 different value than the uninterrupted run.
+
+The levels can be tested across implementations only if there is
+something to compare against. The reference implementation ships
+language-independent conformance vectors: for each of fourteen cases,
+the inputs, every output, the final state, the random state and the
+history digest, all encoded canonically. A second implementation
+conforms bitwise if it reproduces them exactly, and at the tolerance or
+decision level if it reproduces them within its declared contract.
 
 % ============================================================
 \section{Consumers, Adapters, and Feedback}
@@ -1429,9 +1468,23 @@ as its configuration. The plan thereby becomes part of the procedure's
 identity and is recorded in provenance. As a check, the plan formed by
 the two boundary lines of the Gaussian 2-SPRT reproduced the stopping
 time and decision of the 2-SPRT on all $4\,000$ simulated paths we
-compared. Feeding the executor with plans from the design code
-of~\cite{novikov2022a,novikov2023} is the natural next step and is not
-part of this paper.
+compared.
+
+The reference implementation also contains the design side for
+Bernoulli observations, following~\cite{novikov2022a}: backward induction
+on the Lagrangian $E_{\theta^*}N+\lambda_0P_{\theta_0}(\text{reject})+
+\lambda_1P_{\theta_1}(\text{accept})$ over plans with horizon $H$
+\cite{lorden1980}, with the multipliers adjusted until the error
+probabilities, computed exactly by a forward recursion over the
+distribution of the running sum, meet their targets. The resulting plan
+is executed by the same plan executor. For $\theta_0=0.3$ against
+$\theta_1=0.5$ with $\alpha_0=\alpha_1=0.05$ and $H=150$, it attains
+error probabilities $0.0498$ and $0.0496$ and a maximum expected sample
+size of $45.1$, against $52.9$ for Wald's SPRT calibrated to the same
+error probabilities. The value of the Lagrangian obtained by backward
+induction agrees with the forward evaluation of the plan to machine
+precision, and the exact operating characteristic agrees with
+simulation through the executor.
 
 \paragraph{Validation.}
 A reference procedure can be validated against analytical facts without
@@ -1585,7 +1638,7 @@ same contracts, and implementations in different languages need not
 have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
-standard library and comprises about $2\,250$ lines, with one module per
+standard library and comprises about $3\,650$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1606,26 +1659,46 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes eight procedures: Wald's SPRT, the 2-SPRT of
-\cref{sec:kw}, an executor for precomputed sampling plans, a CUSUM
-detector, a Kalman filter for the local-level
-model with an optional control input, a bootstrap particle filter for
-the same model, a two-sample mean difference that accepts unpaired
-inputs, and an exponential moving average. It also includes four
-topology operators (independent, positional pairing, key join, time
-alignment), three delivery policies, a synchronous pull runtime, and an
-asynchronous push runtime with blocking or dropping backpressure.
+The implementation includes twelve procedures. For testing simple
+hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
+precomputed sampling plans. For anytime-valid inference: the mixture
+SPRT for a normal mean~\cite{robbins1970,johari2022}, with an
+always-valid $p$-value and a confidence sequence, and two nonparametric
+tests by betting~\cite{shafer2021,waudbysmith2024,ramdas2023}, one for the
+mean of bounded observations and a sign test for the median, both valid
+for every distribution satisfying the null hypothesis. For change-point
+detection: CUSUM~\cite{page1954} and the Shiryaev--Roberts
+procedure~\cite{shiryaev1963,roberts1966,pollak1985}. For filtering and
+estimation: a Kalman filter for the local-level model with an optional
+control input, a bootstrap particle filter for the same model, a
+two-sample mean difference that accepts unpaired inputs, and an
+exponential moving average. Likelihood-ratio procedures take one of four
+families (normal with known variance, Bernoulli, Poisson, exponential).
+A design module computes exact operating characteristics of plans for
+discrete data and optimal plans for Bernoulli data (\cref{sec:kw}). The
+implementation also includes four topology operators (independent,
+positional pairing, key join, time alignment), three delivery policies,
+a synchronous pull runtime, and an asynchronous push runtime with
+blocking or dropping backpressure.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for eight combinations of procedure and
+non-interference are checked for thirteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
-checked on representative cases. All seven hold bitwise. The suite has $56$
-tests in total; the remainder cover transactional updates, lifecycle
-transitions, delivery policies, compatibility checks on restore, and the
-statistical properties used in \cref{sec:kw}. \Cref{tab:oc} is produced
+checked on representative cases. All seven hold bitwise. The suite has
+$112$ tests in total; the remainder cover transactional updates,
+lifecycle transitions, delivery policies, invalid-input policies,
+compatibility checks on restore, the observation log, and the
+statistical properties claimed for each procedure: error rates under
+continuous monitoring, coverage of confidence sequences, run lengths to
+false alarm, and optimality of designed plans. \Cref{tab:oc} is produced
 by a script in the repository from a fixed seed.
+
+An independent implementation of the history digest and of the SPRT in
+JavaScript reproduces the conformance vectors bit for bit: all fourteen
+digests, the canonical encodings of 500 numbers, and every SPRT output
+for normal, Bernoulli and Poisson data.
 
 Two examples show what the separation buys. A paired test fed by two
 concurrent producers with random delays produces the same history
@@ -1659,14 +1732,16 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers eight procedures. It demonstrates
-the contract and the conformance tests; it is not yet the general-purpose
-library that the gap described in \cref{sec:introduction} calls for.
-It is a single process and has not been evaluated for throughput. It contains no adapters for real instruments
-or protocols. Its history digest depends on a language-specific
-encoding of floating-point values and is not yet comparable across
-languages. Cross-language agreement at the tolerance and decision
-levels is defined here but not demonstrated. Finally, the architecture
+The reference implementation covers twelve procedures and optimal
+design for Bernoulli data only. It demonstrates the contract and the
+conformance tests; it is not yet the general-purpose library that the
+gap described in \cref{sec:introduction} calls for. It is a single
+process and has not been evaluated for throughput. It contains no
+adapters for real instruments or protocols. Cross-language agreement is
+demonstrated bitwise for the history digest and for the SPRT, but not
+yet for a complete second implementation, nor at the tolerance and
+decision levels for procedures that use transcendental functions, whose
+last bits may differ between mathematical libraries. Finally, the architecture
 does not address the statistical validity of adaptive experiments
 (\cref{sec:feedback}). It makes the adaptation visible, and establishing
 validity remains the job of the statistical analysis.
