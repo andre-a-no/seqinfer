@@ -1,0 +1,338 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
+"""Statistical properties of the procedures and of the design module.
+
+Every claim a docstring makes about error rates, coverage or run lengths
+is checked here, by simulation with fixed seeds or by exact computation.
+Monte Carlo bounds allow three standard errors.
+"""
+import math
+import random
+import unittest
+
+from seqinfer import PositionalPair, Run, difference
+from seqinfer.design import kiefer_weiss_plan, operating_characteristic
+from seqinfer.design import _backward
+from seqinfer.procedures import (
+    REJECT_H0,
+    SPRT,
+    Bernoulli,
+    BettingMeanTest,
+    Exponential,
+    Gaussian,
+    NormalMixtureSPRT,
+    PlanTest,
+    Poisson,
+    SequentialSignTest,
+    ShiryaevRoberts,
+)
+from seqinfer.sources import from_values
+
+
+def run_length(proc, draw, horizon):
+    """Steps until the procedure stops, or None; and the last output."""
+    state, out = proc.initial_state(), None
+    for n in range(1, horizon + 1):
+        state, out = proc.step(state, {proc.input: draw()}, None)
+        if proc.is_terminal(state):
+            return n, out
+    return None, out
+
+
+def rejection_rate(proc, make_draw, reps, horizon, seed):
+    """Fraction of runs that reject H0 within the horizon."""
+    rnd = random.Random(seed)
+    rejected = 0
+    for _ in range(reps):
+        n, out = run_length(proc, make_draw(rnd), horizon)
+        rejected += n is not None and out.decision == REJECT_H0
+    return rejected / reps
+
+
+def upper_bound(p, reps):
+    return p + 3.0 * math.sqrt(p * (1.0 - p) / reps)
+
+
+def poisson_draw(rnd, lam):
+    def draw():
+        limit, k, prod = math.exp(-lam), 0, rnd.random()
+        while prod > limit:
+            k += 1
+            prod *= rnd.random()
+        return k
+
+    return draw
+
+
+class Families(unittest.TestCase):
+    def test_llr_is_the_difference_of_log_densities(self):
+        def log_poisson(x, lam):
+            return x * math.log(lam) - lam - math.lgamma(x + 1)
+
+        def log_exponential(x, rate):
+            return math.log(rate) - rate * x
+
+        for family, logpdf, xs, (a, b) in (
+            (Poisson(), log_poisson, [0, 1, 4, 17], (2.0, 3.5)),
+            (Exponential(), log_exponential, [0.0, 0.3, 2.5], (0.5, 2.0)),
+        ):
+            for x in xs:
+                self.assertAlmostEqual(family.llr(x, a, b), logpdf(x, a) - logpdf(x, b), places=12)
+
+    def test_kl_is_the_expected_llr(self):
+        a, b = 2.0, 3.5
+        pmf = (math.exp(k * math.log(a) - a - math.lgamma(k + 1)) for k in range(200))
+        exact = sum(p * Poisson().llr(k, a, b) for k, p in enumerate(pmf))
+        self.assertAlmostEqual(Poisson().kl(a, b), exact, places=12)
+        h = 1e-3  # midpoint rule on [0, 40]
+        integral = sum(a * math.exp(-a * (i + 0.5) * h) * Exponential().llr((i + 0.5) * h, a, b) * h for i in range(40_000))
+        self.assertAlmostEqual(Exponential().kl(a, b), integral, places=6)
+
+    def test_contracts(self):
+        run = Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise")
+        for bad in (-1, 1.5):
+            with self.subTest(bad=bad), self.assertRaises(Exception), self.assertLogs("seqinfer", "WARNING"):
+                Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise").step({"x": bad})
+        run.step({"x": 3})
+        with self.assertRaises(ValueError):
+            Exponential().check(0.0)
+
+    def test_sprt_error_rates_on_poisson_data(self):
+        proc = SPRT(Poisson(), 2.0, 3.0, 0.05, 0.05)
+        reps = 600
+        type1 = rejection_rate(proc, lambda r: poisson_draw(r, 2.0), reps, 10_000, 1)
+        self.assertLessEqual(type1, upper_bound(0.05, reps))
+        type2 = 1.0 - rejection_rate(proc, lambda r: poisson_draw(r, 3.0), reps, 10_000, 2)
+        self.assertLessEqual(type2, upper_bound(0.05, reps))
+
+
+class ShiryaevRobertsDetector(unittest.TestCase):
+    def test_average_run_length_to_false_alarm_is_at_least_the_threshold(self):
+        threshold, reps = 50.0, 600
+        proc = ShiryaevRoberts(Gaussian(1.0), 0.0, 1.0, threshold)
+        rnd = random.Random(2)
+        lengths = [run_length(proc, lambda: rnd.gauss(0.0, 1.0), 100_000)[0] for _ in range(reps)]
+        mean = sum(lengths) / reps
+        se = math.sqrt(sum((x - mean) ** 2 for x in lengths) / reps / reps)
+        self.assertGreaterEqual(mean + 3 * se, threshold)
+
+    def test_detects_a_change(self):
+        proc = ShiryaevRoberts(Gaussian(1.0), 0.0, 1.0, 1000.0)
+        rnd = random.Random(3)
+        delays = []
+        for _ in range(200):
+            draws = iter([rnd.gauss(0.0, 1.0) for _ in range(100)] + [rnd.gauss(1.0, 1.0) for _ in range(1000)])
+            n, _ = run_length(proc, lambda: next(draws), 1100)
+            if n is not None and n > 100:
+                delays.append(n - 100)
+        self.assertGreater(len(delays), 150)
+        self.assertLess(sum(delays) / len(delays), 25)  # log(1000) / KL = 13.8, plus overshoot
+
+    def test_first_step_from_zero(self):
+        proc = ShiryaevRoberts(Gaussian(1.0), 0.0, 1.0, 10.0)
+        state, out = proc.step(proc.initial_state(), {"x": 0.5}, None)
+        self.assertAlmostEqual(out.log_statistic, Gaussian(1.0).llr(0.5, 1.0, 0.0))
+        self.assertEqual(proc.decode_state(proc.encode_state(state)), state)
+
+
+class MixtureSPRT(unittest.TestCase):
+    def test_type_one_error_under_continuous_monitoring(self):
+        reps = 600
+        rate = rejection_rate(NormalMixtureSPRT(1.0, 0.5), lambda r: (lambda: r.gauss(0.0, 1.0)), reps, 1000, 4)
+        self.assertLessEqual(rate, upper_bound(0.05, reps))
+
+    def test_power(self):
+        rate = rejection_rate(NormalMixtureSPRT(1.0, 0.5), lambda r: (lambda: r.gauss(0.4, 1.0)), 100, 2000, 5)
+        self.assertEqual(rate, 1.0)
+
+    def test_confidence_sequence_covers_uniformly_over_time(self):
+        proc = NormalMixtureSPRT(1.0, 0.5, alpha=0.1, stop_on_reject=False)
+        rnd, reps, misses = random.Random(6), 600, 0
+        for _ in range(reps):
+            state = proc.initial_state()
+            for _ in range(400):
+                state, out = proc.step(state, {"x": rnd.gauss(2.0, 1.0)}, None)
+                if not out.lower <= 2.0 <= out.upper:
+                    misses += 1
+                    break
+        self.assertLessEqual(misses / reps, upper_bound(0.1, reps))
+
+    def test_p_value_and_interval_agree_with_the_test(self):
+        proc = NormalMixtureSPRT(1.0, 0.5, theta0=0.0, alpha=0.05, stop_on_reject=False)
+        rnd, state, last_p = random.Random(7), proc.initial_state(), 1.0
+        for _ in range(300):
+            state, out = proc.step(state, {"x": rnd.gauss(0.15, 1.0)}, None)
+            self.assertLessEqual(out.p_value, last_p)  # always-valid p-values only decrease
+            last_p = out.p_value
+            # the interval is the inverted test: it excludes theta0 exactly when the test rejects
+            if abs(out.log_lambda - math.log(20)) > 1e-9:
+                self.assertEqual(not out.lower <= 0.0 <= out.upper, out.log_lambda >= math.log(20))
+
+
+class BettingTests(unittest.TestCase):
+    def test_mean_test_is_valid_for_skewed_and_discrete_data(self):
+        reps = 600
+        for label, make in (
+            ("beta(0.5, 2)", lambda r: (lambda: r.betavariate(0.5, 2.0))),
+            ("two-point", lambda r: (lambda: float(r.random() < 0.2))),
+        ):
+            for alternative in ("two-sided", "greater", "less"):
+                with self.subTest(data=label, alternative=alternative):
+                    proc = BettingMeanTest(0.2, alternative=alternative)
+                    self.assertLessEqual(rejection_rate(proc, make, reps, 400, 8), upper_bound(0.05, reps))
+
+    def test_mean_test_power_and_direction(self):
+        greater = rejection_rate(BettingMeanTest(0.2), lambda r: (lambda: r.betavariate(0.75, 1.75)), 100, 2000, 9)
+        self.assertEqual(greater, 1.0)
+        wrong_side = rejection_rate(
+            BettingMeanTest(0.2, alternative="less"), lambda r: (lambda: r.betavariate(0.75, 1.75)), 300, 400, 10
+        )
+        self.assertLessEqual(wrong_side, upper_bound(0.05, 300))
+
+    def test_mean_test_does_not_depend_on_the_units(self):
+        rnd = random.Random(11)
+        data = [rnd.random() for _ in range(200)]
+        unit, scaled = BettingMeanTest(0.4), BettingMeanTest(40.0, 0.0, 100.0)
+        su, ss = unit.initial_state(), scaled.initial_state()
+        for v in data:
+            su, ou = unit.step(su, {"x": v}, None)
+            ss, os_ = scaled.step(ss, {"x": 100.0 * v}, None)
+            self.assertAlmostEqual(ou.log_wealth, os_.log_wealth, places=9)
+            self.assertAlmostEqual(100.0 * ou.estimate, os_.estimate, places=9)
+
+    def test_bounds_are_part_of_the_contract(self):
+        with self.assertLogs("seqinfer", "WARNING"):
+            run = Run(BettingMeanTest(0.5))
+            run.step({"x": 1.5})
+        self.assertEqual(run.counters["invalid_skipped"], 1)
+
+    def test_sign_test_is_valid_without_moments(self):
+        reps = 600
+
+        def cauchy(r, loc=0.0):
+            return lambda: loc + math.tan(math.pi * (r.random() - 0.5))
+
+        self.assertLessEqual(rejection_rate(SequentialSignTest(), cauchy, reps, 400, 12), upper_bound(0.05, reps))
+        ties = lambda r: (lambda: float(r.choice([-1, 0, 0, 1])))  # noqa: E731
+        self.assertLessEqual(rejection_rate(SequentialSignTest(), ties, reps, 400, 13), upper_bound(0.05, reps))
+        self.assertEqual(rejection_rate(SequentialSignTest(), lambda r: cauchy(r, 0.7), 100, 3000, 14), 1.0)
+
+    def test_sign_test_counts_ties(self):
+        proc = SequentialSignTest(1.0)
+        state = proc.initial_state()
+        for v in (1.0, 2.0, 1.0, 0.0):
+            state, out = proc.step(state, {"x": v}, None)
+        self.assertEqual((state.ties, state.n, out.estimate), (2, 2, 0.5))
+
+    def test_paired_sign_test_through_a_topology(self):
+        rnd = random.Random(15)
+        treated = [rnd.expovariate(1.0) + 0.8 for _ in range(400)]
+        control = [rnd.expovariate(1.0) for _ in range(400)]
+        run = Run(SequentialSignTest(0.0), topology=PositionalPair(("t", "c")).map(difference("t", "c"), "t-c"))
+        for a, b in zip(from_values("t", treated), from_values("c", control)):
+            run.offer(a)
+            run.offer(b)
+            if run.terminal:
+                break
+        self.assertTrue(run.terminal)
+        self.assertEqual(run.state.decision, REJECT_H0)
+
+
+class Design(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.design = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60)
+
+    def test_error_rates_are_met_exactly(self):
+        d = self.design
+        self.assertLessEqual(d.at_theta0.reject, 0.05)
+        self.assertLessEqual(d.at_theta1.accept, 0.1)
+        self.assertLessEqual(d.plan.horizon, 60)
+
+    def test_operating_characteristic_is_a_distribution(self):
+        for theta in (0.2, 0.35, 0.5):
+            oc = operating_characteristic(self.design.plan, Bernoulli(), theta)
+            self.assertAlmostEqual(oc.reject + oc.accept, 1.0, places=12)
+            self.assertAlmostEqual(sum(oc.stop), 1.0, places=12)
+            self.assertAlmostEqual(oc.expected_n, sum(n * p for n, p in enumerate(oc.stop, start=1)), places=9)
+
+    def test_backward_induction_agrees_with_the_forward_recursion(self):
+        d = self.design
+        forward = d.at_theta_star.expected_n + d.lambda0 * d.at_theta0.reject + d.lambda1 * d.at_theta1.accept
+        self.assertAlmostEqual(d.lagrangian, forward, places=9)
+
+    def test_no_plan_with_the_same_horizon_has_a_smaller_lagrangian(self):
+        d = self.design
+        rnd = random.Random(16)
+        base = [list(stage) for stage in d.plan.plan]
+        for _ in range(30):
+            stages = [list(s) for s in base]
+            n = rnd.randrange(len(stages) - 1)
+            lower, upper = stages[n]
+            if lower is not None and rnd.random() < 0.5:
+                stages[n][0] = lower + rnd.choice((-1, 1))
+            elif upper is not None:
+                stages[n][1] = upper + rnd.choice((-1, 1))
+            if stages[n][0] is not None and stages[n][1] is not None and stages[n][0] >= stages[n][1]:
+                continue
+            other = PlanTest(stages, contract=Bernoulli().contract("x"))
+            value = (
+                operating_characteristic(other, Bernoulli(), d.theta_star).expected_n
+                + d.lambda0 * operating_characteristic(other, Bernoulli(), 0.2).reject
+                + d.lambda1 * operating_characteristic(other, Bernoulli(), 0.5).accept
+            )
+            self.assertGreaterEqual(value, d.lagrangian - 1e-9)
+
+    def test_exact_values_match_simulation_through_a_run(self):
+        rnd, reps, rejected, total = random.Random(17), 4000, 0, 0
+        for _ in range(reps):
+            run = Run(self.design.plan)
+            while not run.terminal:
+                event = run.step({"x": int(rnd.random() < 0.35)})
+            rejected += event.output.decision == REJECT_H0
+            total += event.output.n
+        exact = operating_characteristic(self.design.plan, Bernoulli(), 0.35)
+        self.assertLess(abs(rejected / reps - exact.reject), 3 * math.sqrt(0.25 / reps))
+        self.assertLess(abs(total / reps - exact.expected_n), 1.0)
+
+    def test_smaller_maximum_sample_size_than_the_sprt(self):
+        """The point of the Kiefer-Weiss problem, on the case from the docs."""
+        grid = [0.2 + 0.015 * i for i in range(21)]
+
+        def max_asn(plan):
+            return max(operating_characteristic(plan, Bernoulli(), t).expected_n for t in grid)
+
+        a, b = math.log(0.5 / 0.8), math.log(0.5 / 0.2) - math.log(0.5 / 0.8)
+        for scale in (x / 50 for x in range(30, 100)):  # Wald thresholds scaled until errors are met
+            hi_t, lo_t = math.log(18) * scale, math.log(0.1 / 0.95) * scale
+            stages = []
+            for n in range(1, 400):
+                lo, hi = math.floor((lo_t - n * a) / b), math.ceil((hi_t - n * a) / b)
+                stages.append((lo if lo >= 0 else None, hi if hi <= n else None))
+            cut = (lo + hi) / 2  # truncation far beyond any realistic stopping time
+            stages.append((cut, cut))
+            sprt = PlanTest(stages, contract=Bernoulli().contract("x"))
+            if (
+                operating_characteristic(sprt, Bernoulli(), 0.2).reject <= 0.05
+                and operating_characteristic(sprt, Bernoulli(), 0.5).accept <= 0.1
+            ):
+                break
+        self.assertLess(max_asn(self.design.plan), max_asn(sprt))
+
+    def test_poisson_operating_characteristic(self):
+        plan = PlanTest([(None, 6), (None, 9), (7.5, 7.5)], contract=Poisson().contract("x"))
+        oc = operating_characteristic(plan, Poisson(), 2.0)
+        self.assertAlmostEqual(oc.reject + oc.accept, 1.0, places=12)
+        p_first = 1.0 - sum(math.exp(-2.0) * 2.0**k / math.factorial(k) for k in range(6))
+        self.assertAlmostEqual(oc.stop[0], p_first, places=12)
+
+    def test_impossible_requirements_are_refused(self):
+        with self.assertRaises(ValueError):
+            kiefer_weiss_plan(0.2, 0.5, 0.001, 0.001, horizon=5)
+        with self.assertRaises(NotImplementedError):
+            operating_characteristic(self.design.plan, Gaussian(), 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

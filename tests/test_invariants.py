@@ -152,9 +152,9 @@ class ReplayEquivalence(unittest.TestCase):
             return Run(proc, delivery=Delivery("sequence"), consumers=[rec], log=log, run_id="r"), rec
 
         with tempfile.TemporaryDirectory() as tmp:
-            log = ObservationLog(Path(tmp) / "arrivals.jsonl")
-            live, live_rec = make(log)
-            run_sync(live, messy, stop_on_terminal=False)
+            with ObservationLog(Path(tmp) / "arrivals.jsonl") as log:
+                live, live_rec = make(log)
+                run_sync(live, messy, stop_on_terminal=False)
             self.assertEqual(live.delivery.duplicates, 14)
 
             again, again_rec = make()

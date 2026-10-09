@@ -2,12 +2,15 @@
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Reference procedures.  Each one is only a transition function and its state."""
+from .betting import BettingMeanTest, SequentialSignTest
 from .cusum import CUSUM
 from .ema import EMA
-from .families import Bernoulli, Gaussian
+from .families import Bernoulli, Exponential, Gaussian, Poisson
 from .kalman import LocalLevelKalman
+from .mixture import NormalMixtureSPRT
 from .particle import BootstrapParticleFilter
 from .plan import PlanTest
+from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
 from .two_sample import MeanDifference
 from .two_sprt import TwoSPRT, kiefer_weiss_point
@@ -16,14 +19,20 @@ __all__ = [
     "ACCEPT_H0",
     "REJECT_H0",
     "Bernoulli",
+    "BettingMeanTest",
     "BootstrapParticleFilter",
     "CUSUM",
     "EMA",
+    "Exponential",
     "Gaussian",
     "LocalLevelKalman",
     "MeanDifference",
+    "NormalMixtureSPRT",
     "PlanTest",
+    "Poisson",
     "SPRT",
+    "SequentialSignTest",
+    "ShiryaevRoberts",
     "TwoSPRT",
     "kiefer_weiss_point",
 ]

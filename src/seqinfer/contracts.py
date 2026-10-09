@@ -14,6 +14,8 @@ _KINDS = ("real", "integer", "binary")
 #: Exactly these types are numbers.  Subclasses (bool, numpy.float64, IntEnum)
 #: are rejected so that every value has one unambiguous meaning in the history.
 _NUMBER_TYPES = (int, float)
+#: Largest integer every binary64-based implementation holds exactly.
+_MAX_EXACT_INT = 2**53
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,11 @@ class InputContract:
             raise ContractViolation(f"input {self.name!r}: {_explain_type(v, self.kind)}")
         if not math.isfinite(v):
             raise ContractViolation(f"input {self.name!r}: non-finite value {v!r}")
+        if type(v) is int and abs(v) > _MAX_EXACT_INT:
+            raise ContractViolation(
+                f"input {self.name!r}: integer {v} exceeds 2**53 and cannot be recorded exactly in the history; "
+                f"pass it as a float if rounding is acceptable"
+            )
         if self.kind == "integer" and v != int(v):
             raise ContractViolation(f"input {self.name!r}: expected an integer, got {v!r}")
         if self.kind == "binary" and v not in (0, 1):

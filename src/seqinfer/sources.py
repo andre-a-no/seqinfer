@@ -18,13 +18,14 @@ import os
 from itertools import zip_longest
 from typing import Any, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
 
+from .canonical import canonical_json
 from .core import Observation
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
 from .files import AppendFile
 from .rng import SplitMix64
 
-_LOG_GENESIS = hashlib.sha256(b"seqinfer.log/1").hexdigest()
+_LOG_GENESIS = hashlib.sha256(b"seqinfer.log/2").hexdigest()
 
 
 def from_values(
@@ -152,7 +153,7 @@ class ObservationLog:
 
     @staticmethod
     def _line(obs: Observation) -> bytes:
-        return (json.dumps(obs.to_json(), sort_keys=True) + "\n").encode("utf-8")
+        return (canonical_json(obs.to_json()) + "\n").encode("utf-8")
 
     @staticmethod
     def _chain(digest: str, line: bytes) -> str:

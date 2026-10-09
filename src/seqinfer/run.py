@@ -21,6 +21,7 @@ from enum import Enum
 from typing import Any, Callable, Iterable, Sequence
 
 from .consumers import Consumer, OutputEvent
+from .canonical import canonical_json
 from .contracts import validate_input
 from .core import Observation, Procedure, StatInput, statistical_rng
 from .delivery import Delivery
@@ -30,8 +31,9 @@ from .sources import ObservationLog
 from .version import __version__
 from .topology import Independent, Topology
 
-CHECKPOINT_FORMAT = "seqinfer.checkpoint/1"
-_GENESIS = hashlib.sha256(b"seqinfer.history/1").hexdigest()
+#: Version 2: RFC 8785 canonical JSON in digests; 64-bit values (seed, random state) as strings.
+CHECKPOINT_FORMAT = "seqinfer.checkpoint/2"
+_GENESIS = hashlib.sha256(b"seqinfer.history/2").hexdigest()
 #: Default of `Run.restore(log=...)`: reopen the log recorded in the checkpoint.
 FROM_CHECKPOINT: Any = object()
 
@@ -57,7 +59,12 @@ class RunStatus(str, Enum):
 
 
 def _canonical(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    return canonical_json(obj)
+
+
+def _u64(value: int | None) -> str | None:
+    """64-bit integers do not survive JSON numbers in every language; they are stored as hex strings."""
+    return None if value is None else f"{value:016x}"
 
 
 def _normalize(obj: Any) -> Any:
@@ -111,7 +118,7 @@ class Run:
             "inputs": {n: c.spec() for n, c in procedure.inputs().items()},
             "topology": self.topology.spec(),
             "delivery": self.delivery.spec(),
-            "seed": seed,
+            "seed": None if seed is None else str(int(seed)),
             "initialized_from": initialized_from,
             "on_invalid": policy,
             "seqinfer": __version__,
@@ -315,7 +322,7 @@ class Run:
                 "terminal": self.terminal,
                 "procedure": self.procedure.identity(),
                 "state": self.procedure.encode_state(self.state),
-                "rng": self.rng_state,
+                "rng": _u64(self.rng_state),
                 "topology": {"spec": self.topology.spec(), "state": self.topology.state()},
                 "delivery": {"spec": self.delivery.spec(), "state": self.delivery.state()},
                 "history_digest": self.history_digest,
@@ -402,7 +409,7 @@ class Run:
             topology=topology,
             delivery=delivery,
             consumers=consumers,
-            seed=prov["seed"],
+            seed=None if prov["seed"] is None else int(prov["seed"]),
             run_id=checkpoint["run_id"],
             initial_state=procedure.decode_state(checkpoint["state"]),
             on_invalid=on_invalid,
@@ -410,7 +417,7 @@ class Run:
         )
         topology.restore(checkpoint["topology"]["state"])
         delivery.restore(checkpoint["delivery"]["state"])
-        run.rng_state = checkpoint["rng"]
+        run.rng_state = None if checkpoint["rng"] is None else int(checkpoint["rng"], 16)
         run.t = checkpoint["t"]
         run.terminal = checkpoint["terminal"]
         run.history_digest = checkpoint["history_digest"]

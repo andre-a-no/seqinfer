@@ -421,7 +421,15 @@ class LogRestore(unittest.TestCase):
         self.source = list(from_values("x", [0.5] * 30))
 
     def make(self, log):
+        if log is not None:
+            self.addCleanup(log.close)
         return Run(FragileSum(), delivery=Delivery("strict"), log=log, run_id="r", clock=lambda: 0.0)
+
+    def restore(self, checkpoint, **kwargs):
+        run = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), **kwargs)
+        if run.log is not None:
+            self.addCleanup(run.log.close)
+        return run
 
     def crash_after_checkpoint(self, path):
         """Run 20 observations, checkpoint, run 10 more, then 'crash'."""
@@ -429,6 +437,7 @@ class LogRestore(unittest.TestCase):
         run_sync(run, self.source[:20])
         checkpoint = json.loads(json.dumps(run.checkpoint()))
         run_sync(run, self.source[20:])
+        run.log.close()
         return checkpoint
 
     def test_restore_reopens_the_log_and_deletes_the_abandoned_tail(self):
@@ -437,7 +446,7 @@ class LogRestore(unittest.TestCase):
         self.assertEqual(checkpoint["log"]["path"], str(path))
         self.assertEqual(checkpoint["log"]["count"], 20)
 
-        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), clock=lambda: 0.0)
+        resumed = self.restore(checkpoint, clock=lambda: 0.0)
         self.assertEqual(resumed.log.path, str(path))
         self.assertEqual(len(list(replay(path))), 20)
         event = resumed.provenance["events"][-1]
@@ -466,20 +475,20 @@ class LogRestore(unittest.TestCase):
             with self.subTest(label):
                 path.write_text(content)
                 with self.assertRaises(IncompatibleCheckpoint):
-                    Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"))
+                    self.restore(checkpoint)
                 self.assertEqual(path.read_text(), content)  # a refused restore changes nothing
 
     def test_a_moved_log_can_be_passed_explicitly(self):
         path = self.dir / "arrivals.jsonl"
         checkpoint = self.crash_after_checkpoint(path)
         moved = path.rename(self.dir / "moved.jsonl")
-        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=ObservationLog(moved))
+        resumed = self.restore(checkpoint, log=ObservationLog(moved))
         self.assertEqual(len(list(replay(moved))), 20)
         self.assertEqual(resumed.log.path, str(moved))
 
     def test_continuing_without_a_log_is_explicit(self):
         checkpoint = self.crash_after_checkpoint(self.dir / "arrivals.jsonl")
-        resumed = Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=None)
+        resumed = self.restore(checkpoint, log=None)
         self.assertIsNone(resumed.log)
         self.assertIsNone(resumed.provenance["events"][-1]["log"])
 
@@ -490,8 +499,8 @@ class LogRestore(unittest.TestCase):
         checkpoint = run.checkpoint()
         run_sync(run, self.source[20:])
         with self.assertRaises(IncompatibleCheckpoint):
-            Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"))
-        Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"), log=log)
+            self.restore(checkpoint)
+        self.restore(checkpoint, log=log)
         self.assertEqual(len(list(log)), 20)
 
     def test_a_new_run_refuses_a_used_log(self):
