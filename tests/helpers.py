@@ -30,6 +30,7 @@ from seqinfer.procedures import (
     Poisson,
     SequentialSignTest,
     ShiryaevRoberts,
+    TMixtureSPRT,
     TwoSPRT,
 )
 from seqinfer.sources import from_values, gaussian, interleave
@@ -180,6 +181,14 @@ def cases():
             Independent,
             Delivery,
             list(gaussian("x", 0.3, 1.0, seed=24, n=n)),
+            None,
+        ),
+        (
+            "t_mixture_unknown_variance",
+            lambda: TMixtureSPRT(0.0, 0.5, stop_on_reject=False),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.4, 3.0, seed=32, n=n)),
             None,
         ),
         (
