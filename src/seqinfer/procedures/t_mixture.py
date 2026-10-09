@@ -34,8 +34,14 @@ from dataclasses import dataclass
 
 from ..contracts import InputContract
 from ..core import Procedure
+from ..errors import NumericalError
 from ..numerics import require_finite
 from .sprt import REJECT_H0
+
+_UNDERFLOW = (
+    "the sample variance underflows to zero although the observations differ; "
+    "rescale the data in the adapter (for example to units where they are of order one)"
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,8 @@ class TMixtureState:
     m2: float = 0.0
     max_log_bf: float = 0.0
     decision: str | None = None
+    low: float | None = None  # smallest and largest observation: tell identical data
+    high: float | None = None  # from a variance that underflowed
 
 
 @dataclass(frozen=True)
@@ -62,7 +70,7 @@ class TMixtureOutput:
 
 class TMixtureSPRT(Procedure):
     name = "t_mixture_sprt"
-    version = "1"
+    version = "2"
 
     def __init__(
         self,
@@ -115,7 +123,13 @@ class TMixtureSPRT(Procedure):
         n = state.n + 1
         delta = v - state.mean
         mean = state.mean + delta / n
-        m2 = state.m2 + delta * (v - mean)
+        m2 = require_finite(state.m2 + delta * (v - mean), "sum of squared deviations")
+        mean = require_finite(mean, "running mean")
+        low = v if state.low is None else min(state.low, v)
+        high = v if state.high is None else max(state.high, v)
+        r = 1.0 + n * self.effect**2
+        if n >= 2 and m2 <= 0.0 and low != high:
+            raise NumericalError(_UNDERFLOW)
         if n < 2:
             sd = t = None
             log_bf = 0.0
@@ -124,13 +138,15 @@ class TMixtureSPRT(Procedure):
             # Identical observations: the Bayes factor at its limit t^2 -> infinity
             # (or t = 0 if they sit exactly at theta0), and a zero-width interval.
             sd, t = 0.0, None
-            r = 1.0 + n * self.effect**2
             log_bf = -0.5 * math.log(r) if mean == self.theta0 else 0.5 * (n - 1) * math.log(r)
             lower = upper = mean if self.critical_t(n) is not None else None
         else:
             sd = math.sqrt(m2 / (n - 1))
             t = (mean - self.theta0) * math.sqrt(n) / sd
-            log_bf = require_finite(self.log_bf(n, t * t), "log Bayes factor")
+            t2 = t * t
+            # beyond float range t^2 has reached the limit the Bayes factor tends to
+            log_bf = 0.5 * (n - 1) * math.log(r) if math.isinf(t2) else self.log_bf(n, t2)
+            log_bf = require_finite(log_bf, "log Bayes factor")
             crit = self.critical_t(n)
             lower = upper = None
             if crit is not None:
@@ -138,7 +154,7 @@ class TMixtureSPRT(Procedure):
                 lower, upper = mean - half, mean + half
         max_log_bf = max(state.max_log_bf, log_bf)
         decision = state.decision or (REJECT_H0 if log_bf >= self._log_level else None)
-        new = TMixtureState(n, mean, m2, max_log_bf, decision)
+        new = TMixtureState(n, mean, m2, max_log_bf, decision, low, high)
         p_value = min(1.0, math.exp(-max_log_bf))
         return new, TMixtureOutput(n, mean, sd, t, log_bf, p_value, lower, upper, decision)
 

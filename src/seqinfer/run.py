@@ -25,9 +25,9 @@ from typing import Any
 from .canonical import canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
-from .core import Observation, Procedure, StatInput, recording_problem, statistical_rng
+from .core import Observation, Procedure, StatInput, checked_step, recording_problem, statistical_rng
 from .delivery import Delivery
-from .errors import ContractViolation, IncompatibleCheckpoint, InvalidInputStreak, LifecycleError
+from .errors import ContractViolation, IncompatibleCheckpoint, InvalidInputStreak, LifecycleError, NumericalError
 from .rng import SplitMix64
 from .sources import ObservationLog
 from .topology import Independent, InvalidInput, Topology
@@ -386,7 +386,7 @@ class Run:
             return None
         rng = SplitMix64(self.rng_state) if self.rng_state is not None else None
         try:
-            new_state, output = self.procedure.step(self.state, x, rng)
+            new_state, output = checked_step(self.procedure, self.state, x, rng)
             digest = hashlib.sha256((self.history_digest + _canonical(x)).encode()).hexdigest()
         except ContractViolation as violation:
             # Raised by step for a data-dependent violation (e.g. a later stage of
@@ -443,6 +443,10 @@ class Run:
                 "provenance": self.provenance,
             }
         )
+        try:
+            canonical_json(checkpoint)
+        except (TypeError, ValueError) as error:  # would make the checkpoint unrestorable
+            raise NumericalError(f"the run's state cannot be checkpointed: {error}") from error
         return checkpoint
 
     @classmethod

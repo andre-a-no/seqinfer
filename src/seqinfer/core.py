@@ -12,12 +12,14 @@ scheduled, where S_t is stored or what happens to O_t.
 """
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Generic, TypeVar
 
 from .contracts import InputContract, validate_input
+from .errors import NumericalError
 from .rng import SplitMix64
 
 S = TypeVar("S")
@@ -75,11 +77,16 @@ def _encode(value: Any) -> Any:
 #: Value types an observation may carry: exactly these (no subclasses), so that
 #: an observation log records them without loss and a replay sees what the run saw.
 _PLAIN = (int, float, str, bool, type(None))
+_MAX_EXACT = 2**53
 #: Marker a log writes in place of an observation it could not record.
 UNRECORDABLE = "$unrecordable"
 
 
 def _plain_value(v: Any) -> bool:
+    if type(v) is float:
+        return math.isfinite(v)
+    if type(v) is int:
+        return abs(v) <= _MAX_EXACT
     if type(v) in _PLAIN:
         return True
     if type(v) is list:
@@ -93,7 +100,8 @@ def recording_problem(obs: Observation) -> str | None:
     """Why an observation cannot be recorded exactly, or None if it can.
 
     Values must be int, float, str, bool, None, or lists and dicts (with
-    string keys) of these; keys str or int; event times int or float.
+    string keys) of these, with floats finite and integers within 2**53;
+    keys str or int; event times finite numbers.
     Anything else -- numpy scalars, Fraction, tuples, UUIDs, subclasses of
     int or float -- would come back from an observation log as something
     else, so a run treats such an observation as invalid input, whether or
@@ -102,12 +110,12 @@ def recording_problem(obs: Observation) -> str | None:
     if not _plain_value(obs.value):
         return (
             f"value {obs.value!r} of type {type(obs.value).__qualname__} cannot be recorded exactly; "
-            f"convert it in the adapter to int, float, str, bool, None, or a list or dict of these"
+            f"convert it in the adapter to int, float (finite), str, bool, None, or a list or dict of these"
         )
     if obs.key is not None and type(obs.key) not in (str, int):
         return f"key {obs.key!r} must be a str or an int; build composite keys as strings in the adapter"
-    if obs.time is not None and type(obs.time) not in (int, float):
-        return f"event time {obs.time!r} must be an int or a float"
+    if obs.time is not None and (type(obs.time) not in (int, float) or not math.isfinite(obs.time)):
+        return f"event time {obs.time!r} must be a finite int or float"
     return None
 
 
@@ -170,6 +178,40 @@ class Procedure(ABC, Generic[S, O]):
         return {"name": self.name, "version": self.version, "config": self.config()}
 
 
+def _finite(obj: Any) -> bool:
+    """No NaN or infinity anywhere in a JSON-like value."""
+    if isinstance(obj, float):
+        return math.isfinite(obj)
+    if isinstance(obj, (list, tuple)):
+        return all(_finite(v) for v in obj)
+    if isinstance(obj, dict):
+        return all(_finite(v) for v in obj.values())
+    return True
+
+
+def checked_step(procedure: Procedure, state: Any, x: StatInput, rng: SplitMix64 | None) -> tuple[Any, Any]:
+    """procedure.step, with every numerical failure reported as NumericalError.
+
+    Overflow or a math domain error inside the transition, and a new state
+    or output holding NaN or infinity -- which could be neither reported
+    nor checkpointed -- all become NumericalError, and nothing is returned
+    to commit.
+    """
+    try:
+        new_state, output = procedure.step(state, x, rng)
+    except ArithmeticError as error:  # overflow, division by zero
+        raise NumericalError(f"{procedure.name}: {type(error).__name__}: {error}") from error
+    except ValueError as error:
+        if "math domain error" not in str(error):
+            raise
+        raise NumericalError(f"{procedure.name}: {error}") from error
+    if not _finite(procedure.encode_state(new_state)):
+        raise NumericalError(f"{procedure.name}: the new state is not finite; nothing was committed")
+    if not _finite(procedure.encode_output(output)):
+        raise NumericalError(f"{procedure.name}: the output is not finite; nothing was committed")
+    return new_state, output
+
+
 def statistical_rng(procedure: Procedure, seed: int | None) -> int | None:
     """Initial statistical random state R_0, or None for deterministic procedures."""
     if not procedure.randomized:
@@ -200,7 +242,7 @@ def trajectory(
             break
         validate_input(procedure, x)
         rng = SplitMix64(rng_state) if rng_state is not None else None
-        state, output = procedure.step(state, x, rng)
+        state, output = checked_step(procedure, state, x, rng)
         if rng is not None:
             rng_state = rng.state
         out.append((state, output))

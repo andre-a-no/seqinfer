@@ -553,7 +553,10 @@ class ProcedureReviewRegressions(unittest.TestCase):
 
         proc = GroupSequentialTest(None, [5, 10], [8.0, 2.0])
         self.assertAlmostEqual(proc.bound_at(0) / 8333.2793582, 1.0, places=9)  # mpmath
-        self.assertEqual(GroupSequentialTest(None, [5, 10], [40.0, 2.0]).bound_at(0), math.inf)
+        from seqinfer.distributions import _log_normal_upper, _log_upper_tail
+
+        far = GroupSequentialTest(None, [5, 10], [40.0, 2.0]).bound_at(0)  # its tail underflows: done in logs
+        self.assertAlmostEqual(_log_upper_tail(far, 4) / _log_normal_upper(40.0), 1.0, places=12)
         GroupSequentialTest(None, [5, 10], [8.5, 2.0])  # used to raise
 
     def test_identical_observations_away_from_theta0_are_evidence_against_it(self):
@@ -582,6 +585,69 @@ class ProcedureReviewRegressions(unittest.TestCase):
         self.assertAlmostEqual(t_ppf(1e-300, 1) / -3.1830988618379067e299, 1.0, places=11)
         self.assertAlmostEqual(_upper_tail(1e10, 5) / 9.490167245562362e-50, 1.0, places=12)
         self.assertAlmostEqual(_upper_tail(8.0, 1e5) / 6.286959938128186e-16, 1.0, places=10)
+
+
+class SecondReviewNumerics(unittest.TestCase):
+    """Defects found by the second review and by fuzzing; each test reproduces one."""
+
+    def test_student_t_across_the_range(self):
+        from seqinfer.distributions import _upper_tail, t_cdf, t_ppf
+
+        # (t, df, tail) with tails from mpmath at 60 digits
+        for t, df, ref in (
+            (3.0, 1e10, 0.0013498980349539808),  # large df: Fisher's expansion
+            (6.0, 1e10, 9.8658767875884845e-10),
+            (3.0, 1e8, 0.0013498983640187472),
+            (1.0, 1e4, 0.15866735216521456),  # near the old Stirling switch
+            (1.7e308, 0.1, 6.2731701753179726e-32),  # t / sqrt(df) overflows
+        ):
+            self.assertAlmostEqual(_upper_tail(t, df) / ref, 1.0, places=12, msg=f"t={t}, df={df}")
+        self.assertAlmostEqual(t_cdf(1.0, math.inf), 0.8413447460685429, places=15)
+        self.assertAlmostEqual(t_ppf(0.05, 1e200), -1.6448536269514724, places=13)
+        self.assertEqual(t_ppf(1e-300, 0.1), -math.inf)  # the quantile is about -1e2990
+
+    def test_rescaled_data_fail_loudly_not_wrongly(self):
+        from seqinfer import NumericalError
+        from seqinfer.procedures import GroupSequentialTest, TMixtureSPRT
+
+        tiny = [v * 1e-200 for v in (1, -1, 2, -2, 1, -1, 2, -2, 1, -1.1)]
+        huge = [v * 1e160 for v in range(10, 20)]
+        for proc in (TMixtureSPRT(0.0, stop_on_reject=False), GroupSequentialTest(None, [10], [2.32], two_sided=True)):
+            for data in (tiny, huge):
+                with self.subTest(proc=proc.name, scale=data[0]), self.assertRaises(NumericalError):
+                    state = proc.initial_state()
+                    for v in data:
+                        state, _ = proc.step(state, {"x": v}, None)
+
+    def test_overflow_is_a_numerical_error(self):
+        from seqinfer import NumericalError, Run
+        from seqinfer.procedures import BootstrapParticleFilter, MeanDifference
+
+        for make, x, seed in (
+            (lambda: NormalMixtureSPRT(1.0, 0.5), {"x": 1e200}, None),
+            (lambda: BootstrapParticleFilter(0.1, 1.0, particles=8), {"y": 1e200}, 1),
+            (MeanDifference, {"a": 0.0, "b": 1.7e308}, None),
+        ):
+            run = Run(make(), seed=seed)
+            if isinstance(run.procedure, MeanDifference):
+                run.step({"a": 0.0, "b": -1e308})
+            with self.subTest(procedure=run.procedure.name), self.assertRaises(NumericalError):
+                run.step(x)
+
+    def test_invalid_values_never_reach_a_checkpoint(self):
+        import json
+
+        from seqinfer import Difference, Observation, PositionalPair, Run
+        from seqinfer.procedures import EMA
+
+        def topo():
+            return PositionalPair(["a", "b"]).map(Difference("a", "b"))
+
+        for bad in (float("nan"), float("inf"), 2**60):
+            run = Run(EMA(0.5), topology=topo())
+            with self.assertLogs("seqinfer", "WARNING"):
+                run.offer(Observation("a", bad, seq=0))
+            Run.restore(EMA(0.5), json.loads(json.dumps(run.checkpoint())), topology=topo())
 
 
 class ExponentialDesign(unittest.TestCase):
