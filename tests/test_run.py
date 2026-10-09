@@ -396,6 +396,92 @@ class MalformedCheckpoints(unittest.TestCase):
             self.assertIn("counters", str(caught.exception))
 
 
+class ReviewRegressions(unittest.TestCase):
+    """Defects found by review; each test reproduces one."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def test_a_huge_integer_is_an_invalid_input_not_a_crash(self):
+        run = Run(EMA(0.5))
+        with self.assertLogs("seqinfer", "WARNING"):
+            run.offer(Observation("x", 10**400, seq=0))
+        self.assertEqual((run.status, run.counters["invalid_skipped"]), (RunStatus.RUNNING, 1))
+
+    def test_the_log_replays_invalid_and_integral_values_exactly(self):
+        values = [1.0, float("nan"), 1e17, 2**60, float("inf"), 2.5]
+        if numpy is not None:
+            values.append(numpy.float32(1.0))
+        with ObservationLog(self.dir / "log.jsonl") as log:
+            live = Run(EMA(0.5), log=log)
+            with self.assertLogs("seqinfer", "WARNING"):
+                for i, v in enumerate(values):
+                    live.offer(Observation("x", v, seq=i))
+        again = Run(EMA(0.5))
+        with self.assertLogs("seqinfer", "WARNING"):
+            run_sync(again, replay(self.dir / "log.jsonl"))
+        self.assertEqual((again.t, again.history_digest), (live.t, live.history_digest))
+        self.assertEqual(again.counters["invalid_skipped"], live.counters["invalid_skipped"])
+        self.assertIsInstance(next(iter(replay(self.dir / "log.jsonl"))).value, float)
+
+    def test_held_back_observations_are_logged_once(self):
+        path = self.dir / "log.jsonl"
+        run = Run(EMA(0.5), delivery=Delivery("sequence"), log=ObservationLog(path))
+        run.offer(Observation("x", 1.0, seq=1))  # held back until seq 0 arrives
+        checkpoint = run.checkpoint()
+        run.log.close()
+        resumed = Run.restore(EMA(0.5), checkpoint, delivery=Delivery("sequence"))
+        self.addCleanup(resumed.log.close)
+        run_sync(resumed, skip_to(from_values("x", [0.5, 1.0, 2.0, 3.0]), resumed.delivery))
+        self.assertEqual([o.seq for o in replay(path)], [0, 1, 2, 3])
+        again = Run(EMA(0.5), delivery=Delivery("sequence", dedup=False))
+        run_sync(again, replay(path))
+        self.assertEqual(again.history_digest, resumed.history_digest)
+
+    def test_restore_keeps_the_log_durability(self):
+        run = Run(EMA(0.5), log=ObservationLog(self.dir / "log.jsonl", sync="fsync"))
+        run.offer(Observation("x", 1.0, seq=0))
+        checkpoint = run.checkpoint()
+        run.log.close()
+        resumed = Run.restore(EMA(0.5), checkpoint)
+        self.addCleanup(resumed.log.close)
+        self.assertEqual(resumed.log.sync, "fsync")
+
+    def test_more_malformed_checkpoints(self):
+        run = Run(EMA(0.5), log=ObservationLog())
+        run.offer(Observation("x", 1.0, seq=0))
+        good = run.checkpoint()
+        for label, change in {
+            "seed with two signs": lambda cp: cp["provenance"].update(seed="--5"),
+            "seed of non-ASCII digits": lambda cp: cp["provenance"].update(seed="²"),
+            "log count as text": lambda cp: cp["log"].update(count="x"),
+            "log path as number": lambda cp: cp["log"].update(path=5),
+            "streak threshold as text": lambda cp: cp["provenance"].update(max_invalid_streak="x"),
+            "state missing a field": lambda cp: cp["state"].pop("value"),
+        }.items():
+            cp = json.loads(json.dumps(good))
+            change(cp)
+            with self.subTest(label), self.assertRaises(IncompatibleCheckpoint):
+                Run.restore(EMA(0.5), cp, log=run.log)
+
+    def test_run_sync_pulls_nothing_from_a_stopped_run(self):
+        run = Run(SPRT(Gaussian(1.0), 0.0, 1.0, 0.4, 0.4))
+        run.step({"x": 10.0})
+        self.assertTrue(run.terminal)
+        source = iter(from_values("x", [1.0, 2.0]))
+        self.assertEqual(run_sync(run, source), 0)
+        self.assertEqual(next(source).value, 1.0)
+
+    def test_step_with_a_non_mapping_is_an_invalid_input(self):
+        run = Run(EMA(0.5))
+        with self.assertLogs("seqinfer", "WARNING"):
+            for bad in (None, 5, [("x",)]):
+                self.assertIsNone(run.step(bad))
+        self.assertEqual(run.counters["invalid_skipped"], 3)
+
+
 class StreamFailure(Exception):
     """An application's own error type for invalid input."""
 

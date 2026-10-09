@@ -15,9 +15,10 @@ import hashlib
 import json
 import logging
 import platform
+import re
 import time
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from enum import Enum
 from typing import Any
 
@@ -69,6 +70,7 @@ def _u64(value: int | None) -> str | None:
 
 
 _HEX64 = frozenset("0123456789abcdef")
+_DECIMAL = re.compile(r"-?[0-9]+")
 
 #: Required top-level fields of a checkpoint and their JSON types.
 _FIELDS: dict[str, tuple[type, ...]] = {
@@ -125,12 +127,24 @@ def validate_checkpoint(checkpoint: Any) -> None:
             raise bad(f"provenance lacks {name!r}")
     if not isinstance(prov["on_invalid"], str) or not isinstance(prov["events"], list):
         raise bad("provenance fields have the wrong type")
-    if prov["seed"] is not None and not (isinstance(prov["seed"], str) and prov["seed"].lstrip("-").isdigit()):
+    if prov["seed"] is not None and not (isinstance(prov["seed"], str) and _DECIMAL.fullmatch(prov["seed"])):
         raise bad("seed is not a decimal string")
+    streak = prov.get("max_invalid_streak")
+    if streak is not None and (type(streak) is not int or streak < 1):
+        raise bad("max_invalid_streak must be a positive integer or null")
     log = checkpoint.get("log")
     if log is not None:
         if not isinstance(log, dict) or not {"path", "count", "offset", "digest"} <= set(log):
             raise bad("log position needs path, count, offset and digest")
+        if log["path"] is not None and not isinstance(log["path"], str):
+            raise bad("log path must be a string or null")
+        for name in ("count", "offset"):
+            if type(log[name]) is not int or log[name] < 0:
+                raise bad(f"log {name} must be a non-negative integer")
+        if not isinstance(log["digest"], str) or len(log["digest"]) != 64 or not set(log["digest"]) <= _HEX64:
+            raise bad("log digest is not a SHA-256 hex digest")
+        if log.get("sync") not in (None, "flush", "fsync"):
+            raise bad("log sync must be 'flush' or 'fsync'")
     if not all(isinstance(v, int) and not isinstance(v, bool) for v in checkpoint["counters"].values()):
         raise bad("counters must be integers")
 
@@ -261,11 +275,11 @@ class Run:
         self._enter()
         self._busy = True
         try:
-            if self.log is not None:
-                self.log.append(obs)
             events = []
             try:
                 for delivered in self.delivery.push(obs):
+                    if self.log is not None:
+                        self.log.append(delivered)
                     try:
                         inputs = self.topology.push(delivered)
                     except ContractViolation as violation:
@@ -302,6 +316,10 @@ class Run:
         self._enter()
         self._busy = True
         try:
+            if not isinstance(x, Mapping):
+                violation = ContractViolation(f"a statistical input must be a mapping, got {type(x).__name__}")
+                self._invalid(violation, "contract")
+                return None
             return self._apply(dict(x))
         finally:
             self._busy = False
@@ -476,7 +494,7 @@ class Run:
                     "as log=..., or log=None to continue without one"
                 )
             else:
-                log = ObservationLog(log_state["path"])
+                log = ObservationLog(log_state["path"], sync=log_state.get("sync") or "flush")
         if log is not None and log_state is None and not (isinstance(log, ObservationLog) and log.is_empty()):
             raise IncompatibleCheckpoint(
                 "the checkpointed run had no observation log; a log attached now must be empty"
@@ -493,6 +511,8 @@ class Run:
             raise IncompatibleCheckpoint(
                 f"on_invalid mismatch: checkpoint has {recorded!r}, got {_policy_spec(on_invalid)!r}"
             )
+        if log is not None and log_state is not None:
+            log.verify(log_state)  # before anything is changed: refuse a foreign log up front
         run = cls(
             procedure,
             topology=topology,
@@ -531,11 +551,15 @@ class Run:
 
 def _decoded(procedure: Procedure, data: Any) -> Any:
     try:
-        return procedure.decode_state(data)
+        state = procedure.decode_state(data)
+        again = _normalize(procedure.encode_state(state))
     except (KeyError, TypeError, ValueError) as error:
         raise IncompatibleCheckpoint(
             f"malformed checkpoint: {procedure.name} cannot decode its state ({error!r})"
         ) from error
+    if again != data:  # a missing, extra or retyped field would otherwise pass silently
+        raise IncompatibleCheckpoint(f"malformed checkpoint: {procedure.name} state does not round-trip")
+    return state
 
 
 def checkpoint_id(checkpoint: dict) -> str:

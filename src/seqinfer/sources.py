@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from itertools import zip_longest
 from typing import Any, cast
 
-from .canonical import canonical_json
 from .core import Observation
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
@@ -148,10 +147,15 @@ async def as_async(
 
 
 class ObservationLog:
-    """The arrival history of a run: every observation, in the order the run saw it.
+    """The delivered history of a run: every observation delivery passed on, in order.
 
     Replaying the log through the same delivery policy and topology
-    reproduces the run.  With a path, lines are appended as JSON; without
+    reproduces the run.  The log holds what was delivered, not every
+    arrival: duplicates that delivery dropped and observations it still
+    holds back (the `sequence` policy) are not in it, so that the log
+    position and the source positions in a checkpoint describe the same
+    cut.  Invalid values are logged as they were, and a replay skips them
+    as the run did.  With a path, lines are appended as JSON; without
     one, the log lives in memory.
 
     The log has a position -- number of records, byte offset and a hash
@@ -194,7 +198,26 @@ class ObservationLog:
 
     @staticmethod
     def _line(obs: Observation) -> bytes:
-        return (canonical_json(obs.to_json()) + "\n").encode("utf-8")
+        """One JSON line that reads back as exactly what was delivered.
+
+        Floats keep their type and every bit (Python's shortest repr), large
+        integers stay exact, and NaN or infinity are written as such: an
+        invalid value has to come back invalid, so that a replay skips it
+        exactly as the run did.  A value JSON cannot hold at all (a numpy
+        scalar, an arbitrary object) is recorded by its repr, which the
+        contracts reject just as they rejected the original.
+        """
+        record = obs.to_json()
+        try:
+            text = json.dumps(record, sort_keys=True)
+        except (TypeError, ValueError):
+            record["value"] = {"unserializable": repr(obs.value)}
+            try:
+                text = json.dumps(record, sort_keys=True)
+            except (TypeError, ValueError):
+                record = {k: v if isinstance(v, (str, int, float, type(None))) else repr(v) for k, v in record.items()}
+                text = json.dumps(record, sort_keys=True)
+        return (text + "\n").encode("utf-8")
 
     @staticmethod
     def _chain(digest: str, line: bytes) -> str:
@@ -223,19 +246,21 @@ class ObservationLog:
             return not self._items
         return not os.path.exists(self.path) or os.path.getsize(self.path) == 0
 
+    @property
+    def sync(self) -> str | None:
+        return None if self._file is None else self._file.sync
+
     def state(self) -> dict:
         """Durable position of the log, stored in the run checkpoint."""
         position = self._scan()
         if self._file is not None:
             self._file.fsync()
-        return {"path": self.path, **position}
+        return {"path": self.path, "sync": self.sync, **position}
 
-    def restore(self, state: Mapping[str, Any]) -> int:
-        """Return the log to a checkpointed position.
+    def verify(self, state: Mapping[str, Any]) -> int:
+        """Check that the log starts with the checkpointed records; return how many follow them.
 
-        Raises IncompatibleCheckpoint, and changes nothing, if the log does
-        not start with the checkpointed records.  Otherwise deletes the
-        records written after the checkpoint and returns how many there were.
+        Raises IncompatibleCheckpoint otherwise.  Changes nothing.
         """
         count, offset, digest = int(state["count"]), int(state["offset"]), state["digest"]
         where = self.path or "in-memory log"
@@ -252,7 +277,17 @@ class ObservationLog:
             )
         if size != offset or d != digest:
             raise IncompatibleCheckpoint(f"{where}: the first {count} records differ from the checkpointed ones")
+        return discarded
 
+    def restore(self, state: Mapping[str, Any]) -> int:
+        """Return the log to a checkpointed position.
+
+        Raises IncompatibleCheckpoint, and changes nothing, if the log does
+        not start with the checkpointed records.  Otherwise deletes the
+        records written after the checkpoint and returns how many there were.
+        """
+        discarded = self.verify(state)
+        count, offset, digest = int(state["count"]), int(state["offset"]), state["digest"]
         if self.path is None:
             del self._items[count:]
         elif os.path.exists(self.path) and os.path.getsize(self.path) > offset:
@@ -287,5 +322,5 @@ class ObservationLog:
 
 
 def replay(log) -> Iterator[Observation]:
-    """Replay a recorded arrival history (an ObservationLog or a path to one)."""
+    """Replay a recorded delivered history (an ObservationLog or a path to one)."""
     return iter(log if isinstance(log, ObservationLog) else ObservationLog(log))

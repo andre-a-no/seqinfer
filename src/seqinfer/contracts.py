@@ -56,13 +56,13 @@ class InputContract:
     def _check_scalar(self, v: Any) -> None:
         if type(v) not in _NUMBER_TYPES:
             raise ContractViolation(f"input {self.name!r}: {_explain_type(v, self.kind)}")
-        if not math.isfinite(v):
-            raise ContractViolation(f"input {self.name!r}: non-finite value {v!r}")
-        if type(v) is int and abs(v) > _MAX_EXACT_INT:
+        if type(v) is int and abs(v) > _MAX_EXACT_INT:  # before isfinite, which overflows on huge ints
             raise ContractViolation(
                 f"input {self.name!r}: integer {v} exceeds 2**53 and cannot be recorded exactly in the history; "
                 f"pass it as a float if rounding is acceptable"
             )
+        if not math.isfinite(v):
+            raise ContractViolation(f"input {self.name!r}: non-finite value {v!r}")
         if self.kind == "integer" and v != int(v):
             raise ContractViolation(f"input {self.name!r}: expected an integer, got {v!r}")
         if self.kind == "binary" and v not in (0, 1):

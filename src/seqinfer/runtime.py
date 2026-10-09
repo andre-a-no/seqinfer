@@ -32,6 +32,8 @@ def run_sync(run: Run, source: Iterable[Observation], *, stop_on_terminal: bool 
     """Pull observations from `source` and offer them in order.  Returns the number consumed."""
     _attach(run, "sync/pull")
     consumed = 0
+    if stop_on_terminal and run.terminal:  # pull nothing from a run that has already stopped
+        return consumed
     for obs in source:
         run.offer(obs)
         consumed += 1

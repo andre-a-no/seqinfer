@@ -9,9 +9,10 @@ values.  RFC 8785 fixes the three things ordinary JSON encoders disagree
 on: number formatting (that of ECMAScript, the shortest representation
 that round-trips), string escaping, and key order (by UTF-16 code units).
 
-Every number is an IEEE 754 binary64 value: 1 and 1.0 encode the same, and
-an integer that a binary64 value cannot hold exactly is refused rather
-than rounded.
+Every number is an IEEE 754 binary64 value: 1 and 1.0 encode the same.
+Integers beyond 2**53 are refused rather than rounded -- all of them,
+including the few that binary64 happens to hold, so that whether a value
+is accepted never depends on its bits.
 """
 from __future__ import annotations
 
@@ -58,7 +59,7 @@ def _encode(obj: Any, out: list[str]) -> None:
         out.append("false")
     elif isinstance(obj, int):
         if abs(obj) > _MAX_EXACT_INT:
-            raise ValueError(f"integer {obj} is not exactly representable as a binary64 number")
+            raise ValueError(f"integer {obj} is beyond 2**53, where binary64 no longer holds every integer")
         out.append(_number(float(obj)))
     elif isinstance(obj, float):
         out.append(_number(obj))
