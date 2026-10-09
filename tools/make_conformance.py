@@ -35,6 +35,7 @@ from seqinfer.procedures import (  # noqa: E402
     BootstrapParticleFilter,
     Exponential,
     Gaussian,
+    GroupSequentialTest,
     LocalLevelKalman,
     MeanDifference,
     NormalMixtureSPRT,
@@ -89,6 +90,7 @@ def cases():
          [{"x": 2.0 * rnd.betavariate(1.0, 2.0)} for _ in range(80)]),
         ("sign_test", SequentialSignTest(0.0, alpha=1e-4, stop_on_reject=False), None,
          [{"x": float(rnd.choice([-2, -1, 0, 1, 2, 3]))} for _ in range(80)]),
+        ("group_sequential", GroupSequentialTest(1.0, [20, 40, 60], [3.71, 2.51, 1.99]), None, normal(0.2, 60)),
     ]
 
 

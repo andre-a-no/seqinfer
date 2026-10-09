@@ -12,7 +12,7 @@ import random
 import unittest
 
 from seqinfer import ContractViolation, PositionalPair, Run, difference
-from seqinfer.design import kiefer_weiss_plan, operating_characteristic
+from seqinfer.design import kiefer_weiss_plan, lattice, operating_characteristic
 from seqinfer.procedures import (
     REJECT_H0,
     SPRT,
@@ -331,7 +331,191 @@ class Design(unittest.TestCase):
         with self.assertRaises(ValueError):
             kiefer_weiss_plan(0.2, 0.5, 0.001, 0.001, horizon=5)
         with self.assertRaises(NotImplementedError):
-            operating_characteristic(self.design.plan, Gaussian(), 0.0)
+            operating_characteristic(self.design.plan, Exponential(), 1.0)
+
+
+def simulate_plan(plan, draw, reps):
+    """Rejection rate and average sample number of a plan run on real data."""
+    rejected = total = 0
+    for _ in range(reps):
+        state = plan.initial_state()
+        while not plan.is_terminal(state):
+            state, out = plan.step(state, {"x": draw()}, None)
+        rejected += out.decision == REJECT_H0
+        total += out.n
+    return rejected / reps, total / reps
+
+
+class Lattices(unittest.TestCase):
+    def test_poisson_lattice_is_the_distribution(self):
+        lat = lattice(Poisson(), 3.0)
+        self.assertTrue(lat.exact)
+        self.assertAlmostEqual(sum(lat.weights), 1.0, places=15)
+        self.assertAlmostEqual(sum(k * w for k, w in enumerate(lat.weights)), 3.0, places=13)
+
+    def test_normal_lattice_keeps_mean_and_variance(self):
+        lat = lattice(Gaussian(2.0), 0.3, step=0.25)
+        self.assertFalse(lat.exact)
+        values = [(lat.offset + i) * lat.step for i in range(len(lat.weights))]
+        mean = sum(v * w for v, w in zip(values, lat.weights, strict=True))
+        var = sum((v - mean) ** 2 * w for v, w in zip(values, lat.weights, strict=True))
+        self.assertAlmostEqual(mean, 0.3, places=12)
+        self.assertAlmostEqual(var, 4.0, places=10)
+
+
+class PoissonDesign(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.design = kiefer_weiss_plan(2.0, 3.0, 0.05, 0.05, horizon=60, family=Poisson())
+
+    def test_error_rates_and_consistency(self):
+        d = self.design
+        self.assertTrue(d.exact)
+        self.assertLessEqual(d.at_theta0.reject, 0.05)
+        self.assertLessEqual(d.at_theta1.accept, 0.05)
+        self.assertGreater(d.at_theta0.reject, 0.045)  # the slack is spent
+        forward = d.at_theta_star.expected_n + d.lambda0 * d.at_theta0.reject + d.lambda1 * d.at_theta1.accept
+        self.assertAlmostEqual(d.lagrangian, forward, places=8)
+
+    def test_exact_values_match_simulation(self):
+        rnd, reps = random.Random(18), 3000
+        rate, asn = simulate_plan(self.design.plan, poisson_draw(rnd, 2.5), reps)
+        exact = operating_characteristic(self.design.plan, Poisson(), 2.5)
+        self.assertLess(abs(rate - exact.reject), 3 * math.sqrt(0.25 / reps))
+        self.assertLess(abs(asn - exact.expected_n), 1.0)
+
+    def test_no_perturbed_plan_has_a_smaller_lagrangian(self):
+        d = self.design
+        rnd = random.Random(19)
+        for _ in range(20):
+            stages = [list(stage) for stage in d.plan.plan]
+            n = rnd.randrange(len(stages) - 1)
+            side = 0 if stages[n][0] is not None and rnd.random() < 0.5 else 1
+            if stages[n][side] is None:
+                continue
+            stages[n][side] += rnd.choice((-1, 1))
+            if stages[n][0] is not None and stages[n][1] is not None and stages[n][0] >= stages[n][1]:
+                continue
+            other = PlanTest(stages, contract=Poisson().contract("x"))
+            value = (
+                operating_characteristic(other, Poisson(), d.theta_star).expected_n
+                + d.lambda0 * operating_characteristic(other, Poisson(), 2.0).reject
+                + d.lambda1 * operating_characteristic(other, Poisson(), 3.0).accept
+            )
+            self.assertGreaterEqual(value, d.lagrangian - 1e-9)
+
+
+class NormalDesign(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.design = kiefer_weiss_plan(0.0, 1.0, 0.05, 0.05, horizon=40, family=Gaussian(1.0), step=0.125)
+
+    def test_error_rates_on_the_lattice_and_consistency(self):
+        d = self.design
+        self.assertFalse(d.exact)
+        self.assertLessEqual(d.at_theta0.reject, 0.05)
+        self.assertLessEqual(d.at_theta1.accept, 0.05)
+        forward = d.at_theta_star.expected_n + d.lambda0 * d.at_theta0.reject + d.lambda1 * d.at_theta1.accept
+        self.assertAlmostEqual(d.lagrangian, forward, places=6)
+
+    def test_error_rates_on_real_normal_data(self):
+        rnd, reps = random.Random(20), 4000
+        for theta, target in ((0.0, 0.05), (1.0, 0.95)):
+            rate, _ = simulate_plan(self.design.plan, lambda theta=theta: rnd.gauss(theta, 1.0), reps)
+            self.assertLess(abs(rate - target), 3 * math.sqrt(target * (1 - target) / reps), msg=f"theta={theta}")
+
+    def test_smaller_expected_sample_size_than_the_2sprt(self):
+        """Against Lorden's 2-SPRT with thresholds raised until its errors are the same."""
+        from seqinfer.procedures import TwoSPRT
+
+        d, gauss = self.design, Gaussian(1.0)
+        for a in (x / 20 for x in range(40, 120)):
+            plan = PlanTest(TwoSPRT(gauss, 0.0, 1.0, thresholds=(a, a)).as_plan(), contract=gauss.contract("x"))
+            if (
+                operating_characteristic(plan, gauss, 0.0, step=0.125).reject <= 0.05
+                and operating_characteristic(plan, gauss, 1.0, step=0.125).accept <= 0.05
+            ):
+                break
+        star = operating_characteristic(plan, gauss, d.theta_star, step=0.125).expected_n
+        self.assertLess(d.at_theta_star.expected_n, star)
+
+
+class GroupSequential(unittest.TestCase):
+    FRACTIONS = (0.2, 0.4, 0.6, 0.8, 1.0)
+
+    def test_obrien_fleming_boundaries_match_published_values(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, self.FRACTIONS, "obrien-fleming")
+        for got, published in zip(d.bounds, (4.877, 3.357, 2.680, 2.290, 2.031), strict=True):
+            self.assertAlmostEqual(got, published, places=3)
+        two = group_sequential_design(0.05, self.FRACTIONS, "obrien-fleming", two_sided=True)
+        for a, b in zip(two.bounds, d.bounds, strict=True):
+            self.assertAlmostEqual(a, b, places=4)
+
+    def test_alpha_is_spent_as_planned(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        for spending in ("obrien-fleming", "pocock", ("power", 2.0)):
+            d = group_sequential_design(0.025, self.FRACTIONS, spending)
+            crossing = d.crossing(0.0)
+            cumulative = 0.0
+            for p, spent in zip(crossing, d.spent, strict=True):
+                cumulative += p
+                self.assertAlmostEqual(cumulative, spent, places=7, msg=str(spending))
+
+    def test_crossing_probabilities_match_simulation(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, self.FRACTIONS, "pocock")
+        rnd, reps, drift = random.Random(21), 40_000, 2.5
+        hits = [0] * 5
+        for _ in range(reps):
+            b, previous = 0.0, 0.0
+            for k, (t, c) in enumerate(zip(d.fractions, d.bounds, strict=True)):
+                b += rnd.gauss(drift * (t - previous), math.sqrt(t - previous))
+                previous = t
+                if b / math.sqrt(t) >= c:
+                    hits[k] += 1
+                    break
+        for got, exact in zip(hits, d.crossing(drift), strict=True):
+            self.assertLess(abs(got / reps - exact), 4 * math.sqrt(exact * (1 - exact) / reps) + 1e-4)
+
+    def test_executed_design_has_its_error_rates(self):
+        from seqinfer.group_sequential import group_sequential_design
+        from seqinfer.procedures import GroupSequentialTest
+
+        d = group_sequential_design(0.025, self.FRACTIONS)
+        n_max = d.max_sample_size(effect=0.5, sigma=1.0, power=0.9)
+        self.assertEqual(n_max, math.ceil((d.drift_for_power(0.9) / 0.5) ** 2))
+        proc = GroupSequentialTest.from_design(d, n_max, sigma=1.0)
+        reps = 4000
+        for theta, target in ((0.0, 0.025), (0.5, 0.9)):
+            rate = rejection_rate(proc, lambda r, theta=theta: (lambda: r.gauss(theta, 1.0)), reps, n_max, 23)
+            self.assertLess(abs(rate - target), 3 * math.sqrt(target * (1 - target) / reps), msg=f"theta={theta}")
+
+    def test_looks_only_at_the_planned_analyses(self):
+        from seqinfer.procedures import GroupSequentialTest
+
+        proc = GroupSequentialTest(1.0, analyses=[2, 4], bounds=[3.0, 1.0])
+        state, outs = proc.initial_state(), []
+        for v in (5.0, 5.0, -5.0, -5.0):
+            state, out = proc.step(state, {"x": v}, None)
+            outs.append(out)
+        self.assertEqual([o.analysis for o in outs], [None, 1, None, 2])
+        self.assertEqual(outs[1].decision, REJECT_H0)  # z = 5 sqrt(2) >= 3
+
+    def test_invalid_designs_are_refused(self):
+        from seqinfer.group_sequential import group_sequential_design
+        from seqinfer.procedures import GroupSequentialTest
+
+        for fractions in ((0.5, 0.4, 1.0), (0.5, 0.9)):
+            with self.assertRaises(ValueError):
+                group_sequential_design(0.025, fractions)
+        with self.assertRaises(ValueError):
+            group_sequential_design(0.025, (0.5, 1.0), spending=lambda t: 0.5 * t)  # does not spend alpha
+        with self.assertRaises(ValueError):
+            GroupSequentialTest(1.0, analyses=[10, 5], bounds=[2.0, 2.0])
 
 
 if __name__ == "__main__":

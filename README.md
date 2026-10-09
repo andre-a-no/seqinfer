@@ -43,16 +43,17 @@ print(run.state.decision, "after", run.t, "observations")
 checkpoint = run.checkpoint()          # plain JSON: state, random state, buffers, provenance
 ```
 
-`examples/` has eight runnable scripts: offline use, paired data from
+`examples/` has nine runnable scripts: offline use, paired data from
 concurrent producers, checkpoint and resume, operating characteristics,
 feedback control, executing a precomputed plan, designing an optimal plan,
-and nonparametric monitoring.
+nonparametric monitoring, and a group sequential trial.
 
 ## Methods
 
 | Kind | Procedures |
 |---|---|
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
+| Group sequential trials | `GroupSequentialTest` (planned analyses with alpha-spending boundaries) |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT: always-valid p-value and confidence sequence) |
 | Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (median, no moment assumptions; paired data via topology) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
@@ -63,15 +64,28 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 
 **Design** (`seqinfer.design`), computed offline before the experiment:
 
-- `operating_characteristic(plan, family, theta)` — exact error
-  probabilities, stopping-time distribution and expected sample size of a
-  plan, for Bernoulli and Poisson data, without simulation;
-- `kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon)` — the plan
-  with a maximum sample size that minimises the expected sample size at
-  the least favourable point (modified Kiefer–Weiss problem), by backward
-  induction, for binary outcomes. For 30% against 50% at error rates 0.05
-  it lowers the maximum expected sample size from 52.9 (Wald's SPRT
-  calibrated to the same errors) to 45.1.
+- `operating_characteristic(plan, family, theta)` — error probabilities,
+  stopping-time distribution and expected sample size of a plan, without
+  simulation: exact for Bernoulli and Poisson data, on a fine lattice
+  (error of order h²) for normal data;
+- `kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=...)` —
+  the plan with a maximum sample size that minimises the expected sample
+  size at the least favourable point (modified Kiefer–Weiss problem), by
+  backward induction, for Bernoulli, Poisson and normal data. For response
+  rates 30% against 50% at error rates 0.05 it lowers the maximum expected
+  sample size from 52.9 (Wald's SPRT calibrated to the same errors) to
+  45.1; for a normal mean 0 against 0.5 the expected sample size at θ* is
+  31.0 against 36.9 for the calibrated 2-SPRT. Seconds for discrete data,
+  under ten seconds for normal data.
+
+**Group sequential designs** (`seqinfer.group_sequential`):
+`group_sequential_design(alpha, fractions, spending)` computes efficacy
+boundaries for planned analyses from an alpha-spending function
+(O'Brien–Fleming and Pocock types, power family, or your own), one- or
+two-sided, and gives crossing probabilities, power, expected sample size
+and the maximum sample size for a target power. The O'Brien–Fleming
+boundaries for five looks reproduce the published 4.877, 3.357, 2.680,
+2.290, 2.031.
 
 Every statistical claim in the docstrings — error rates, coverage, run
 lengths, optimality — is checked by a test (`tests/test_methods.py`).
@@ -87,7 +101,8 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
 - **Invalid input never stops the run by default.** It is skipped,
   counted and reported as a warning on the `seqinfer` logger with a
   structured `incident` record. `on_invalid="raise"` or an exception class
-  makes it fatal. Contracts are strict: `numpy` scalars, booleans and
+  makes it fatal; `max_invalid_streak=N` stops the run after N invalid
+  inputs in a row, when the source rather than a message is broken. Contracts are strict: `numpy` scalars, booleans and
   strings are refused with a message saying how to convert them.
 - **Portable digests.** History digests and checkpoint identifiers use
   RFC 8785 canonical JSON. `conformance/` holds language-independent test

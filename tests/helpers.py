@@ -22,6 +22,7 @@ from seqinfer.procedures import (
     BettingMeanTest,
     BootstrapParticleFilter,
     Gaussian,
+    GroupSequentialTest,
     LocalLevelKalman,
     MeanDifference,
     NormalMixtureSPRT,
@@ -171,6 +172,14 @@ def cases():
             lambda: PositionalPair(("a", "b")).map(difference("a", "b"), "a-b"),
             Delivery,
             unbalanced_pairs(n, lead=5, seed=14),
+            None,
+        ),
+        (
+            "group_sequential",
+            lambda: GroupSequentialTest(1.0, analyses=[20, 40, 60, 80], bounds=[4.3, 3.0, 2.5, 2.2]),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.3, 1.0, seed=24, n=n)),
             None,
         ),
         (
