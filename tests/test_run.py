@@ -307,7 +307,7 @@ class LogRestore(unittest.TestCase):
         run_sync(run, self.source[20:])
         return checkpoint
 
-    def test_restore_reopens_the_log_and_moves_the_abandoned_tail_aside(self):
+    def test_restore_reopens_the_log_and_deletes_the_abandoned_tail(self):
         path = self.dir / "arrivals.jsonl"
         checkpoint = self.crash_after_checkpoint(path)
         self.assertEqual(checkpoint["log"]["path"], str(path))
@@ -318,7 +318,8 @@ class LogRestore(unittest.TestCase):
         self.assertEqual(len(list(replay(path))), 20)
         event = resumed.provenance["events"][-1]
         self.assertEqual(event["log"], str(path))
-        self.assertEqual(len(list(replay(event["log_orphaned"]))), 10)
+        self.assertEqual(event["log_discarded"], 10)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["arrivals.jsonl"])
 
         run_sync(resumed, skip_to(self.source, resumed.delivery.positions()))
         straight = self.make(ObservationLog(self.dir / "straight.jsonl"))

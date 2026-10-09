@@ -12,8 +12,6 @@ import hashlib
 import heapq
 import json
 import os
-import shutil
-import time
 from itertools import zip_longest
 from typing import Any, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
 
@@ -114,9 +112,15 @@ class ObservationLog:
     chain over the records -- that a run stores in its checkpoint.
     Restoring the checkpoint restores the log to that position: the prefix
     is verified against the hash chain, and records written after the
-    checkpoint are moved to a sidecar file, because the restored run will
-    receive those observations again.  Relative paths are resolved against
-    the working directory at the time of use.
+    checkpoint are deleted.  Only their number is kept, in the provenance.
+    Relative paths are resolved against the working directory at the time
+    of use.
+
+    seqinfer does not keep observations beyond the last checkpoint.  After a
+    restore, the run receives them again from its sources (see `skip_to`).
+    A source that cannot deliver past observations again -- a live
+    instrument without a buffer, a stream without retention -- has to be
+    buffered by the application, between the source and the run.
     """
 
     def __init__(self, path=None):
@@ -165,21 +169,21 @@ class ObservationLog:
                 os.fsync(f.fileno())
         return {"path": self.path, **position}
 
-    def restore(self, state: Mapping[str, Any]) -> str | None:
+    def restore(self, state: Mapping[str, Any]) -> int:
         """Return the log to a checkpointed position.
 
-        Raises IncompatibleCheckpoint if the log does not start with the
-        checkpointed records.  Returns the path of the sidecar file that
-        received the records written after the checkpoint, if there were any.
+        Raises IncompatibleCheckpoint, and changes nothing, if the log does
+        not start with the checkpointed records.  Otherwise deletes the
+        records written after the checkpoint and returns how many there were.
         """
         count, offset, digest = int(state["count"]), int(state["offset"]), state["digest"]
         where = self.path or "in-memory log"
-        n, size, d = 0, 0, _LOG_GENESIS
-        lines = self._lines()
-        for line in lines:
-            if n == count:
-                break
-            n, size, d = n + 1, size + len(line), self._chain(d, line)
+        n, size, d, discarded = 0, 0, _LOG_GENESIS, 0
+        for line in self._lines():
+            if n < count:
+                n, size, d = n + 1, size + len(line), self._chain(d, line)
+            else:
+                discarded += 1
         if n < count:
             raise IncompatibleCheckpoint(
                 f"{where}: has {n} records, the checkpoint expects at least {count}; "
@@ -187,23 +191,15 @@ class ObservationLog:
             )
         if size != offset or d != digest:
             raise IncompatibleCheckpoint(f"{where}: the first {count} records differ from the checkpointed ones")
-        lines.close()
 
-        orphaned = None
         if self.path is None:
             del self._items[count:]
         elif os.path.exists(self.path) and os.path.getsize(self.path) > offset:
-            orphaned = f"{self.path}.after-{count}.{int(time.time())}.jsonl"
-            with open(self.path, "rb") as src, open(orphaned, "wb") as dst:
-                src.seek(offset)
-                shutil.copyfileobj(src, dst)
-                dst.flush()
-                os.fsync(dst.fileno())
             with open(self.path, "r+b") as f:
                 f.truncate(offset)
                 os.fsync(f.fileno())
         self._position = {"count": count, "offset": offset, "digest": digest}
-        return orphaned
+        return discarded
 
     # ------------------------------------------------------------ records
 

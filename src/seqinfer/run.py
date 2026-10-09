@@ -284,8 +284,11 @@ class Run:
         the log recorded in the checkpoint is reopened from its path; pass
         an ObservationLog to use a moved copy, or ``log=None`` to continue
         without one.  Either way the log is verified against the checkpoint
-        and cut back to it, and records written after the checkpoint are
-        moved to a sidecar file named in the restore event.
+        and cut back to it: records written after the checkpoint are deleted,
+        and their number is recorded in the restore event.  Observations
+        after the checkpoint must come again from the sources; preserving
+        them for sources that cannot replay is the application's job (see
+        `ObservationLog`).
         """
         if checkpoint.get("format") != CHECKPOINT_FORMAT:
             raise IncompatibleCheckpoint(f"unsupported checkpoint format {checkpoint.get('format')!r}")
@@ -332,14 +335,14 @@ class Run:
         run.counters = dict(checkpoint["counters"])
         run.consumer_errors = list(checkpoint.get("consumer_errors", []))
         run.provenance = json.loads(json.dumps(prov))
-        orphaned = log.restore(log_state) if log is not None and log_state is not None else None
+        discarded = log.restore(log_state) if log is not None and log_state is not None else 0
         run.log = log
         run.status = RunStatus.PAUSED
         run._event(
             "restore",
             checkpoint=checkpoint_id(checkpoint),
             log=getattr(log, "path", None) if log is not None else None,
-            log_orphaned=orphaned,
+            log_discarded=discarded,
         )
         return run
 
