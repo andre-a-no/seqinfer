@@ -12,8 +12,10 @@ The sum is carried on a lattice.  For Bernoulli and Poisson data the
 lattice is the integers and every result is exact up to floating point
 (the Poisson distribution is cut where its tail is below 1e-16).  For
 normal data the observation is replaced by its discretisation on a
-lattice of step h (default sigma/16); the error of the operating
-characteristic is of order h^2, and `exact` is False in the results.
+lattice of step h (default sigma/16), and exponential data by the
+midpoints of cells of width h (default a eighth of the mean at theta*);
+the error of the operating characteristic is of order h^2, and `exact`
+is False in the results.
 Plans are executed on the real data, so their actual error rates can be
 checked by simulation, as the tests do.
 
@@ -43,13 +45,14 @@ import math
 from dataclasses import dataclass
 from operator import mul
 
-from .procedures.families import Bernoulli, Family, Gaussian, Poisson
+from .procedures.families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .procedures.plan import PlanTest
 from .procedures.sprt import ACCEPT_H0, REJECT_H0
 from .procedures.two_sprt import kiefer_weiss_point
 
 _TAIL = 1e-17
 _NORMAL_WIDTH = 8.0  # the normal lattice covers theta +/- 8 sigma
+_EXPONENTIAL_TAIL = 30.0  # the exponential lattice stops where the tail is e^-30
 _CONTINUE = "continue"
 
 
@@ -58,12 +61,16 @@ _CONTINUE = "continue"
 
 @dataclass(frozen=True)
 class Lattice:
-    """X takes the values (offset + i) * step with probabilities weights[i]."""
+    """X takes the values (offset + i) * step + shift with probabilities weights[i].
+
+    After n observations S_n = k * step + n * shift for an integer k.
+    """
 
     step: float
     offset: int
     weights: tuple[float, ...]
     exact: bool
+    shift: float = 0.0
 
 
 def lattice(family: Family, theta: float, step: float | None = None) -> Lattice:
@@ -91,8 +98,17 @@ def lattice(family: Family, theta: float, step: float | None = None) -> Lattice:
         raw = [math.exp(-0.5 * ((j * h - theta) / sigma) ** 2) for j in range(lo, hi + 1)]
         total = sum(raw)
         return Lattice(h, lo, tuple(w / total for w in raw), False)
+    if isinstance(family, Exponential):
+        # Midpoints of cells of width h: the lattice mean is 1/theta up to O(h^2).
+        h = step if step is not None else 1.0 / (8.0 * theta)
+        if not h > 0:
+            raise ValueError("the lattice step must be positive")
+        count = math.ceil(_EXPONENTIAL_TAIL / (theta * h)) + 1
+        raw = [math.exp(-theta * (j + 0.5) * h) for j in range(count)]
+        total = sum(raw)
+        return Lattice(h, 0, tuple(w / total for w in raw), False, 0.5 * h)
     raise NotImplementedError(
-        f"designs are available for Bernoulli, Poisson and normal data, not {family.spec()['family']}"
+        f"designs are available for Bernoulli, Poisson, normal and exponential data, not {family.spec()['family']}"
     )
 
 
@@ -100,7 +116,7 @@ def _support(family: Family, n: int) -> tuple[int | None, int | None]:
     """Reachable lattice indices of S_n (None: unbounded)."""
     if isinstance(family, Bernoulli):
         return 0, n
-    if isinstance(family, Poisson):
+    if isinstance(family, (Poisson, Exponential)):
         return 0, None
     return None, None
 
@@ -139,7 +155,7 @@ def operating_characteristic(
         closed = False  # a stop has followed the continuation points
         stopped = 0.0
         for i, p in enumerate(nxt):
-            s = (base + i) * h
+            s = (base + i) * h + n * lat.shift
             if lower is not None and s <= lower:
                 decision = low
             elif upper is not None and s >= upper:
@@ -231,8 +247,22 @@ def maximum_expected_n(
     return best, best_theta
 
 
-def _affine_llr(family: Family, num: float, den: float) -> tuple[float, float]:
-    """llr(x) = a + b x for an exponential family."""
+def _affine_llr(family: Family, num: float, den: float, step: float | None = None) -> tuple[float, float]:
+    """llr(x) = a + b x for an exponential family, as seen on the design's lattice.
+
+    For the exponential family the lattice's own normalisation differs
+    from the density's by O(h^2), so the ratio is taken from the lattice:
+    then the error probabilities computed backwards under theta* agree
+    exactly with those computed forwards under theta0 and theta1.
+    """
+    if isinstance(family, Exponential):
+        ln, ld = lattice(family, num, step), lattice(family, den, step)
+        if ln.step != ld.step:
+            raise ValueError("give an explicit lattice step for exponential designs")
+        x0, x1 = ld.shift, ld.step + ld.shift
+        r0, r1 = math.log(ln.weights[0] / ld.weights[0]), math.log(ln.weights[1] / ld.weights[1])
+        b = (r1 - r0) / (x1 - x0)
+        return r0 - b * x0, b
     a = family.llr(0, num, den)
     return a, family.llr(1, num, den) - a
 
@@ -252,8 +282,11 @@ class _Problem:
     def __init__(self, family: Family, theta0: float, theta1: float, theta_star: float, horizon: int, step):
         self.family, self.horizon = family, horizon
         self.lat = lattice(family, theta_star, step)
-        self.a0, self.b0 = _affine_llr(family, theta0, theta_star)
-        self.a1, self.b1 = _affine_llr(family, theta1, theta_star)
+        self.a0, self.b0 = _affine_llr(family, theta0, theta_star, self.lat.step)
+        self.a1, self.b1 = _affine_llr(family, theta1, theta_star, self.lat.step)
+
+    def _s(self, n: int, k: float) -> float:
+        return k * self.lat.step + n * self.lat.shift
 
     def _logs(self, u0: float, u1: float, n: int, s: float) -> tuple[float, float]:
         """Log costs of stopping to reject and to accept at (n, s)."""
@@ -271,8 +304,9 @@ class _Problem:
             else:
                 hi = min(hi, edge)
         kmin, kmax = _support(self.family, n)
-        k_lo = math.floor(lo / h) if math.isfinite(lo) else (kmin if kmin is not None else 0)
-        k_hi = math.ceil(hi / h) if math.isfinite(hi) else (kmax if kmax is not None else 0)
+        base = n * self.lat.shift
+        k_lo = math.floor((lo - base) / h) if math.isfinite(lo) else (kmin if kmin is not None else 0)
+        k_hi = math.ceil((hi - base) / h) if math.isfinite(hi) else (kmax if kmax is not None else 0)
         if kmin is not None:
             k_lo = max(k_lo, kmin)
         if kmax is not None:
@@ -281,7 +315,7 @@ class _Problem:
 
     def _stop(self, u0: float, u1: float, n: int, k: int) -> tuple[float, float, float, str]:
         """(cost, Z0 if reject, Z1 if accept, decision) for stopping at (n, k)."""
-        r, c = self._logs(u0, u1, n, k * self.lat.step)
+        r, c = self._logs(u0, u1, n, self._s(n, k))
         if r < c:
             return math.exp(r), math.exp(r - u0), 0.0, REJECT_H0
         return math.exp(c), 0.0, math.exp(c - u1), ACCEPT_H0
@@ -350,7 +384,8 @@ class _Problem:
         plan: list[tuple[float | None, float | None]] = []
         for n, (k_lo, region) in enumerate(stages, start=1):
             r0, c0 = self._logs(u0, u1, n, 0.0)
-            k_tie = math.floor((c0 - r0) / ((self.b0 - self.b1) * h))  # r == c
+            s_tie = (c0 - r0) / (self.b0 - self.b1)  # r == c
+            k_tie = math.floor((s_tie - n * self.lat.shift) / h)
             kmin, kmax = _support(self.family, n)
             k_hi = k_lo + len(region) - 1
             w_lo = min(k_lo, k_tie) - 1 if region else k_tie - 1
@@ -371,8 +406,8 @@ class _Problem:
                 j += 1
             if any(lab != high_decision for lab in labels[j:]):
                 raise ValueError(f"step {n}: the optimal region is not an interval in S_n")
-            lower = (ks[i - 1] + 0.5) * h if i > 0 else None
-            upper = (ks[j] - 0.5) * h if j < len(ks) else None
+            lower = self._s(n, ks[i - 1] + 0.5) if i > 0 else None
+            upper = self._s(n, ks[j] - 0.5) if j < len(ks) else None
             if j == i:  # nothing continues: the plan ends here
                 cut = lower if lower is not None else upper
                 if cut is None:
@@ -533,16 +568,17 @@ def kiefer_weiss_plan(
     p = solve(u0, u1)
     if p.alpha0 > alpha0 or p.alpha1 > alpha1:
         raise ValueError("could not meet both error rates; increase the horizon")
-    reject_high = theta1 > theta0
+    # reject where its cost falls below the cost of accepting: at large S_n when b0 < b1
+    reject_high = problem.b0 < problem.b1
     label = f"kiefer-weiss {family.spec()['family']} theta0={theta0} theta1={theta1} theta*={theta_star:.6g}"
     plan = problem.plan(u0, u1, p.stages, reject_high, label)
 
     def oc(theta: float) -> OperatingCharacteristic:
-        return operating_characteristic(plan, family, theta, step=problem.lat.step if step is not None else None)
+        return operating_characteristic(plan, family, theta, step=None if problem.lat.exact else problem.lat.step)
 
     return KieferWeissDesign(
         plan, theta_star, math.exp(u0), math.exp(u1), oc(theta0), oc(theta1), oc(theta_star), p.value,
-        problem.lat.exact, family, step,
+        problem.lat.exact, family, None if problem.lat.exact else problem.lat.step,
     )
 
 
@@ -552,7 +588,7 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
 
     def design(ts: float) -> tuple[float, KieferWeissDesign]:
         d = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, theta_star=ts, step=step)
-        return d.maximum_expected_n()[1] - ts, d
+        return d.maximum_expected_n(grid=12)[1] - ts, d
 
     a, b = lo + margin, hi - margin
     ga, da = design(a)

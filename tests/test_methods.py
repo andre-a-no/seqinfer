@@ -331,7 +331,17 @@ class Design(unittest.TestCase):
         with self.assertRaises(ValueError):
             kiefer_weiss_plan(0.2, 0.5, 0.001, 0.001, horizon=5)
         with self.assertRaises(NotImplementedError):
-            operating_characteristic(self.design.plan, Exponential(), 1.0)
+            operating_characteristic(self.design.plan, _Unsupported(), 1.0)
+
+
+class _Unsupported:
+    """A family the design module does not know."""
+
+    def spec(self):
+        return {"family": "unsupported"}
+
+    def check(self, theta):
+        pass
 
 
 def simulate_plan(plan, draw, reps):
@@ -516,6 +526,51 @@ class GroupSequential(unittest.TestCase):
             group_sequential_design(0.025, (0.5, 1.0), spending=lambda t: 0.5 * t)  # does not spend alpha
         with self.assertRaises(ValueError):
             GroupSequentialTest(1.0, analyses=[10, 5], bounds=[2.0, 2.0])
+
+
+class ExponentialDesign(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.design = kiefer_weiss_plan(1.0, 2.0, 0.05, 0.05, horizon=40, family=Exponential(), step=0.125)
+
+    def test_lattice_keeps_the_mean(self):
+        lat = lattice(Exponential(), 2.0, step=0.05)
+        mean = sum(((i + lat.offset) * lat.step + lat.shift) * w for i, w in enumerate(lat.weights))
+        self.assertAlmostEqual(mean, 0.5, delta=0.5 * 0.05**2)  # midpoint rule: O(h^2)
+
+    def test_error_rates_consistency_and_orientation(self):
+        d = self.design
+        self.assertFalse(d.plan.reject_high)  # a larger rate means shorter durations
+        self.assertLessEqual(d.at_theta0.reject, 0.05)
+        self.assertLessEqual(d.at_theta1.accept, 0.05)
+        forward = d.at_theta_star.expected_n + d.lambda0 * d.at_theta0.reject + d.lambda1 * d.at_theta1.accept
+        self.assertAlmostEqual(d.lagrangian, forward, places=6)
+
+    def test_error_rates_on_real_exponential_data(self):
+        rnd, reps = random.Random(31), 4000
+        for rate_, target in ((1.0, 0.05), (2.0, 0.95)):
+            got, _ = simulate_plan(self.design.plan, lambda r=rate_: rnd.expovariate(r), reps)
+            self.assertLess(abs(got - target), 3 * math.sqrt(target * (1 - target) / reps), msg=f"rate={rate_}")
+
+
+class LeastFavourable(unittest.TestCase):
+    def test_the_maximum_expected_sample_size_sits_at_theta_star(self):
+        first = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60)
+        best = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60, theta_star="least-favourable")
+        value, where = best.maximum_expected_n()
+        self.assertLess(abs(where - best.theta_star), 0.01)  # Lorden's characterisation
+        self.assertLessEqual(value, first.maximum_expected_n()[0] * 1.002)  # within the steps of discrete data
+        self.assertLessEqual(best.at_theta0.reject, 0.05)
+        self.assertLessEqual(best.at_theta1.accept, 0.1)
+
+    def test_maximum_is_found(self):
+        from seqinfer.design import maximum_expected_n
+
+        d = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60)
+        value, where = maximum_expected_n(d.plan, Bernoulli(), 0.2, 0.5)
+        grid = max(operating_characteristic(d.plan, Bernoulli(), 0.2 + 0.3 * i / 200).expected_n for i in range(201))
+        self.assertGreaterEqual(value, grid - 1e-9)
+        self.assertTrue(0.2 < where < 0.5)
 
 
 class StudentT(unittest.TestCase):
