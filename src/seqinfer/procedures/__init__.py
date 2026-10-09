@@ -6,6 +6,7 @@ from .betting import BettingMeanTest, SequentialSignTest
 from .cusum import CUSUM
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
+from .group_sequential import GroupSequentialTest
 from .kalman import LocalLevelKalman
 from .mixture import NormalMixtureSPRT
 from .particle import BootstrapParticleFilter
@@ -27,6 +28,7 @@ __all__ = [
     "Exponential",
     "Family",
     "Gaussian",
+    "GroupSequentialTest",
     "LocalLevelKalman",
     "MeanDifference",
     "NormalMixtureSPRT",
