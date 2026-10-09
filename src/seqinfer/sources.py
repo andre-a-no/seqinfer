@@ -18,6 +18,7 @@ from itertools import zip_longest
 from typing import Any, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
 
 from .core import Observation
+from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
 from .rng import SplitMix64
 
@@ -77,10 +78,19 @@ def merge_ordered(*sources: Iterable[Observation]) -> Iterator[Observation]:
     return heapq.merge(*sources, key=lambda o: (o.time, o.source, o.seq))
 
 
-def skip_to(source: Iterable[Observation], positions: Mapping[str, int]) -> Iterator[Observation]:
-    """Seek: drop what a restored run has already consumed, according to its source checkpoint."""
+def skip_to(source: Iterable[Observation], positions: Mapping[str, int] | Delivery) -> Iterator[Observation]:
+    """Seek: drop what a restored run has already consumed, according to its source checkpoint.
+
+    Pass the run's Delivery (``run.delivery``): sources it has not seen yet
+    then start at its ``start`` number.  A bare mapping of positions treats
+    unseen sources as starting at 0.
+    """
+    if isinstance(positions, Delivery):
+        start, positions = positions.start, positions.positions()
+    else:
+        start = 0
     for obs in source:
-        if obs.seq is None or obs.seq >= positions.get(obs.source, 0):
+        if obs.seq is None or obs.seq >= positions.get(obs.source, start):
             yield obs
 
 

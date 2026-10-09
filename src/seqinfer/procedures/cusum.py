@@ -30,6 +30,8 @@ class CUSUM(Procedure):
     def __init__(self, family, theta0: float, theta1: float, threshold: float, input: str = "x"):
         family.check(theta0)
         family.check(theta1)
+        if theta0 == theta1:
+            raise ValueError("need theta0 != theta1: with equal parameters the statistic never moves")
         if threshold <= 0:
             raise ValueError("threshold must be positive")
         self.family, self.theta0, self.theta1 = family, float(theta0), float(theta1)

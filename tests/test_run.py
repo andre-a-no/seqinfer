@@ -11,6 +11,7 @@ from seqinfer import (
     Delivery,
     IncompatibleCheckpoint,
     InputContract,
+    KeyJoin,
     LifecycleError,
     NumericalError,
     Observation,
@@ -23,7 +24,7 @@ from seqinfer import (
     run_async,
     run_sync,
 )
-from seqinfer.procedures import SPRT, BootstrapParticleFilter, Gaussian, LocalLevelKalman, MeanDifference
+from seqinfer.procedures import CUSUM, EMA, SPRT, BootstrapParticleFilter, Gaussian, LocalLevelKalman, MeanDifference
 from seqinfer.sources import ObservationLog, as_async, from_values, replay, skip_to
 
 try:
@@ -373,6 +374,67 @@ class LogRestore(unittest.TestCase):
         self.crash_after_checkpoint(path)
         with self.assertRaises(ValueError):
             self.make(ObservationLog(path))
+
+
+class Guards(unittest.TestCase):
+    """Configurations that would fail silently are refused up front."""
+
+    def test_cusum_needs_two_distinct_parameters(self):
+        with self.assertRaises(ValueError):
+            CUSUM(Gaussian(), 0.5, 0.5, threshold=5.0)
+
+    def test_ema_reports_overflow(self):
+        run = Run(EMA(0.5))
+        run.step({"x": 1e308})
+        with self.assertRaises(NumericalError):
+            run.step({"x": -1e308})
+
+    def test_key_join_keys_must_survive_a_checkpoint(self):
+        for key in (("subject-7", 2), 1.5, True, None):
+            with self.subTest(key=key), self.assertRaises(ContractViolation) as caught:
+                KeyJoin(("a", "b")).push(Observation("a", 1.0, key=key))
+            self.assertIn("as a string in the adapter", str(caught.exception))
+        run = Run(MeanDifference(), topology=KeyJoin(("a", "b")))
+        run.offer(Observation("a", 1.0, key="subject-7/2"))
+        restored = Run.restore(MeanDifference(), run.checkpoint(), topology=KeyJoin(("a", "b")))
+        restored.start()
+        restored.offer(Observation("b", 3.0, key="subject-7/2"))
+        self.assertEqual(restored.state.mean_a - restored.state.mean_b, -2.0)
+
+    def test_dropping_is_refused_when_delivery_waits_for_gaps(self):
+        for policy in ("sequence", "strict"):
+            run = Run(FragileSum(), delivery=Delivery(policy))
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                asyncio.run(run_async(run, [as_async(from_values("x", [1.0]))], overflow="drop"))
+            self.assertIs(run.status, RunStatus.CREATED)
+
+    def test_step_is_refused_while_a_log_is_attached(self):
+        run = Run(FragileSum(), log=ObservationLog())
+        with self.assertRaises(LifecycleError):
+            run.step({"x": 1.0})
+        self.assertEqual(run.t, 0)
+
+    def test_skip_to_honours_the_delivery_start(self):
+        source = list(from_values("x", [1.0] * 8, start=5))
+        delivery = Delivery("strict", start=5)
+        self.assertEqual(len(list(skip_to(source, delivery))), 8)
+        delivery.push(source[0])
+        self.assertEqual([o.seq for o in skip_to(source, delivery)], list(range(6, 13)))
+
+    def test_consumer_errors_survive_restore(self):
+        def broken(event):
+            raise RuntimeError("disk full")
+
+        run = Run(FragileSum(), consumers=[broken])
+        run.step({"x": 1.0})
+        restored = Run.restore(FragileSum(), run.checkpoint())
+        self.assertEqual(restored.consumer_errors, run.consumer_errors)
+        self.assertEqual(len(restored.consumer_errors), 1)
+
+    def test_provenance_records_the_package_version(self):
+        import seqinfer
+
+        self.assertEqual(Run(FragileSum()).provenance["seqinfer"], seqinfer.__version__)
 
 
 if __name__ == "__main__":

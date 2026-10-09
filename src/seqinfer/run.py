@@ -23,6 +23,7 @@ from .delivery import Delivery
 from .errors import ContractViolation, IncompatibleCheckpoint, LifecycleError
 from .rng import SplitMix64
 from .sources import ObservationLog
+from .version import __version__
 from .topology import Independent, Topology
 
 CHECKPOINT_FORMAT = "seqinfer.checkpoint/1"
@@ -98,6 +99,7 @@ class Run:
             "seed": seed,
             "initialized_from": initialized_from,
             "on_invalid": on_invalid,
+            "seqinfer": __version__,
             "numerics": {
                 "float": "IEEE 754 binary64",
                 "summation": "Neumaier",
@@ -180,7 +182,14 @@ class Run:
         return events
 
     def step(self, x: StatInput) -> OutputEvent | None:
-        """Apply one statistical input directly, bypassing delivery and topology."""
+        """Apply one statistical input directly, bypassing delivery and topology.
+
+        Not available while an observation log is attached: the log would
+        no longer hold the whole history, and replaying it would silently
+        give a different run.
+        """
+        if self.log is not None:
+            raise LifecycleError("step() bypasses the observation log; use offer(), or a run without a log")
         self._enter()
         self._busy = True
         try:
@@ -246,6 +255,7 @@ class Run:
                 "history_digest": self.history_digest,
                 "log": self.log.state() if hasattr(self.log, "state") else None,
                 "counters": self.counters,
+                "consumer_errors": self.consumer_errors,
                 "provenance": self.provenance,
             }
         )
@@ -320,6 +330,7 @@ class Run:
         run.terminal = checkpoint["terminal"]
         run.history_digest = checkpoint["history_digest"]
         run.counters = dict(checkpoint["counters"])
+        run.consumer_errors = list(checkpoint.get("consumer_errors", []))
         run.provenance = json.loads(json.dumps(prov))
         orphaned = log.restore(log_state) if log is not None and log_state is not None else None
         run.log = log

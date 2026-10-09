@@ -13,6 +13,9 @@ transition function and nothing else.  Calibration and evaluation use
 separate random streams.
 
 Usage: python examples/04_kiefer_weiss_oc.py [replications]
+
+The default 20000 replications take several minutes; pass e.g. 2000 for a
+quick look (with correspondingly wider Monte Carlo error).
 """
 import sys
 

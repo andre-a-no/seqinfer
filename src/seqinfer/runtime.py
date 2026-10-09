@@ -55,6 +55,12 @@ async def run_async(
     """
     if overflow not in ("block", "drop"):
         raise ValueError("overflow must be 'block' or 'drop'")
+    if overflow == "drop" and run.delivery.policy != "arrival":
+        raise ValueError(
+            f"overflow='drop' cannot be combined with delivery policy {run.delivery.policy!r}: "
+            f"a dropped sequence number leaves a gap that the policy waits on forever. "
+            f"Use overflow='block', or Delivery('arrival')"
+        )
     _attach(run, f"async/push/{overflow}")
     queue: asyncio.Queue = asyncio.Queue(maxsize)
 

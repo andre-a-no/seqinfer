@@ -24,6 +24,18 @@ def save_checkpoint(path: str | os.PathLike, checkpoint: dict) -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Make the rename durable.  POSIX only: Windows cannot open a directory."""
+    if os.name != "posix":
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def load_checkpoint(path: str | os.PathLike) -> dict:

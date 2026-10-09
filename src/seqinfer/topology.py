@@ -105,8 +105,12 @@ class KeyJoin(_Buffered):
 
     def push(self, obs: Observation) -> list[dict]:
         self._check(obs)
-        if obs.key is None:
-            raise ContractViolation("key join needs a key on every observation")
+        if type(obs.key) not in (str, int):
+            raise ContractViolation(
+                f"key join needs a str or int key on every observation, got {type(obs.key).__name__} {obs.key!r}; "
+                f"keys are stored in checkpoints as JSON, so build a composite key as a string in the adapter, "
+                f"e.g. f\"{{subject}}/{{visit}}\""
+            )
         row = self._partial.setdefault(obs.key, {})
         if obs.input in row:
             raise OrderingError(f"key {obs.key!r}: input {obs.input!r} was observed twice")

@@ -31,8 +31,7 @@ from .rng import SplitMix64
 from .run import Run, RunStatus, checkpoint_id
 from .runtime import run_async, run_sync
 from .topology import Independent, KeyJoin, PositionalPair, TimeAlign, difference
-
-__version__ = "0.1.0"
+from .version import __version__
 
 __all__ = [
     "Chain",
