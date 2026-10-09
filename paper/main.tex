@@ -1035,7 +1035,7 @@ consequence. None of them modifies the inferential state.}
 \midrule
 Source error & adapter, runtime & run stays valid \\
 Delivery or ordering error & runtime, topology & run fails \\
-Validation error & input contract, topology & input skipped and reported, or run fails \\
+Validation error & contract, topology & skipped and reported, or fails \\
 Numerical or inference error & procedure & transition not committed; run fails \\
 Serialization error & persistence & previous checkpoint stays valid \\
 Consumer error & consumer & recorded; inference continues \\

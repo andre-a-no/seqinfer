@@ -19,7 +19,7 @@ unchanged on a file, a live instrument or a simulator, and a resumed run
 is bit-for-bit identical to an uninterrupted one.
 
 The library is the reference implementation of the architecture described
-in [`paper/main.tex`](paper/main.tex). It has no dependencies beyond the
+in [`paper/main.tex`](paper/main.tex) ([PDF](paper/main.pdf)). It has no dependencies beyond the
 Python standard library (3.10+).
 
 ## Installation
@@ -131,6 +131,7 @@ pip install -e . ruff mypy
 python -m unittest discover -s tests -t .
 ruff check . && mypy
 node conformance/check.mjs
+cd paper && latexmk -pdf main.tex   # the paper; needs TeX Live with biber
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

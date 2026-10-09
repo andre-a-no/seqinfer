@@ -3,3 +3,14 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# LaTeX build products
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
