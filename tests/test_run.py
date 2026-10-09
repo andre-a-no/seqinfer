@@ -371,6 +371,32 @@ class InvalidInputPolicy(unittest.TestCase):
             Run(FragileSum(), consumers=[broken]).step({"x": 1.0})
         self.assertEqual(self.incidents(logs)[0]["kind"], "consumer_error")
 
+    def test_a_streak_of_invalid_inputs_stops_the_run(self):
+        from seqinfer import InvalidInputStreak
+
+        run = Run(FragileSum(), max_invalid_streak=3)
+        self.assertEqual(run.provenance["max_invalid_streak"], 3)
+        with self.assertLogs("seqinfer", "WARNING"):
+            for value in (-1.0, -1.0, 1.0, -1.0, -1.0):  # a valid input resets the streak
+                run.step({"x": value})
+            checkpoint = run.checkpoint()
+            self.assertEqual(run.counters["invalid_streak"], 2)
+            with self.assertRaises(InvalidInputStreak) as caught:
+                run.step({"x": -1.0})
+        self.assertIsInstance(caught.exception.__cause__, ContractViolation)
+        self.assertIs(run.status, RunStatus.FAILED)
+        self.assertEqual(run.counters["invalid_skipped"], 5)
+
+        restored = Run.restore(FragileSum(), checkpoint)  # threshold and current streak carry over
+        restored.start()
+        with self.assertLogs("seqinfer", "WARNING"), self.assertRaises(InvalidInputStreak):
+            restored.step({"x": -1.0})
+
+    def test_streak_threshold_must_be_positive(self):
+        for bad in (0, -1, 2.5, True):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                Run(FragileSum(), max_invalid_streak=bad)
+
     def test_unknown_policies_are_refused(self):
         for policy in ("ignore", ValueError("not a class"), int):
             with self.subTest(policy=policy), self.assertRaises(ValueError):

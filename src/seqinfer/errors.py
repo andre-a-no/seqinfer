@@ -12,6 +12,10 @@ class ContractViolation(SeqInferError):
     """A statistical input does not satisfy the procedure's input contract."""
 
 
+class InvalidInputStreak(SeqInferError):
+    """Too many consecutive invalid inputs: the source, not a message, is probably broken."""
+
+
 class OrderingError(SeqInferError):
     """An observation violates the delivery or topology ordering policy."""
 

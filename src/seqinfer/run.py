@@ -26,7 +26,7 @@ from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
 from .core import Observation, Procedure, StatInput, statistical_rng
 from .delivery import Delivery
-from .errors import ContractViolation, IncompatibleCheckpoint, LifecycleError
+from .errors import ContractViolation, IncompatibleCheckpoint, InvalidInputStreak, LifecycleError
 from .rng import SplitMix64
 from .sources import ObservationLog
 from .topology import Independent, Topology
@@ -85,10 +85,13 @@ class Run:
         initial_state: Any = None,
         initialized_from: Any = "default",
         on_invalid: str | type[Exception] = "skip",
+        max_invalid_streak: int | None = None,
         log: Any = None,
         clock: Callable[[], float] = time.time,
     ):
         policy = _policy_spec(on_invalid)
+        if max_invalid_streak is not None and (type(max_invalid_streak) is not int or max_invalid_streak < 1):
+            raise ValueError("max_invalid_streak must be a positive integer or None")
         if isinstance(log, ObservationLog) and not log.is_empty():
             raise ValueError(
                 f"log {log.path or '(in memory)'} already holds records; a new run needs an empty log. "
@@ -99,6 +102,7 @@ class Run:
         self.delivery = delivery if delivery is not None else Delivery()
         self.consumers = list(consumers)
         self.on_invalid: str | type[Exception] = on_invalid
+        self.max_invalid_streak = max_invalid_streak
         self.log = log
         self._clock = clock
         self._busy = False
@@ -110,7 +114,7 @@ class Run:
         self.status = RunStatus.CREATED
         self.terminal = procedure.is_terminal(self.state)
         self.history_digest = _GENESIS
-        self.counters = {"invalid_skipped": 0, "after_terminal": 0, "dropped_by_runtime": 0}
+        self.counters = {"invalid_skipped": 0, "invalid_streak": 0, "after_terminal": 0, "dropped_by_runtime": 0}
         self.consumer_errors: list[dict] = []
         self.provenance = {
             "run_id": self.run_id,
@@ -122,6 +126,7 @@ class Run:
             "seed": None if seed is None else str(int(seed)),
             "initialized_from": initialized_from,
             "on_invalid": policy,
+            "max_invalid_streak": max_invalid_streak,
             "seqinfer": __version__,
             "numerics": {
                 "float": "IEEE 754 binary64",
@@ -261,6 +266,15 @@ class Run:
         policy = self.on_invalid
         if policy == "skip":
             self.counters["invalid_skipped"] += 1
+            self.counters["invalid_streak"] += 1
+            limit = self.max_invalid_streak
+            if limit is not None and self.counters["invalid_streak"] >= limit:
+                streak = InvalidInputStreak(
+                    f"run {self.run_id}: {limit} consecutive invalid inputs after t={self.t}; "
+                    f"the source is probably broken (last: {violation})"
+                )
+                self._fail(streak)
+                raise streak from violation
             return
         if isinstance(policy, str):  # "raise"
             self._fail(violation)
@@ -295,6 +309,7 @@ class Run:
         if rng is not None:
             self.rng_state = rng.state
         self.t += 1
+        self.counters["invalid_streak"] = 0
         self.history_digest = digest
         self.terminal = self.procedure.is_terminal(new_state)
         event = OutputEvent(self.run_id, self.t, output, self.terminal)
@@ -369,7 +384,8 @@ class Run:
         them for sources that cannot replay is the application's job (see
         `ObservationLog`).
 
-        The run keeps its `on_invalid` policy.  A policy that raises a custom
+        The run keeps its `on_invalid` policy, its `max_invalid_streak` and
+        the current streak.  A policy that raises a custom
         exception class is recorded by name only, so that class has to be
         passed again as ``on_invalid``.
         """
@@ -420,6 +436,7 @@ class Run:
             run_id=checkpoint["run_id"],
             initial_state=procedure.decode_state(checkpoint["state"]),
             on_invalid=on_invalid,
+            max_invalid_streak=prov.get("max_invalid_streak"),
             clock=clock,
         )
         topology.restore(checkpoint["topology"]["state"])
@@ -428,7 +445,7 @@ class Run:
         run.t = checkpoint["t"]
         run.terminal = checkpoint["terminal"]
         run.history_digest = checkpoint["history_digest"]
-        run.counters = dict(checkpoint["counters"])
+        run.counters = {**run.counters, **checkpoint["counters"]}
         run.consumer_errors = list(checkpoint.get("consumer_errors", []))
         run.provenance = json.loads(json.dumps(prov))
         discarded = log.restore(log_state) if log is not None and log_state is not None else 0

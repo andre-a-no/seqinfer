@@ -22,6 +22,7 @@ from .delivery import Delivery
 from .errors import (
     ContractViolation,
     IncompatibleCheckpoint,
+    InvalidInputStreak,
     LifecycleError,
     NumericalError,
     OrderingError,
@@ -43,6 +44,7 @@ __all__ = [
     "IncompatibleCheckpoint",
     "Independent",
     "InputContract",
+    "InvalidInputStreak",
     "JsonlSink",
     "KeyJoin",
     "LifecycleError",
