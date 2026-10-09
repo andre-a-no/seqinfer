@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seqinfer"
+version = "0.1.0"
+description = "Reference implementation of an architecture that separates sequential statistical inference from experimental runtime"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Alexander Stepanov" },
+    { name = "Andrej Novikov" },
+]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
