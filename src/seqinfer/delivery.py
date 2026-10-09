@@ -43,6 +43,14 @@ class Delivery:
     def spec(self) -> dict:
         return {"policy": self.policy, "dedup": self.dedup, "start": self.start}
 
+    def delivered(self, obs: Observation) -> bool:
+        """True if this observation was already delivered (a restored run must not receive it again)."""
+        if obs.seq is None:
+            return False
+        if obs.seq < self._next.get(obs.source, self.start):
+            return True
+        return obs.seq in self._ahead.get(obs.source, ())
+
     def positions(self) -> dict[str, int]:
         return dict(self._next)
 

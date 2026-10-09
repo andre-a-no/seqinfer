@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from itertools import zip_longest
 from typing import Any, cast
 
-from .core import Observation
+from .core import UNRECORDABLE, Observation, recording_problem
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
 from .files import AppendFile
@@ -124,16 +124,19 @@ def merge_ordered(*sources: Iterable[Observation]) -> Iterator[Observation]:
 def skip_to(source: Iterable[Observation], positions: Mapping[str, int] | Delivery) -> Iterator[Observation]:
     """Seek: drop what a restored run has already consumed, according to its source checkpoint.
 
-    Pass the run's Delivery (``run.delivery``): sources it has not seen yet
-    then start at its ``start`` number.  A bare mapping of positions treats
-    unseen sources as starting at 0.
+    Pass the run's Delivery (``run.delivery``): it also knows the sources it
+    has not seen yet (they start at its ``start`` number) and, under the
+    arrival policy, the observations delivered ahead of a gap.  A bare
+    mapping of positions only knows the next sequence number per source.
     """
     if isinstance(positions, Delivery):
-        start, positions = positions.start, positions.positions()
-    else:
-        start = 0
+        delivery = positions
+        for obs in source:
+            if not delivery.delivered(obs):
+                yield obs
+        return
     for obs in source:
-        if obs.seq is None or obs.seq >= positions.get(obs.source, start):
+        if obs.seq is None or obs.seq >= positions.get(obs.source, 0):
             yield obs
 
 
@@ -208,16 +211,18 @@ class ObservationLog:
         contracts reject just as they rejected the original.
         """
         record = obs.to_json()
-        try:
-            text = json.dumps(record, sort_keys=True)
-        except (TypeError, ValueError):
-            record["value"] = {"unserializable": repr(obs.value)}
-            try:
-                text = json.dumps(record, sort_keys=True)
-            except (TypeError, ValueError):
-                record = {k: v if isinstance(v, (str, int, float, type(None))) else repr(v) for k, v in record.items()}
-                text = json.dumps(record, sort_keys=True)
-        return (text + "\n").encode("utf-8")
+        if recording_problem(obs) is not None:
+            # The run rejects this observation; record a marker that a replay rejects
+            # at the same point, with the fields delivery and provenance need.
+            record = {
+                "input": obs.input,
+                "source": obs.source,
+                "seq": obs.seq if type(obs.seq) is int else None,
+                "key": None,
+                "time": None,
+                "value": {UNRECORDABLE: repr(obs.value)[:200]},
+            }
+        return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
 
     @staticmethod
     def _chain(digest: str, line: bytes) -> str:
@@ -304,7 +309,8 @@ class ObservationLog:
         position = self._scan()
         line = self._line(obs)
         if self._file is None:
-            self._items.append(obs)
+            # keep what was recorded, not the caller's object, which may change later
+            self._items.append(Observation.from_json(json.loads(line)))
         else:
             self._file.write(line)
         position["count"] += 1

@@ -14,7 +14,9 @@ from seqinfer import (
     ContractViolation,
     Delivery,
     IncompatibleCheckpoint,
+    Independent,
     InputContract,
+    InvalidInputStreak,
     KeyJoin,
     LifecycleError,
     NumericalError,
@@ -480,6 +482,84 @@ class ReviewRegressions(unittest.TestCase):
             for bad in (None, 5, [("x",)]):
                 self.assertIsNone(run.step(bad))
         self.assertEqual(run.counters["invalid_skipped"], 3)
+
+
+class SecondReviewRegressions(unittest.TestCase):
+    """Defects found by the second review of the runtime; each test reproduces one."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def replayed_equals_live(self, observations, topology=None):
+        make_topology = topology or Independent
+        path = self.dir / f"log{len(list(self.dir.iterdir()))}.jsonl"
+        with ObservationLog(path) as log:
+            live = Run(EMA(0.5), topology=make_topology(), log=log)
+            with self.assertLogs("seqinfer", "WARNING"):
+                for obs in observations:
+                    live.offer(obs)
+        again = Run(EMA(0.5), topology=make_topology())
+        with self.assertLogs("seqinfer", "WARNING"):
+            run_sync(again, replay(path))
+        self.assertEqual((again.t, again.history_digest), (live.t, live.history_digest))
+        return live
+
+    def test_values_a_log_cannot_record_are_invalid_inputs(self):
+        import fractions
+        import uuid
+
+        odd = [Observation("x", 1.5, seq=0, key=uuid.uuid4()), Observation("x", fractions.Fraction(1, 3), seq=1),
+               Observation("x", (1.0, 2.0), seq=2), Observation("x", 2.0, seq=3)]
+        if numpy is not None:
+            odd.append(Observation("x", numpy.float64(1.5), seq=4))
+        live = self.replayed_equals_live(odd)
+        self.assertEqual(live.t, 1)  # only the plain 2.0
+        mapped = [Observation("x", fractions.Fraction(1, 3), seq=0), Observation("x", 2.0, seq=1)]
+        self.replayed_equals_live(mapped, lambda: Independent().map(lambda x: {"x": float(x["x"])}, "to_float"))
+
+    def test_restore_does_not_redeliver_observations_that_arrived_ahead(self):
+        stream = [Observation("x", float(i), seq=i) for i in (0, 2, 1, 3)]
+        straight = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(straight, stream)
+        run = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(run, stream[:2])
+        resumed = Run.restore(EMA(0.5), run.checkpoint(), delivery=Delivery("arrival", dedup=False))
+        run_sync(resumed, skip_to(stream, resumed.delivery))
+        self.assertEqual((resumed.t, resumed.history_digest), (straight.t, straight.history_digest))
+
+    def test_transform_failures_keep_their_place(self):
+        from seqinfer.topology import Topology
+
+        class Two(Topology):
+            def spec(self):
+                return {"type": "two"}
+
+            def push(self, obs):
+                return [{"x": v} for v in obs.value]
+
+        run = Run(EMA(0.5), topology=Two().map(lambda x: {"x": x["x"] + 0.0}, "plus0"), max_invalid_streak=2)
+        with self.assertLogs("seqinfer", "WARNING"):
+            run.offer(Observation("x", [1.0, "bad"], seq=0))
+            with self.assertRaises(InvalidInputStreak):
+                run.offer(Observation("x", ["bad", 2.0], seq=1))  # two invalid inputs in a row
+        self.assertEqual(run.t, 1)
+
+    def test_run_async_pulls_nothing_from_a_stopped_run(self):
+        run = Run(SPRT(Gaussian(1.0), 0.0, 1.0, 0.4, 0.4))
+        run.step({"x": 10.0})
+        consumed = asyncio.run(run_async(run, [as_async(from_values("x", [1.0]))]))
+        self.assertEqual((consumed, run.counters["after_terminal"]), (0, 0))
+
+    def test_an_in_memory_log_keeps_what_was_recorded(self):
+        log = ObservationLog()
+        run = Run(MeanDifference(), topology=PositionalPair(("a", "b")), log=log)
+        value = [1.0, 2.0]
+        run.offer(Observation("a", value, seq=0))
+        checkpoint = run.checkpoint()
+        value[0] = 99.0  # the caller reuses its buffer
+        Run.restore(MeanDifference(), checkpoint, topology=PositionalPair(("a", "b")), log=log)
 
 
 class StreamFailure(Exception):

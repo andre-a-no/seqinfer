@@ -25,12 +25,12 @@ from typing import Any
 from .canonical import canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
-from .core import Observation, Procedure, StatInput, statistical_rng
+from .core import Observation, Procedure, StatInput, recording_problem, statistical_rng
 from .delivery import Delivery
 from .errors import ContractViolation, IncompatibleCheckpoint, InvalidInputStreak, LifecycleError
 from .rng import SplitMix64
 from .sources import ObservationLog
-from .topology import Independent, Topology
+from .topology import Independent, InvalidInput, Topology
 from .version import __version__
 
 #: Version 2: RFC 8785 canonical JSON in digests; 64-bit values (seed, random state) as strings.
@@ -280,12 +280,19 @@ class Run:
                 for delivered in self.delivery.push(obs):
                     if self.log is not None:
                         self.log.append(delivered)
+                    problem = recording_problem(delivered)
+                    if problem is not None:
+                        self._invalid(ContractViolation(problem), "observation", observation=delivered)
+                        continue
                     try:
                         inputs = self.topology.push(delivered)
                     except ContractViolation as violation:
                         self._invalid(violation, "topology", observation=delivered)
-                        inputs = list(getattr(violation, "emitted", []))  # what did map still counts
+                        continue
                     for x in inputs:
+                        if isinstance(x, InvalidInput):
+                            self._invalid(x.violation, "topology", observation=delivered)
+                            continue
                         event = self._apply(x, delivered)
                         if event is not None:
                             events.append(event)

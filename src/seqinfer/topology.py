@@ -21,6 +21,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .core import Observation
@@ -200,12 +201,15 @@ class TimeAlign(_Buffered):
         self.unmatched = int(state["unmatched"])
 
 
-class TransformFailure(ContractViolation):
-    """A transformation failed on some inputs; `emitted` holds the inputs that did map."""
+@dataclass(frozen=True)
+class InvalidInput:
+    """Stands, in a topology's output, for an input a transformation could not map.
 
-    def __init__(self, message: str, *, emitted: list[dict], failures: list[str]):
-        super().__init__(message)
-        self.emitted, self.failures = emitted, failures
+    It keeps its place among the inputs, so that the run applies the
+    inputs before it, reports it as invalid input and then goes on.
+    """
+
+    violation: ContractViolation
 
 
 class Mapped(Topology):
@@ -219,31 +223,27 @@ class Mapped(Topology):
     def spec(self) -> dict:
         return {"type": "mapped", "map": self.map_identity, "inner": self.inner.spec()}
 
-    def push(self, obs: Observation) -> list[dict]:
+    def push(self, obs: Observation) -> list:
         """Map every input the inner topology emits.
 
         A transformation that fails on an input (a value of the wrong type
         that reached it before any contract could see it, a missing field)
-        makes that input invalid, not the run: the failure is raised as a
-        TransformFailure that still carries the inputs that did map, so a
-        run that skips invalid input loses only the bad one.
+        makes that input invalid, not the run: an InvalidInput takes its
+        place in the output, and the run reports and skips it in order.
         """
-        failures: list[str] = []
-        try:
-            inputs = self.inner.push(obs)
-        except TransformFailure as inner_failure:
-            inputs, failures = list(inner_failure.emitted), list(inner_failure.failures)
-        out = []
-        for x in inputs:
+        out: list = []
+        for x in self.inner.push(obs):
+            if isinstance(x, InvalidInput):
+                out.append(x)
+                continue
             try:
                 y = self.fn(x)
             except Exception as error:
-                failures.append(f"{self.map_identity['name']} failed on {x!r}: {type(error).__name__}: {error}")
+                message = f"{self.map_identity['name']} failed on {x!r}: {type(error).__name__}: {error}"
+                out.append(InvalidInput(ContractViolation(message)))
                 continue
             if y is not None:
                 out.append(y)
-        if failures:
-            raise TransformFailure("; ".join(failures), emitted=out, failures=failures)
         return out
 
     def state(self) -> Any:

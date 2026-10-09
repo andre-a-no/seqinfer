@@ -72,6 +72,45 @@ def _encode(value: Any) -> Any:
     return value
 
 
+#: Value types an observation may carry: exactly these (no subclasses), so that
+#: an observation log records them without loss and a replay sees what the run saw.
+_PLAIN = (int, float, str, bool, type(None))
+#: Marker a log writes in place of an observation it could not record.
+UNRECORDABLE = "$unrecordable"
+
+
+def _plain_value(v: Any) -> bool:
+    if type(v) in _PLAIN:
+        return True
+    if type(v) is list:
+        return all(_plain_value(x) for x in v)
+    if type(v) is dict:
+        return UNRECORDABLE not in v and all(type(k) is str and _plain_value(x) for k, x in v.items())
+    return False
+
+
+def recording_problem(obs: Observation) -> str | None:
+    """Why an observation cannot be recorded exactly, or None if it can.
+
+    Values must be int, float, str, bool, None, or lists and dicts (with
+    string keys) of these; keys str or int; event times int or float.
+    Anything else -- numpy scalars, Fraction, tuples, UUIDs, subclasses of
+    int or float -- would come back from an observation log as something
+    else, so a run treats such an observation as invalid input, whether or
+    not it keeps a log, and the adapter is the place to convert it.
+    """
+    if not _plain_value(obs.value):
+        return (
+            f"value {obs.value!r} of type {type(obs.value).__qualname__} cannot be recorded exactly; "
+            f"convert it in the adapter to int, float, str, bool, None, or a list or dict of these"
+        )
+    if obs.key is not None and type(obs.key) not in (str, int):
+        return f"key {obs.key!r} must be a str or an int; build composite keys as strings in the adapter"
+    if obs.time is not None and type(obs.time) not in (int, float):
+        return f"event time {obs.time!r} must be an int or a float"
+    return None
+
+
 class Procedure(ABC, Generic[S, O]):
     """Semantic contract of a Sequential Procedure.
 
