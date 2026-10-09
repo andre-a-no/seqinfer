@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Callable, Iterable, Iterator, Mapping, Se
 from .core import Observation
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
+from .files import AppendFile
 from .rng import SplitMix64
 
 _LOG_GENESIS = hashlib.sha256(b"seqinfer.log/1").hexdigest()
@@ -116,8 +117,13 @@ class ObservationLog:
     Restoring the checkpoint restores the log to that position: the prefix
     is verified against the hash chain, and records written after the
     checkpoint are deleted.  Only their number is kept, in the provenance.
-    Relative paths are resolved against the working directory at the time
-    of use.
+    Relative paths are resolved when the log is created.
+
+    The file stays open between records; `sync` chooses between "flush"
+    (survives a crash of the process) and "fsync" (survives a power
+    failure), see `seqinfer.files`.  Whatever the mode, the log is forced
+    to the disk whenever a checkpoint records its position.  Close the
+    log, or use it as a context manager, when the run is over.
 
     seqinfer does not keep observations beyond the last checkpoint.  After a
     restore, the run receives them again from its sources (see `skip_to`).
@@ -126,10 +132,21 @@ class ObservationLog:
     buffered by the application, between the source and the run.
     """
 
-    def __init__(self, path=None):
-        self.path = None if path is None else os.fspath(path)
+    def __init__(self, path: str | os.PathLike[str] | None = None, *, sync: str = "flush"):
+        self.path = None if path is None else os.path.abspath(os.fspath(path))
+        self._file = None if self.path is None else AppendFile(self.path, sync)
         self._items: list[Observation] = []
         self._position: dict | None = None  # computed lazily for an existing file
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+
+    def __enter__(self) -> "ObservationLog":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
 
     # ----------------------------------------------------------- position
 
@@ -167,9 +184,8 @@ class ObservationLog:
     def state(self) -> dict:
         """Durable position of the log, stored in the run checkpoint."""
         position = self._scan()
-        if self.path is not None and os.path.exists(self.path):
-            with open(self.path, "ab") as f:
-                os.fsync(f.fileno())
+        if self._file is not None:
+            self._file.fsync()
         return {"path": self.path, **position}
 
     def restore(self, state: Mapping[str, Any]) -> int:
@@ -198,6 +214,7 @@ class ObservationLog:
         if self.path is None:
             del self._items[count:]
         elif os.path.exists(self.path) and os.path.getsize(self.path) > offset:
+            self.close()
             with open(self.path, "r+b") as f:
                 f.truncate(offset)
                 os.fsync(f.fileno())
@@ -209,11 +226,10 @@ class ObservationLog:
     def append(self, obs: Observation) -> None:
         position = self._scan()
         line = self._line(obs)
-        if self.path is None:
+        if self._file is None:
             self._items.append(obs)
         else:
-            with open(self.path, "ab") as f:
-                f.write(line)
+            self._file.write(line)
         position["count"] += 1
         position["offset"] += len(line)
         position["digest"] = self._chain(position["digest"], line)

@@ -374,6 +374,43 @@ class InvalidInputPolicy(unittest.TestCase):
                 Run(FragileSum(), on_invalid=policy)
 
 
+class Files(unittest.TestCase):
+    """Log and sink files stay open between records; durability is configurable."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def test_the_log_file_is_opened_once(self):
+        for sync in ("flush", "fsync"):
+            with self.subTest(sync=sync), ObservationLog(self.dir / f"{sync}.jsonl", sync=sync) as log:
+                run = Run(FragileSum(), log=log)
+                run.offer(Observation("x", 1.0, seq=0))
+                handle = log._file._file
+                for i in range(1, 50):
+                    run.offer(Observation("x", 1.0, seq=i))
+                self.assertIs(log._file._file, handle)
+                self.assertEqual(len(list(replay(log.path))), 50)  # flushed: visible to readers
+                run.close()
+                self.assertTrue(log._file.closed)
+
+    def test_unknown_sync_mode_is_refused(self):
+        with self.assertRaises(ValueError):
+            ObservationLog(self.dir / "x.jsonl", sync="sometimes")
+
+    def test_jsonl_sink(self):
+        from seqinfer import JsonlSink
+
+        path = self.dir / "outputs.jsonl"
+        with JsonlSink(path, encode=lambda o: o) as sink:
+            run = Run(FragileSum(), consumers=[sink])
+            for _ in range(3):
+                run.step({"x": 1.0})
+        lines = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual([line["output"] for line in lines], [1.0, 2.0, 3.0])
+
+
 class LogRestore(unittest.TestCase):
     """The observation log is part of the run's persistent state."""
 

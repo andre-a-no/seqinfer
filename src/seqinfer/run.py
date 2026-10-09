@@ -143,11 +143,14 @@ class Run:
         self._event("pause")
 
     def close(self) -> None:
-        """End the run.  Its final state stays available for checkpointing."""
+        """End the run and close its observation log.  The final state stays available for checkpointing."""
         if self.status in (RunStatus.COMPLETED, RunStatus.FAILED):
             raise LifecycleError(f"run is already {self.status.value}")
         self.status = RunStatus.COMPLETED
         self._event("close", terminal=self.terminal)
+        close_log = getattr(self.log, "close", None)
+        if close_log is not None:
+            close_log()
 
     def _fail(self, error: BaseException) -> None:
         self.status = RunStatus.FAILED

@@ -11,8 +11,11 @@ actuator, not on the run.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
+
+from .files import AppendFile
 
 
 @dataclass(frozen=True)
@@ -41,12 +44,27 @@ class Recorder:
 
 
 class JsonlSink:
-    """Appends one JSON line per output to a file."""
+    """Appends one JSON line per output to a file.
 
-    def __init__(self, path, encode: Callable[[Any], Any]):
-        self.path, self.encode = path, encode
+    The file stays open between events; `sync` is "flush" or "fsync", see
+    `seqinfer.files`.  Close the sink, or use it as a context manager, when
+    the run is over.
+    """
+
+    def __init__(self, path: str | os.PathLike[str], encode: Callable[[Any], Any], *, sync: str = "flush"):
+        self.encode = encode
+        self._file = AppendFile(path, sync)
+        self.path = self._file.path
 
     def __call__(self, event: OutputEvent) -> None:
         line = {"run_id": event.run_id, "t": event.t, "terminal": event.terminal, "output": self.encode(event.output)}
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(line) + "\n")
+        self._file.write((json.dumps(line) + "\n").encode("utf-8"))
+
+    def close(self) -> None:
+        self._file.close()
+
+    def __enter__(self) -> "JsonlSink":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
