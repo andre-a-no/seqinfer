@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +7,20 @@ name = "seqinfer"
 version = "0.1.0"
 description = "Reference implementation of an architecture that separates sequential statistical inference from experimental runtime"
 readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "COMMERCIAL.md"]
 requires-python = ">=3.10"
 authors = [
     { name = "Alexander Stepanov" },
     { name = "Andrej Novikov" },
+]
+maintainers = [
+    { name = "Novikov Laboratories LLC", email = "andrei@hobukob.ru" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = []
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Operating characteristics of the SPRT and the 2-SPRT (Table 5 of the paper).
 
 Gaussian observations with unit variance, theta0 = 0 against theta1 = 0.5,

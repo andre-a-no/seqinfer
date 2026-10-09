@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Kalman filter for the local-level model, optionally with a known control input.
 
     z_t = z_{t-1} + u_t + w_t,   w_t ~ N(0, q)

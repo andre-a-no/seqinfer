@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
+# Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Lorden's 2-SPRT for the Kiefer-Weiss problem.
 
 The Kiefer-Weiss problem asks for the test of theta0 against theta1 that,
