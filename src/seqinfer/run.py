@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import platform
 import time
 import uuid
@@ -33,6 +34,18 @@ CHECKPOINT_FORMAT = "seqinfer.checkpoint/1"
 _GENESIS = hashlib.sha256(b"seqinfer.history/1").hexdigest()
 #: Default of `Run.restore(log=...)`: reopen the log recorded in the checkpoint.
 FROM_CHECKPOINT: Any = object()
+
+#: Incidents (skipped inputs, failing consumers) are reported here as warnings.
+logger = logging.getLogger("seqinfer")
+
+
+def _policy_spec(on_invalid: Any) -> str:
+    """JSON form of an on_invalid policy, recorded in provenance."""
+    if on_invalid in ("skip", "raise"):
+        return on_invalid
+    if isinstance(on_invalid, type) and issubclass(on_invalid, Exception):
+        return f"raise:{on_invalid.__module__}.{on_invalid.__qualname__}"
+    raise ValueError("on_invalid must be 'skip', 'raise' or an exception class")
 
 
 class RunStatus(str, Enum):
@@ -63,12 +76,11 @@ class Run:
         run_id: str | None = None,
         initial_state: Any = None,
         initialized_from: Any = "default",
-        on_invalid: str = "raise",
+        on_invalid: str | type[Exception] = "skip",
         log: Any = None,
         clock: Callable[[], float] = time.time,
     ):
-        if on_invalid not in ("raise", "skip"):
-            raise ValueError("on_invalid must be 'raise' or 'skip'")
+        policy = _policy_spec(on_invalid)
         if isinstance(log, ObservationLog) and not log.is_empty():
             raise ValueError(
                 f"log {log.path or '(in memory)'} already holds records; a new run needs an empty log. "
@@ -101,7 +113,7 @@ class Run:
             "delivery": self.delivery.spec(),
             "seed": seed,
             "initialized_from": initialized_from,
-            "on_invalid": on_invalid,
+            "on_invalid": policy,
             "seqinfer": __version__,
             "numerics": {
                 "float": "IEEE 754 binary64",
@@ -156,6 +168,12 @@ class Run:
 
         delivery -> topology -> validate -> transition -> commit -> notify.
         Returns the output events produced (often none or one).
+
+        An observation the topology cannot use (unknown input, missing key
+        or event time) and a statistical input that violates the
+        procedure's contract are invalid inputs, handled by `on_invalid`.
+        Delivery errors (OrderingError under the strict policy) are not:
+        that policy was chosen to stop the run.
         """
         self._enter()
         self._busy = True
@@ -165,8 +183,13 @@ class Run:
             events = []
             try:
                 for delivered in self.delivery.push(obs):
-                    for x in self.topology.push(delivered):
-                        event = self._apply(x)
+                    try:
+                        inputs = self.topology.push(delivered)
+                    except ContractViolation as violation:
+                        self._invalid(violation, "topology", observation=delivered)
+                        continue
+                    for x in inputs:
+                        event = self._apply(x, delivered)
                         if event is not None:
                             events.append(event)
             except Exception as error:
@@ -200,22 +223,56 @@ class Run:
         finally:
             self._busy = False
 
-    def _apply(self, x: dict) -> OutputEvent | None:
+    def _invalid(self, violation: ContractViolation, stage: str, *, observation=None, x=None) -> None:
+        """An invalid input: always reported as a warning, then skipped or raised per `on_invalid`."""
+        where = ""
+        if observation is not None:
+            where = f" from source {observation.source!r}" + (f" seq {observation.seq}" if observation.seq is not None else "")
+        action = "skipped" if self.on_invalid == "skip" else "rejected"
+        logger.warning(
+            "run %s: %s invalid input%s after t=%d (%s): %s",
+            self.run_id, action, where, self.t, stage, violation,
+            extra={
+                "incident": {
+                    "kind": "invalid_input",
+                    "run_id": self.run_id,
+                    "t": self.t,
+                    "stage": stage,
+                    "action": action,
+                    "error": str(violation),
+                    "observation": observation.to_json() if observation is not None else None,
+                    "input": x,
+                }
+            },
+        )
+        if self.on_invalid == "skip":
+            self.counters["invalid_skipped"] += 1
+            return
+        if self.on_invalid == "raise":
+            self._fail(violation)
+            raise violation
+        error = self.on_invalid(f"run {self.run_id}: invalid input after t={self.t} ({stage}): {violation}")
+        self._fail(error)
+        raise error from violation
+
+    def _apply(self, x: dict, observation: Observation | None = None) -> OutputEvent | None:
         if self.terminal:
             self.counters["after_terminal"] += 1
             return None
         try:
             validate_input(self.procedure, x)
-        except ContractViolation as error:
-            if self.on_invalid == "skip":
-                self.counters["invalid_skipped"] += 1
-                return None
-            self._fail(error)
-            raise
+        except ContractViolation as violation:
+            self._invalid(violation, "contract", observation=observation, x=x)
+            return None
         rng = SplitMix64(self.rng_state) if self.rng_state is not None else None
         try:
             new_state, output = self.procedure.step(self.state, x, rng)
             digest = hashlib.sha256((self.history_digest + _canonical(x)).encode()).hexdigest()
+        except ContractViolation as violation:
+            # Raised by step for a data-dependent violation (e.g. a later stage of
+            # a Chain).  Nothing was committed, so the input can be skipped whole.
+            self._invalid(violation, "procedure", observation=observation, x=x)
+            return None
         except Exception as error:
             self._fail(error)  # nothing was committed: self.state is still S_{t-1}
             raise
@@ -231,8 +288,11 @@ class Run:
             try:
                 consumer(event)
             except Exception as error:  # observer failures never become inference failures
-                self.consumer_errors.append(
-                    {"t": self.t, "consumer": type(consumer).__name__, "error": f"{type(error).__name__}: {error}"}
+                record = {"t": self.t, "consumer": type(consumer).__name__, "error": f"{type(error).__name__}: {error}"}
+                self.consumer_errors.append(record)
+                logger.warning(
+                    "run %s: consumer %s failed at t=%d: %s", self.run_id, record["consumer"], self.t, record["error"],
+                    extra={"incident": {"kind": "consumer_error", "run_id": self.run_id, **record}},
                 )
         return event
 
@@ -272,6 +332,7 @@ class Run:
         topology: Topology | None = None,
         delivery: Delivery | None = None,
         consumers: Sequence[Consumer] = (),
+        on_invalid: str | type[Exception] | None = None,
         log: Any = FROM_CHECKPOINT,
         clock: Callable[[], float] = time.time,
     ) -> "Run":
@@ -292,6 +353,10 @@ class Run:
         after the checkpoint must come again from the sources; preserving
         them for sources that cannot replay is the application's job (see
         `ObservationLog`).
+
+        The run keeps its `on_invalid` policy.  A policy that raises a custom
+        exception class is recorded by name only, so that class has to be
+        passed again as ``on_invalid``.
         """
         if checkpoint.get("format") != CHECKPOINT_FORMAT:
             raise IncompatibleCheckpoint(f"unsupported checkpoint format {checkpoint.get('format')!r}")
@@ -318,6 +383,17 @@ class Run:
         if log is not None and log_state is None and not (isinstance(log, ObservationLog) and log.is_empty()):
             raise IncompatibleCheckpoint("the checkpointed run had no observation log; a log attached now must be empty")
         prov = checkpoint["provenance"]
+        recorded = prov["on_invalid"]
+        if on_invalid is None:
+            if recorded.startswith("raise:"):
+                raise IncompatibleCheckpoint(
+                    f"the run raises {recorded[6:]} on invalid input; pass that class as on_invalid=..."
+                )
+            on_invalid = recorded
+        elif _policy_spec(on_invalid) != recorded:
+            raise IncompatibleCheckpoint(
+                f"on_invalid mismatch: checkpoint has {recorded!r}, got {_policy_spec(on_invalid)!r}"
+            )
         run = cls(
             procedure,
             topology=topology,
@@ -326,7 +402,7 @@ class Run:
             seed=prov["seed"],
             run_id=checkpoint["run_id"],
             initial_state=procedure.decode_state(checkpoint["state"]),
-            on_invalid=prov["on_invalid"],
+            on_invalid=on_invalid,
             clock=clock,
         )
         topology.restore(checkpoint["topology"]["state"])

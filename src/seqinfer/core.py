@@ -100,6 +100,10 @@ class Procedure(ABC, Generic[S, O]):
 
         `rng` carries R_{t-1} on entry and R_t on return; it is None for
         deterministic procedures.  The caller commits both together.
+
+        Raise ContractViolation for an input that turns out to be invalid
+        only during the step; the run treats it like a contract violation.
+        Any other exception is a failure of the procedure.
         """
 
     def is_terminal(self, state: S) -> bool:

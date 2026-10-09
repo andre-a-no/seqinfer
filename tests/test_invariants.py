@@ -208,7 +208,8 @@ class ConsumerNonInterference(unittest.TestCase):
                     seed=seed,
                     clock=fixed_clock,
                 )
-                run_sync(run, observations, stop_on_terminal=False)
+                with self.assertLogs("seqinfer", "WARNING"):
+                    run_sync(run, observations, stop_on_terminal=False)
                 self.assertEqual(summary(run, rec), full_run(case))
                 self.assertIs(run.status, RunStatus.RUNNING)
                 self.assertEqual(len(run.consumer_errors), run.t)

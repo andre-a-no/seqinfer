@@ -10,6 +10,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from seqinfer import (
+    Chain,
     ContractViolation,
     Delivery,
     IncompatibleCheckpoint,
@@ -82,23 +83,24 @@ class TransactionalUpdates(unittest.TestCase):
 
     def test_invalid_input_is_rejected_before_inference(self):
         for bad in ({"x": -1.0}, {"x": float("nan")}, {"x": "3"}, {"x": True}, {"y": 1.0}, {}):
-            run = Run(FragileSum())
-            with self.subTest(bad=bad), self.assertRaises(ContractViolation):
+            run = Run(FragileSum(), on_invalid="raise")
+            with self.subTest(bad=bad), self.assertRaises(ContractViolation), self.assertLogs("seqinfer", "WARNING"):
                 run.step(bad)
             self.assertEqual(run.state, Total())
             self.assertIs(run.status, RunStatus.FAILED)
 
     def test_skip_policy_records_what_it_dropped(self):
         rec = Recorder()
-        run = Run(FragileSum(), on_invalid="skip", consumers=[rec])
-        run_sync(run, from_values("x", [1.0, -5.0, 2.0, float("inf"), 3.0]))
+        run = Run(FragileSum(), consumers=[rec])  # skipping is the default
+        with self.assertLogs("seqinfer", "WARNING"):
+            run_sync(run, from_values("x", [1.0, -5.0, 2.0, float("inf"), 3.0]))
         self.assertEqual(rec.outputs, [1.0, 3.0, 6.0])
         self.assertEqual(run.counters["invalid_skipped"], 2)
         self.assertEqual(run.checkpoint()["counters"]["invalid_skipped"], 2)
 
     def test_joint_and_partial_inputs(self):
         with self.assertRaises(ContractViolation):
-            Run(LocalLevelKalman(0.1, 1.0, control=True)).step({"y": 1.0})
+            Run(LocalLevelKalman(0.1, 1.0, control=True), on_invalid="raise").step({"y": 1.0})
         run = Run(MeanDifference())
         run.step({"a": 1.0})
         run.step({"b": 2.0})
@@ -288,6 +290,88 @@ class ContractMessages(unittest.TestCase):
     def test_numpy_vectors_are_rejected_with_a_conversion_hint(self):
         message = self.rejection(InputContract("v", shape=(2,)), numpy.array([1.0, 2.0]))
         self.assertIn(".tolist()", message)
+
+
+class StreamFailure(Exception):
+    """An application's own error type for invalid input."""
+
+
+class InvalidInputPolicy(unittest.TestCase):
+    """Invalid input is skipped by default, raised on request, and reported either way."""
+
+    def incidents(self, logs):
+        return [r.incident for r in logs.records if hasattr(r, "incident")]
+
+    def test_skipped_input_is_reported_as_a_warning(self):
+        run = Run(FragileSum(), run_id="r")
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            run.offer(Observation("x", 1.0, seq=0))
+            run.offer(Observation("x", -2.0, seq=1))
+        self.assertEqual((run.t, run.state.total, run.counters["invalid_skipped"]), (1, 1.0, 1))
+        (incident,) = self.incidents(logs)
+        self.assertEqual(incident["kind"], "invalid_input")
+        self.assertEqual((incident["t"], incident["stage"], incident["action"]), (1, "contract", "skipped"))
+        self.assertEqual(incident["observation"]["seq"], 1)
+        self.assertEqual(incident["input"], {"x": -2.0})
+        self.assertIn("source 'x' seq 1", logs.output[0])
+
+    def test_raise_is_explicit_and_still_reported(self):
+        run = Run(FragileSum(), on_invalid="raise")
+        with self.assertLogs("seqinfer", "WARNING") as logs, self.assertRaises(ContractViolation):
+            run.step({"x": -1.0})
+        self.assertEqual(self.incidents(logs)[0]["action"], "rejected")
+        self.assertIs(run.status, RunStatus.FAILED)
+
+    def test_raise_a_chosen_exception(self):
+        run = Run(FragileSum(), on_invalid=StreamFailure)
+        self.assertEqual(run.provenance["on_invalid"], "raise:tests.test_run.StreamFailure")
+        run.step({"x": 1.0})
+        checkpoint = run.checkpoint()
+        with self.assertLogs("seqinfer", "WARNING"), self.assertRaises(StreamFailure) as caught:
+            run.step({"x": -1.0})
+        self.assertIsInstance(caught.exception.__cause__, ContractViolation)
+        self.assertIs(run.status, RunStatus.FAILED)
+
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(FragileSum(), checkpoint)  # the class is not in the checkpoint
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(FragileSum(), checkpoint, on_invalid="skip")
+        restored = Run.restore(FragileSum(), checkpoint, on_invalid=StreamFailure)
+        self.assertEqual(restored.on_invalid, StreamFailure)
+
+    def test_invalid_input_for_a_later_chain_stage_skips_the_whole_step(self):
+        chain = Chain(FragileSum(), FragileSum(), link=lambda total: {"x": total - 3.0}, link_name="total-3")
+        run = Run(chain)
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            run.step({"x": 1.0})  # second stage would get -2.0
+        self.assertEqual((run.t, run.state), (0, (Total(), Total())))
+        (incident,) = self.incidents(logs)
+        self.assertEqual(incident["stage"], "procedure")
+        self.assertIn("second stage, via 'total-3'", incident["error"])
+        run.step({"x": 5.0})
+        self.assertEqual(run.state, (Total(1, 5.0), Total(1, 2.0)))
+
+    def test_observations_the_topology_cannot_use_are_invalid_inputs(self):
+        run = Run(MeanDifference(), topology=KeyJoin(("a", "b")))
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            run.offer(Observation("a", 1.0))  # no key
+            run.offer(Observation("c", 1.0, key="k"))  # not an input of the topology
+        self.assertEqual([i["stage"] for i in self.incidents(logs)], ["topology", "topology"])
+        self.assertEqual(run.counters["invalid_skipped"], 2)
+        self.assertIs(run.status, RunStatus.RUNNING)
+
+    def test_consumer_failures_are_reported_as_warnings(self):
+        def broken(event):
+            raise RuntimeError("disk full")
+
+        with self.assertLogs("seqinfer", "WARNING") as logs:
+            Run(FragileSum(), consumers=[broken]).step({"x": 1.0})
+        self.assertEqual(self.incidents(logs)[0]["kind"], "consumer_error")
+
+    def test_unknown_policies_are_refused(self):
+        for policy in ("ignore", ValueError("not a class"), int):
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                Run(FragileSum(), on_invalid=policy)
 
 
 class LogRestore(unittest.TestCase):
