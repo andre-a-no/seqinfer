@@ -42,6 +42,7 @@ def _upper(x: float) -> float:
     """1 - Phi(x), through erfc so that small tails keep their relative accuracy."""
     return 0.5 * math.erfc(x / _SQRT2)
 _LOWER = -10.0  # B(t) / sqrt(t) below this is never reached in practice
+_NEVER = 40.0  # a boundary no path reaches: stands in for an infinite one in the recursion
 
 
 def spending_function(kind, alpha: float) -> Callable[[float], float]:
@@ -110,7 +111,7 @@ class _Recursion:
         elif self.two_sided:
             lower = -upper
         else:
-            lower = min(_LOWER * math.sqrt(t), upper - 1.0) + self.drift * t
+            lower = min(_LOWER * math.sqrt(t) + self.drift * t, upper - 1.0)
         ys = self._grid(lower, upper, sd)
         h = (ys[1] - ys[0]) / 3.0
         weights = _simpson(len(ys))
@@ -147,7 +148,7 @@ class GroupSequentialDesign:
             f = futility[k] if futility is not None else None
             down.append(rec.cross_below(t, f) if f is not None else 0.0)
             if k < last:
-                rec.advance(t, b, f)
+                rec.advance(t, b if math.isfinite(b) else _NEVER, f)
         return up, down
 
     def crossing(self, drift: float = 0.0, points_per_sd: int = 24, *, binding: bool = True) -> tuple[float, ...]:
@@ -177,7 +178,9 @@ class GroupSequentialDesign:
         return expected + 1.0 * (1.0 - stopped_early)
 
     def drift_for_power(self, power: float) -> float:
-        """Drift theta * sqrt(I_max) at which the design has the given power (one-sided)."""
+        """Drift theta * sqrt(I_max) at which the design has the given power."""
+        if not self.alpha < power < 1.0:
+            raise ValueError(f"power must lie between alpha ({self.alpha}) and 1")
         lo, hi = 0.0, 1.0
         while self.power(hi) < power:
             lo, hi = hi, 2 * hi
@@ -256,19 +259,19 @@ def group_sequential_design(
             b = 0.5 * (lo + hi)
         bounds.append(b)
         if k + 1 < len(ts):
-            rec.advance(t, b if math.isfinite(b) else 40.0)
+            rec.advance(t, b if math.isfinite(b) else _NEVER)
     if futility is None:
         return GroupSequentialDesign(tuple(ts), tuple(bounds), tuple(cumulative), alpha, two_sided)
     if two_sided:
         raise ValueError("futility boundaries are implemented for one-sided designs")
-    if power is None or not 0 < power < 1:
-        raise ValueError("futility boundaries need the power they are designed for")
+    if power is None or not alpha < power < 1:
+        raise ValueError("futility boundaries need the power they are designed for, between alpha and 1")
     beta = 1.0 - power
     beta_spend = spending_function(futility, beta)
     beta_cumulative = [beta_spend(t) for t in ts]
     if abs(beta_cumulative[-1] - beta) > 1e-9:
         raise ValueError("the futility spending function must spend exactly beta by t = 1")
-    finite = [b if math.isfinite(b) else 40.0 for b in bounds]
+    finite = [b if math.isfinite(b) else _NEVER for b in bounds]
 
     def futility_for(drift: float) -> tuple[list[float], float]:
         """Futility boundaries spending beta at this drift, and the beta actually left at the end."""

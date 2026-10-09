@@ -1519,16 +1519,26 @@ The modified problem fixes $\theta^*$. The Kiefer--Weiss problem asks
 for the $\theta^*$ at which the resulting test has the smallest maximum
 expected sample size, and by Lorden's characterisation~\cite{lorden1980}
 that is the $\theta^*$ at which the maximum is attained at $\theta^*$
-itself. The implementation finds it by bisection on
-$\arg\max_\theta E_\theta N-\theta^*$, designing each candidate in full.
-For the Bernoulli example the first-order $\theta^*=0.3971$ gives a
-maximum expected sample size of $45.17$, attained at $0.3933$; the
-least favourable $\theta^*=0.3936$ gives $45.01$, attained at
-$0.3936$. Near the solution the maximum is flat in $\theta^*$, and for
-discrete data it moves in small steps because the attainable error
-probabilities do, so the gain over the first-order point is small; the
-characterisation is nevertheless met to the resolution of the search,
-for normal data as well.
+itself. The implementation generates candidates by bisection on
+$\arg\max_\theta E_\theta N-\theta^*$, designing each in full, and
+returns the candidate, the first-order point included, with the smallest
+maximum expected sample size. For the Bernoulli example the first-order
+$\theta^*=0.3971$ gives a maximum expected sample size of $45.17$,
+attained at $0.3933$; the search returns $\theta^*=0.3925$ with $45.01$,
+attained at $0.3936$. Near the solution the maximum is flat in
+$\theta^*$, and for discrete data it moves in small steps because the
+attainable error probabilities do, so the gain over the first-order
+point is small and the characterisation holds only approximately. For
+normal data, $\theta_0=0$ against $\theta_1=0.5$ with error
+probabilities $0.05$ and $0.2$, the bisection converges to
+$\theta^*=0.347$ with the maximum at $0.346$.
+
+For discrete data there is a further limit. The plans that are optimal
+for some pair of multipliers are non-randomised, and near the smallest
+feasible horizon they need not reach every pair of error probabilities
+that some test of that size reaches; randomised boundaries would. The
+implementation then tries smaller horizons, which also respect the
+constraint, and reports a failure only if none succeeds.
 
 \paragraph{Validation.}
 A reference procedure can be validated against analytical facts without
@@ -1682,7 +1692,7 @@ same contracts, and implementations in different languages need not
 have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
-standard library and comprises about $4\,950$ lines, with one module per
+standard library and comprises about $5\,200$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1747,7 +1757,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$149$ tests in total; the remainder cover transactional updates,
+$170$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under

@@ -610,12 +610,11 @@ class ExponentialDesign(unittest.TestCase):
 
 
 class LeastFavourable(unittest.TestCase):
-    def test_the_maximum_expected_sample_size_sits_at_theta_star(self):
+    def test_the_search_lowers_the_maximum_expected_sample_size(self):
         first = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60)
         best = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60, theta_star="least-favourable")
-        value, where = best.maximum_expected_n()
-        self.assertLess(abs(where - best.theta_star), 0.01)  # Lorden's characterisation
-        self.assertLessEqual(value, first.maximum_expected_n()[0] * 1.002)  # within the steps of discrete data
+        value, _ = best.maximum_expected_n()
+        self.assertLessEqual(value, first.maximum_expected_n()[0] + 1e-9)  # the objective of Kiefer-Weiss
         self.assertLessEqual(best.at_theta0.reject, 0.05)
         self.assertLessEqual(best.at_theta1.accept, 0.1)
 
@@ -627,6 +626,62 @@ class LeastFavourable(unittest.TestCase):
         grid = max(operating_characteristic(d.plan, Bernoulli(), 0.2 + 0.3 * i / 200).expected_n for i in range(201))
         self.assertGreaterEqual(value, grid - 1e-9)
         self.assertTrue(0.2 < where < 0.5)
+
+
+class DesignReviewRegressions(unittest.TestCase):
+    """Defects found by review of the design modules; each test reproduces one."""
+
+    def test_feasible_problems_near_the_smallest_horizon_get_a_plan(self):
+        for args, family in (
+            ((0.05, 0.5, 0.2, 0.2, 3), Bernoulli()),
+            ((0.2, 0.6, 0.2, 0.2, 12), Bernoulli()),
+            ((0.3, 0.5, 0.01, 0.05, 94), Bernoulli()),
+            ((1.0, 1.5, 0.05, 0.05, 56), Poisson()),
+            ((3.0, 5.0, 0.02, 0.1, 12), Poisson()),
+        ):
+            with self.subTest(args=args, family=family.spec()["family"]):
+                d = kiefer_weiss_plan(*args, family=family)
+                self.assertLessEqual(d.plan.horizon, args[4])
+                self.assertLessEqual(d.at_theta0.reject, args[2])
+                self.assertLessEqual(d.at_theta1.accept, args[3])
+        with self.assertRaises(ValueError):
+            kiefer_weiss_plan(0.2, 0.5, 0.001, 0.001, 5)
+
+    def test_least_favourable_is_never_worse_than_the_first_order_point(self):
+        first = kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, 100)
+        best = kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, 100, theta_star="least-favourable")
+        self.assertLessEqual(best.maximum_expected_n(48)[0], first.maximum_expected_n(48)[0] + 1e-9)
+
+    def test_poisson_lattice_for_large_rates(self):
+        for rate in (730.0, 745.0, 800.0, 2000.0):
+            self.assertAlmostEqual(sum(lattice(Poisson(), rate).weights), 1.0, places=10)
+        plan = PlanTest([(1000, 1000)], contract=Poisson().contract("x"))
+        self.assertAlmostEqual(operating_characteristic(plan, Poisson(), 800.0).accept, 1.0, places=10)
+
+    def test_group_designs_with_an_infinite_boundary(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, (0.5, 1.0), spending=lambda t: 0.0 if t < 1 else 0.025)
+        self.assertEqual(d.bounds[0], math.inf)
+        self.assertAlmostEqual(sum(d.crossing(0.0)), 0.025, places=12)
+        self.assertGreater(d.power(2.0), 0.025)
+
+    def test_power_must_lie_between_alpha_and_one(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, (0.5, 1.0))
+        for power in (1.5, 1.0, 0.01):
+            with self.subTest(power=power), self.assertRaises(ValueError):
+                d.drift_for_power(power)
+        with self.assertRaises(ValueError):
+            group_sequential_design(0.025, (0.5, 1.0), futility="pocock", power=0.02)
+
+    def test_crossing_probabilities_are_never_negative(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, (0.5, 1.0))
+        for drift in (20.0, 40.0, 60.0):
+            self.assertTrue(all(p >= 0.0 for p in d.crossing(drift)))
 
 
 class StudentT(unittest.TestCase):
