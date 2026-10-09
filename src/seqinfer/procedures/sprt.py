@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import neumaier_add, require_finite
+from .families import Family
 
 REJECT_H0 = "reject_h0"
 ACCEPT_H0 = "accept_h0"
@@ -39,7 +40,9 @@ class SPRT(Procedure):
     name = "sprt"
     version = "1"
 
-    def __init__(self, family, theta0: float, theta1: float, alpha: float = 0.05, beta: float = 0.05, input: str = "x"):
+    def __init__(
+        self, family: Family, theta0: float, theta1: float, alpha: float = 0.05, beta: float = 0.05, input: str = "x"
+    ):
         family.check(theta0)
         family.check(theta1)
         if theta0 == theta1 or not (0 < alpha < 1 and 0 < beta < 1):

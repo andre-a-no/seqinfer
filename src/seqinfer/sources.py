@@ -15,8 +15,9 @@ import hashlib
 import heapq
 import json
 import os
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
 from itertools import zip_longest
-from typing import Any, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any, cast
 
 from .canonical import canonical_json
 from .core import Observation
@@ -73,7 +74,7 @@ def interleave(*sources: Iterable[Observation]) -> Iterator[Observation]:
     for group in zip_longest(*sources, fillvalue=missing):
         for obs in group:
             if obs is not missing:
-                yield obs
+                yield cast(Observation, obs)
 
 
 def merge_ordered(*sources: Iterable[Observation]) -> Iterator[Observation]:
@@ -143,7 +144,7 @@ class ObservationLog:
         if self._file is not None:
             self._file.close()
 
-    def __enter__(self) -> "ObservationLog":
+    def __enter__(self) -> ObservationLog:
         return self
 
     def __exit__(self, *exc: Any) -> None:

@@ -11,7 +11,8 @@ is needed to continue the run exactly.
 from __future__ import annotations
 
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .errors import NumericalError
 
@@ -63,5 +64,5 @@ def equivalent(a: Any, b: Any, abs_tol: float = 0.0, rel_tol: float = 0.0) -> bo
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(equivalent(a[k], b[k], abs_tol, rel_tol) for k in a)
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
-        return len(a) == len(b) and all(equivalent(x, y, abs_tol, rel_tol) for x, y in zip(a, b))
-    return a == b
+        return len(a) == len(b) and all(equivalent(x, y, abs_tol, rel_tol) for x, y in zip(a, b, strict=True))
+    return bool(a == b)

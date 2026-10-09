@@ -5,7 +5,7 @@
 from .betting import BettingMeanTest, SequentialSignTest
 from .cusum import CUSUM
 from .ema import EMA
-from .families import Bernoulli, Exponential, Gaussian, Poisson
+from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .kalman import LocalLevelKalman
 from .mixture import NormalMixtureSPRT
 from .particle import BootstrapParticleFilter
@@ -17,20 +17,21 @@ from .two_sprt import TwoSPRT, kiefer_weiss_point
 
 __all__ = [
     "ACCEPT_H0",
+    "CUSUM",
+    "EMA",
     "REJECT_H0",
+    "SPRT",
     "Bernoulli",
     "BettingMeanTest",
     "BootstrapParticleFilter",
-    "CUSUM",
-    "EMA",
     "Exponential",
+    "Family",
     "Gaussian",
     "LocalLevelKalman",
     "MeanDifference",
     "NormalMixtureSPRT",
     "PlanTest",
     "Poisson",
-    "SPRT",
     "SequentialSignTest",
     "ShiryaevRoberts",
     "TwoSPRT",

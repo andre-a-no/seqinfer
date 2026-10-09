@@ -43,7 +43,7 @@ def _fsync_directory(directory: Path) -> None:
 
 def load_checkpoint(path: str | os.PathLike) -> dict:
     with open(path, encoding="utf-8") as f:
-        checkpoint = json.load(f)
+        checkpoint: dict = json.load(f)
     if checkpoint.get("format") != CHECKPOINT_FORMAT:
         raise IncompatibleCheckpoint(f"{path}: unsupported checkpoint format {checkpoint.get('format')!r}")
     return checkpoint

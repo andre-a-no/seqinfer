@@ -58,6 +58,7 @@ __all__ = [
     "SeqInferError",
     "SplitMix64",
     "TimeAlign",
+    "__version__",
     "checkpoint_id",
     "difference",
     "equivalent",

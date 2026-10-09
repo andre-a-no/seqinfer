@@ -40,7 +40,9 @@ from .helpers import cases, fixed_clock, reference, summary
 def full_run(case):
     _, make_proc, make_topo, make_delivery, observations, seed = case
     rec = Recorder()
-    run = Run(make_proc(), topology=make_topo(), delivery=make_delivery(), consumers=[rec], seed=seed, clock=fixed_clock)
+    run = Run(
+        make_proc(), topology=make_topo(), delivery=make_delivery(), consumers=[rec], seed=seed, clock=fixed_clock
+    )
     run_sync(run, observations, stop_on_terminal=False)
     return summary(run, rec)
 
@@ -144,7 +146,7 @@ class ReplayEquivalence(unittest.TestCase):
         for i in range(0, len(clean), 5):
             block = clean[i:i + 5]
             rnd.shuffle(block)
-            messy += block + [rnd.choice(block)]  # out of order, plus a duplicate
+            messy += [*block, rnd.choice(block)]  # out of order, plus a duplicate
 
         def make(log=None):
             rec = Recorder()
@@ -290,9 +292,11 @@ class TopologySemantics(unittest.TestCase):
                 ia, ib, arrival = 0, 0, []
                 while ia < len(a) or ib < len(b):
                     if ib >= len(b) or (ia < len(a) and rnd.random() < 0.5):
-                        arrival.append(a[ia]); ia += 1
+                        arrival.append(a[ia])
+                        ia += 1
                     else:
-                        arrival.append(b[ib]); ib += 1
+                        arrival.append(b[ib])
+                        ib += 1
                 self.assertEqual(self.emitted(make(), arrival), baseline)
 
 

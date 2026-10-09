@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .files import AppendFile
 
@@ -63,7 +64,7 @@ class JsonlSink:
     def close(self) -> None:
         self._file.close()
 
-    def __enter__(self) -> "JsonlSink":
+    def __enter__(self) -> JsonlSink:
         return self
 
     def __exit__(self, *exc: Any) -> None:

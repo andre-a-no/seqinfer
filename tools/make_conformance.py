@@ -16,7 +16,6 @@ The vectors change only when a procedure's version does.
 """
 from __future__ import annotations
 
-import json
 import random
 import struct
 import sys
@@ -65,13 +64,17 @@ def cases():
             out.append({"x": k})
         return out
 
+    def bernoulli(p, n):
+        return [{"x": int(rnd.random() < p)} for _ in range(n)]
+
+    two_sprt = TwoSPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05)
     level = [{"y": 0.05 * i + rnd.gauss(0.0, 1.0)} for i in range(40)]
     return [
         ("sprt_gaussian", SPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05), None, normal(0.25, 60)),
-        ("sprt_bernoulli", SPRT(Bernoulli(), 0.3, 0.5, 0.05, 0.05), None, [{"x": int(rnd.random() < 0.4)} for _ in range(120)]),
+        ("sprt_bernoulli", SPRT(Bernoulli(), 0.3, 0.5, 0.05, 0.05), None, bernoulli(0.4, 120)),
         ("sprt_poisson", SPRT(Poisson(), 2.0, 3.0, 0.05, 0.05), None, poisson(2.5, 80)),
         ("two_sprt", TwoSPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05), None, normal(0.25, 60)),
-        ("plan_test", PlanTest(TwoSPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05).as_plan(), label="2-SPRT"), None, normal(0.25, 60)),
+        ("plan_test", PlanTest(two_sprt.as_plan(), label="2-SPRT"), None, normal(0.25, 60)),
         ("cusum", CUSUM(Gaussian(1.0), 0.0, 1.0, 8.0), None, normal(0.0, 30) + normal(1.0, 40)),
         ("shiryaev_roberts_exponential", ShiryaevRoberts(Exponential(), 1.0, 0.5, 200.0), None,
          [{"x": rnd.expovariate(1.0)} for _ in range(30)] + [{"x": rnd.expovariate(0.5)} for _ in range(60)]),

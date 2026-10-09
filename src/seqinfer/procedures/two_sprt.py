@@ -26,11 +26,11 @@ from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import neumaier_add, require_finite
-from .families import Gaussian
+from .families import Family, Gaussian
 from .sprt import ACCEPT_H0, REJECT_H0
 
 
-def kiefer_weiss_point(family, theta0: float, theta1: float, a0: float, a1: float) -> float:
+def kiefer_weiss_point(family: Family, theta0: float, theta1: float, a0: float, a1: float) -> float:
     """Intermediate point at which both boundaries are reached at the same rate.
 
     Solves a0 / KL(theta, theta0) = a1 / KL(theta, theta1) on (theta0, theta1)
@@ -76,7 +76,7 @@ class TwoSPRT(Procedure):
 
     def __init__(
         self,
-        family,
+        family: Family,
         theta0: float,
         theta1: float,
         alpha0: float = 0.05,

@@ -10,7 +10,7 @@ no asynchronous interface and no internal locking.
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterable, Iterable, Sequence
+from collections.abc import AsyncIterable, Iterable, Sequence
 
 from .core import Observation
 from .run import Run, RunStatus

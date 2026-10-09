@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import ContractViolation
 
@@ -82,7 +83,9 @@ class InputContract:
                 f"got {_type_name(value)}{hint}"
             )
         if len(value) != self.shape[0]:
-            raise ContractViolation(f"input {self.name!r}: expected a vector of length {self.shape[0]}, got {len(value)}")
+            raise ContractViolation(
+                f"input {self.name!r}: expected a vector of length {self.shape[0]}, got {len(value)}"
+            )
         for v in value:
             self._check_scalar(v)
 

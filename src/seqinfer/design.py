@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .procedures.families import Bernoulli, Poisson
+from .procedures.families import Bernoulli, Family, Poisson
 from .procedures.plan import PlanTest
 from .procedures.sprt import ACCEPT_H0, REJECT_H0
 from .procedures.two_sprt import kiefer_weiss_point
@@ -49,7 +49,7 @@ class OperatingCharacteristic:
     stop: tuple[float, ...]  # stop[n-1] = P(N = n)
 
 
-def _pmf(family, theta: float) -> list[tuple[int, float]]:
+def _pmf(family: Family, theta: float) -> list[tuple[int, float]]:
     """Distribution of one observation, as (value, probability) pairs."""
     family.check(theta)
     if isinstance(family, Bernoulli):
@@ -70,7 +70,7 @@ def _pmf(family, theta: float) -> list[tuple[int, float]]:
     )
 
 
-def operating_characteristic(plan: PlanTest, family, theta: float) -> OperatingCharacteristic:
+def operating_characteristic(plan: PlanTest, family: Family, theta: float) -> OperatingCharacteristic:
     """Exact operating characteristic of `plan` for observations from `family` at `theta`."""
     pmf = _pmf(family, theta)
     low, high = (ACCEPT_H0, REJECT_H0) if plan.reject_high else (REJECT_H0, ACCEPT_H0)
@@ -118,7 +118,7 @@ class KieferWeissDesign:
     lagrangian: float  # optimal value of the Lagrangian, from the backward induction
 
 
-def _affine_llr(family, num: float, den: float) -> tuple[float, float]:
+def _affine_llr(family: Family, num: float, den: float) -> tuple[float, float]:
     """llr(x) = a + b x for an exponential family."""
     a = family.llr(0, num, den)
     return a, family.llr(1, num, den) - a
@@ -164,7 +164,7 @@ def _backward(family, theta0, theta1, theta_star, lambda0, lambda1, horizon):
 def _as_plan(regions, reject_high: bool, label: str) -> PlanTest:
     """Write optimal regions as a PlanTest; refuses regions that are not intervals in S_n."""
     low_decision, high_decision = (ACCEPT_H0, REJECT_H0) if reject_high else (REJECT_H0, ACCEPT_H0)
-    plan = []
+    plan: list[tuple[float | None, float | None]] = []
     for n, region in enumerate(regions, start=1):
         labels = [region[s] for s in range(n + 1)]
         # expected pattern: low_decision* continue* high_decision*
@@ -192,7 +192,7 @@ def kiefer_weiss_plan(
     horizon: int,
     *,
     theta_star: float | None = None,
-    family=None,
+    family: Family | None = None,
 ) -> KieferWeissDesign:
     """Optimal plan for Bernoulli data; see the module docstring.
 
@@ -221,9 +221,9 @@ def kiefer_weiss_plan(
         if (l0, l1) not in cache:
             regions, value = _backward(family, theta0, theta1, theta_star, l0, l1, horizon)
             plan = _as_plan(regions, reject_high, label)
-            cache[(l0, l1)] = (
-                plan, value, operating_characteristic(plan, family, theta0), operating_characteristic(plan, family, theta1)
-            )
+            oc0 = operating_characteristic(plan, family, theta0)
+            oc1 = operating_characteristic(plan, family, theta1)
+            cache[(l0, l1)] = (plan, value, oc0, oc1)
         return cache[(l0, l1)]
 
     def smallest(target: float, error, l_other: float, which: int) -> float:
@@ -235,7 +235,9 @@ def kiefer_weiss_plan(
                 break
             lo, hi = hi, hi * 2 + 1
             if hi > 200:
-                raise ValueError(f"no plan with at most {horizon} observations meets the error rates; increase the horizon")
+                raise ValueError(
+                    f"no plan with at most {horizon} observations meets the error rates; increase the horizon"
+                )
         while hi - lo > 1e-6:  # the error rates are step functions of the multipliers
             mid = 0.5 * (lo + hi)
             args = (math.exp(mid), l_other) if which == 0 else (l_other, math.exp(mid))

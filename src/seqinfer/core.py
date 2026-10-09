@@ -13,14 +13,15 @@ scheduled, where S_t is stored or what happens to O_t.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
-from typing import Any, Generic, Iterable, Mapping, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .contracts import InputContract, validate_input
 from .rng import SplitMix64
 
 S = TypeVar("S")
-O = TypeVar("O")
+O = TypeVar("O")  # noqa: E741 -- O_t in the paper
 
 #: One statistical input X_t: logical input name -> value.
 StatInput = Mapping[str, Any]
@@ -60,8 +61,15 @@ class Observation:
         }
 
     @classmethod
-    def from_json(cls, d: Mapping[str, Any]) -> "Observation":
+    def from_json(cls, d: Mapping[str, Any]) -> Observation:
         return cls(d["input"], d["value"], d.get("source", ""), d.get("seq"), d.get("key"), d.get("time"))
+
+
+def _encode(value: Any) -> Any:
+    """Dataclass instances become dicts; anything else is taken to be JSON already."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    return value
 
 
 class Procedure(ABC, Generic[S, O]):
@@ -111,13 +119,13 @@ class Procedure(ABC, Generic[S, O]):
         return False
 
     def encode_state(self, state: S) -> Any:
-        return asdict(state) if is_dataclass(state) else state
+        return _encode(state)
 
     def decode_state(self, data: Any) -> S:
         raise NotImplementedError(f"{type(self).__name__} does not define decode_state")
 
     def encode_output(self, output: O) -> Any:
-        return asdict(output) if is_dataclass(output) else output
+        return _encode(output)
 
     def identity(self) -> dict:
         return {"name": self.name, "version": self.version, "config": self.config()}

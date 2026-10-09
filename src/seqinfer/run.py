@@ -17,19 +17,20 @@ import logging
 import platform
 import time
 import uuid
+from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any
 
-from .consumers import Consumer, OutputEvent
 from .canonical import canonical_json
+from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
 from .core import Observation, Procedure, StatInput, statistical_rng
 from .delivery import Delivery
 from .errors import ContractViolation, IncompatibleCheckpoint, LifecycleError
 from .rng import SplitMix64
 from .sources import ObservationLog
-from .version import __version__
 from .topology import Independent, Topology
+from .version import __version__
 
 #: Version 2: RFC 8785 canonical JSON in digests; 64-bit values (seed, random state) as strings.
 CHECKPOINT_FORMAT = "seqinfer.checkpoint/2"
@@ -44,7 +45,7 @@ logger = logging.getLogger("seqinfer")
 def _policy_spec(on_invalid: Any) -> str:
     """JSON form of an on_invalid policy, recorded in provenance."""
     if on_invalid in ("skip", "raise"):
-        return on_invalid
+        return str(on_invalid)
     if isinstance(on_invalid, type) and issubclass(on_invalid, Exception):
         return f"raise:{on_invalid.__module__}.{on_invalid.__qualname__}"
     raise ValueError("on_invalid must be 'skip', 'raise' or an exception class")
@@ -97,7 +98,7 @@ class Run:
         self.topology = topology if topology is not None else Independent()
         self.delivery = delivery if delivery is not None else Delivery()
         self.consumers = list(consumers)
-        self.on_invalid = on_invalid
+        self.on_invalid: str | type[Exception] = on_invalid
         self.log = log
         self._clock = clock
         self._busy = False
@@ -237,7 +238,9 @@ class Run:
         """An invalid input: always reported as a warning, then skipped or raised per `on_invalid`."""
         where = ""
         if observation is not None:
-            where = f" from source {observation.source!r}" + (f" seq {observation.seq}" if observation.seq is not None else "")
+            where = f" from source {observation.source!r}"
+            if observation.seq is not None:
+                where += f" seq {observation.seq}"
         action = "skipped" if self.on_invalid == "skip" else "rejected"
         logger.warning(
             "run %s: %s invalid input%s after t=%d (%s): %s",
@@ -255,13 +258,14 @@ class Run:
                 }
             },
         )
-        if self.on_invalid == "skip":
+        policy = self.on_invalid
+        if policy == "skip":
             self.counters["invalid_skipped"] += 1
             return
-        if self.on_invalid == "raise":
+        if isinstance(policy, str):  # "raise"
             self._fail(violation)
             raise violation
-        error = self.on_invalid(f"run {self.run_id}: invalid input after t={self.t} ({stage}): {violation}")
+        error = policy(f"run {self.run_id}: invalid input after t={self.t} ({stage}): {violation}")
         self._fail(error)
         raise error from violation
 
@@ -314,7 +318,7 @@ class Run:
             raise LifecycleError("a failed run cannot be checkpointed; restore an earlier checkpoint")
         if self._busy:
             raise LifecycleError("checkpoints are taken between transitions")
-        return _normalize(
+        checkpoint: dict[str, Any] = _normalize(
             {
                 "format": CHECKPOINT_FORMAT,
                 "run_id": self.run_id,
@@ -332,6 +336,7 @@ class Run:
                 "provenance": self.provenance,
             }
         )
+        return checkpoint
 
     @classmethod
     def restore(
@@ -345,7 +350,7 @@ class Run:
         on_invalid: str | type[Exception] | None = None,
         log: Any = FROM_CHECKPOINT,
         clock: Callable[[], float] = time.time,
-    ) -> "Run":
+    ) -> Run:
         """Continue an existing run from a checkpoint.
 
         The run keeps its identity and history digest.  It is returned
@@ -391,7 +396,9 @@ class Run:
             else:
                 log = ObservationLog(log_state["path"])
         if log is not None and log_state is None and not (isinstance(log, ObservationLog) and log.is_empty()):
-            raise IncompatibleCheckpoint("the checkpointed run had no observation log; a log attached now must be empty")
+            raise IncompatibleCheckpoint(
+                "the checkpointed run had no observation log; a log attached now must be empty"
+            )
         prov = checkpoint["provenance"]
         recorded = prov["on_invalid"]
         if on_invalid is None:

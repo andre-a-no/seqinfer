@@ -53,14 +53,14 @@ class BootstrapParticleFilter(Procedure):
     def step(self, state: ParticleState, x, rng):
         y = x["y"]
         size = self.size
-        cloud = state.particles or tuple(rng.normal(self.m0, math.sqrt(self.p0)) for _ in range(size))
+        prior = state.particles or tuple(rng.normal(self.m0, math.sqrt(self.p0)) for _ in range(size))
         sd = math.sqrt(self.q)
-        cloud = [p + rng.normal(0.0, sd) for p in cloud]
+        cloud = [p + rng.normal(0.0, sd) for p in prior]
         logw = [-0.5 * (y - p) ** 2 / self.r for p in cloud]
         norm = require_finite(logsumexp(logw), "log normalizing constant")
         w = [math.exp(lw - norm) for lw in logw]
-        mean = sum(wi * p for wi, p in zip(w, cloud))
-        var = sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud))
+        mean = sum(wi * p for wi, p in zip(w, cloud, strict=True))
+        var = sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud, strict=True))
         ess = 1.0 / sum(wi * wi for wi in w)
         # systematic resampling: one uniform draw
         u = rng.random() / size

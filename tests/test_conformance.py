@@ -22,7 +22,7 @@ class Conformance(unittest.TestCase):
         stored = {v["case"]: v for v in json.loads((ROOT / "conformance" / "procedures.json").read_text())}
         cases = make_conformance.cases()
         self.assertEqual(set(stored), {c[0] for c in cases})
-        for label, procedure, seed, _ in cases:
+        for label, procedure, _seed, _ in cases:
             with self.subTest(case=label):
                 expected = stored[label]
                 self.assertEqual(procedure.identity(), expected["procedure"])

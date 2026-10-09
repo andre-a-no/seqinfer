@@ -31,8 +31,8 @@ data, shift a boundary by one where necessary.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from ..contracts import InputContract
 from ..core import Procedure

@@ -24,7 +24,7 @@ from seqinfer.procedures import (
     TwoSPRT,
     kiefer_weiss_point,
 )
-from seqinfer.sources import from_values, gaussian
+from seqinfer.sources import gaussian
 
 from .helpers import cases, chain_ema_cusum
 
@@ -128,7 +128,7 @@ class KieferWeiss(unittest.TestCase):
         rnd = random.Random(0)
         for theta in (-0.5, 0.0, 0.25, 0.5, 1.0):
             for _ in range(300):
-                self.assertLessEqual(decide(proc, lambda: rnd.gauss(theta, 1.0)).n, n_max)
+                self.assertLessEqual(decide(proc, lambda theta=theta: rnd.gauss(theta, 1.0)).n, n_max)
         self.assertIsNone(TwoSPRT(Bernoulli(), 0.2, 0.5).max_sample_size())
 
     def test_error_probabilities_respect_the_bound(self):
@@ -225,7 +225,7 @@ class Filtering(unittest.TestCase):
         ys = [{"y": o.value} for o in gaussian("y", lambda i: math.sin(i / 10), 0.5, seed=4, n=60)]
         exact = trajectory(LocalLevelKalman(q=0.05, r=0.25), ys)
         approx = trajectory(BootstrapParticleFilter(q=0.05, r=0.25, particles=2000), ys, seed=1)
-        err = [abs(a[1].mean - e[1].mean) for a, e in zip(approx, exact)]
+        err = [abs(a[1].mean - e[1].mean) for a, e in zip(approx, exact, strict=True)]
         self.assertLess(max(err), 0.1)
         self.assertLess(statistics.fmean(err), 0.03)
 
@@ -256,9 +256,11 @@ class TwoSample(unittest.TestCase):
             history = []
             while ia < len(a) or ib < len(b):
                 if ib >= len(b) or (ia < len(a) and rnd.random() < 0.6):
-                    history.append({"a": a[ia]}); ia += 1
+                    history.append({"a": a[ia]})
+                    ia += 1
                 else:
-                    history.append({"b": b[ib]}); ib += 1
+                    history.append({"b": b[ib]})
+                    ib += 1
             self.assertEqual(final(history)[0], state)  # bitwise: the samples update disjoint state
 
 

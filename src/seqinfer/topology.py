@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from .core import Observation
 from .errors import ContractViolation, OrderingError
@@ -43,7 +44,7 @@ class Topology(ABC):
     def restore(self, state: Any) -> None:
         return None
 
-    def map(self, fn: Callable[[dict], dict | None], name: str) -> "Topology":
+    def map(self, fn: Callable[[dict], dict | None], name: str) -> Topology:
         """Apply a stateless, named transformation to every emitted input."""
         return Mapped(self, fn, name)
 

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from ..core import Procedure
 from ..numerics import require_finite
+from .families import Family
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,7 @@ class ShiryaevRoberts(Procedure):
     name = "shiryaev_roberts"
     version = "1"
 
-    def __init__(self, family, theta0: float, theta1: float, threshold: float, input: str = "x"):
+    def __init__(self, family: Family, theta0: float, theta1: float, threshold: float, input: str = "x"):
         family.check(theta0)
         family.check(theta1)
         if theta0 == theta1:

@@ -12,8 +12,27 @@ what `seqinfer.design` relies on.
 from __future__ import annotations
 
 import math
+from typing import Protocol
 
 from ..contracts import InputContract
+
+
+class Family(Protocol):
+    """What the likelihood-ratio procedures need from a one-parameter family."""
+
+    def spec(self) -> dict: ...
+
+    def contract(self, name: str) -> InputContract: ...
+
+    def check(self, theta: float) -> None: ...
+
+    def llr(self, x: float, num: float, den: float) -> float:
+        """log f_num(x) - log f_den(x)."""
+        ...
+
+    def kl(self, a: float, b: float) -> float:
+        """Kullback-Leibler divergence from theta=a to theta=b."""
+        ...
 
 
 class Gaussian:

@@ -17,18 +17,18 @@ from seqinfer import (
 )
 from seqinfer.procedures import (
     CUSUM,
-    BettingMeanTest,
-    NormalMixtureSPRT,
-    Poisson,
-    SequentialSignTest,
-    ShiryaevRoberts,
     EMA,
     SPRT,
+    BettingMeanTest,
     BootstrapParticleFilter,
     Gaussian,
     LocalLevelKalman,
     MeanDifference,
+    NormalMixtureSPRT,
     PlanTest,
+    Poisson,
+    SequentialSignTest,
+    ShiryaevRoberts,
     TwoSPRT,
 )
 from seqinfer.sources import from_values, gaussian, interleave

@@ -54,7 +54,7 @@ class AppendFile:
     def closed(self) -> bool:
         return self._file is None
 
-    def __enter__(self) -> "AppendFile":
+    def __enter__(self) -> AppendFile:
         return self
 
     def __exit__(self, *exc: Any) -> None:

@@ -11,9 +11,8 @@ import math
 import random
 import unittest
 
-from seqinfer import PositionalPair, Run, difference
+from seqinfer import ContractViolation, PositionalPair, Run, difference
 from seqinfer.design import kiefer_weiss_plan, operating_characteristic
-from seqinfer.design import _backward
 from seqinfer.procedures import (
     REJECT_H0,
     SPRT,
@@ -86,13 +85,14 @@ class Families(unittest.TestCase):
         exact = sum(p * Poisson().llr(k, a, b) for k, p in enumerate(pmf))
         self.assertAlmostEqual(Poisson().kl(a, b), exact, places=12)
         h = 1e-3  # midpoint rule on [0, 40]
-        integral = sum(a * math.exp(-a * (i + 0.5) * h) * Exponential().llr((i + 0.5) * h, a, b) * h for i in range(40_000))
+        midpoints = ((i + 0.5) * h for i in range(40_000))
+        integral = sum(a * math.exp(-a * x) * Exponential().llr(x, a, b) * h for x in midpoints)
         self.assertAlmostEqual(Exponential().kl(a, b), integral, places=6)
 
     def test_contracts(self):
         run = Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise")
         for bad in (-1, 1.5):
-            with self.subTest(bad=bad), self.assertRaises(Exception), self.assertLogs("seqinfer", "WARNING"):
+            with self.subTest(bad=bad), self.assertRaises(ContractViolation), self.assertLogs("seqinfer", "WARNING"):
                 Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise").step({"x": bad})
         run.step({"x": 3})
         with self.assertRaises(ValueError):
@@ -123,7 +123,7 @@ class ShiryaevRobertsDetector(unittest.TestCase):
         delays = []
         for _ in range(200):
             draws = iter([rnd.gauss(0.0, 1.0) for _ in range(100)] + [rnd.gauss(1.0, 1.0) for _ in range(1000)])
-            n, _ = run_length(proc, lambda: next(draws), 1100)
+            n, _ = run_length(proc, draws.__next__, 1100)
             if n is not None and n > 100:
                 delays.append(n - 100)
         self.assertGreater(len(delays), 150)
@@ -214,7 +214,7 @@ class BettingTests(unittest.TestCase):
             return lambda: loc + math.tan(math.pi * (r.random() - 0.5))
 
         self.assertLessEqual(rejection_rate(SequentialSignTest(), cauchy, reps, 400, 12), upper_bound(0.05, reps))
-        ties = lambda r: (lambda: float(r.choice([-1, 0, 0, 1])))  # noqa: E731
+        ties = lambda r: (lambda: float(r.choice([-1, 0, 0, 1])))
         self.assertLessEqual(rejection_rate(SequentialSignTest(), ties, reps, 400, 13), upper_bound(0.05, reps))
         self.assertEqual(rejection_rate(SequentialSignTest(), lambda r: cauchy(r, 0.7), 100, 3000, 14), 1.0)
 
@@ -230,7 +230,7 @@ class BettingTests(unittest.TestCase):
         treated = [rnd.expovariate(1.0) + 0.8 for _ in range(400)]
         control = [rnd.expovariate(1.0) for _ in range(400)]
         run = Run(SequentialSignTest(0.0), topology=PositionalPair(("t", "c")).map(difference("t", "c"), "t-c"))
-        for a, b in zip(from_values("t", treated), from_values("c", control)):
+        for a, b in zip(from_values("t", treated), from_values("c", control), strict=True):
             run.offer(a)
             run.offer(b)
             if run.terminal:

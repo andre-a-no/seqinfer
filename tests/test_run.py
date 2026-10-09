@@ -6,8 +6,8 @@ import asyncio
 import json
 import tempfile
 import unittest
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 
 from seqinfer import (
     Chain,
@@ -136,7 +136,8 @@ class Lifecycle(unittest.TestCase):
     def test_consumers_cannot_drive_the_run(self):
         run = Run(LocalLevelKalman(0.1, 1.0))
         run.consumers.append(lambda event: run.step({"y": 0.0}))
-        run.step({"y": 1.0})
+        with self.assertLogs("seqinfer", "WARNING"):
+            run.step({"y": 1.0})
         self.assertEqual(run.t, 1)
         self.assertIn("LifecycleError", run.consumer_errors[0]["error"])
 
@@ -146,7 +147,9 @@ class Lifecycle(unittest.TestCase):
         cp = first.checkpoint()
 
         restored = Run.restore(LocalLevelKalman(0.1, 1.0), cp)
-        self.assertEqual((restored.run_id, restored.t, restored.history_digest), (first.run_id, 3, first.history_digest))
+        self.assertEqual(
+            (restored.run_id, restored.t, restored.history_digest), (first.run_id, 3, first.history_digest)
+        )
         self.assertEqual(restored.provenance["events"][-1]["event"], "restore")
 
         proc = LocalLevelKalman(0.1, 1.0)
@@ -560,7 +563,8 @@ class Guards(unittest.TestCase):
             raise RuntimeError("disk full")
 
         run = Run(FragileSum(), consumers=[broken])
-        run.step({"x": 1.0})
+        with self.assertLogs("seqinfer", "WARNING"):
+            run.step({"x": 1.0})
         restored = Run.restore(FragileSum(), run.checkpoint())
         self.assertEqual(restored.consumer_errors, run.consumer_errors)
         self.assertEqual(len(restored.consumer_errors), 1)
