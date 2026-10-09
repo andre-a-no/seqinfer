@@ -456,14 +456,15 @@ def kiefer_weiss_plan(
     of a percent.
     """
     family = family if family is not None else Bernoulli()
-    if theta_star == "least-favourable":
-        return _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step)
-    if isinstance(theta_star, str):
+    if isinstance(theta_star, str) and theta_star != "least-favourable":
         raise ValueError("theta_star must be a number, None or 'least-favourable'")
     family.check(theta0)
     family.check(theta1)
     if theta0 == theta1 or not (0 < alpha0 < 1 and 0 < alpha1 < 1) or horizon < 1:
         raise ValueError("need theta0 != theta1, error rates in (0, 1) and horizon >= 1")
+    _check_attainable(family, theta0, theta1, alpha0, alpha1, horizon)
+    if isinstance(theta_star, str):  # "least-favourable"
+        return _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step)
     if theta_star is None:
         theta_star = kiefer_weiss_point(family, theta0, theta1, math.log(1 / alpha0), math.log(1 / alpha1))
     if not min(theta0, theta1) < theta_star < max(theta0, theta1):
@@ -474,12 +475,73 @@ def kiefer_weiss_plan(
     error: ValueError | None = None
     retries = _HORIZON_RETRIES if isinstance(family, (Bernoulli, Poisson)) else 1  # only discrete data has gaps
     for h in range(horizon, max(0, horizon - retries), -1):
+        if h < horizon and not _attainable(family, theta0, theta1, alpha0, alpha1, h):
+            break  # nor at any smaller horizon
         try:
             return _calibrated(family, theta0, theta1, alpha0, alpha1, h, theta_star, step)
         except ValueError as e:
             error = error or e
     assert error is not None
     raise error
+
+
+def _neyman_pearson_error(family: Family, theta0: float, theta1: float, alpha0: float, n: int) -> float | None:
+    """P_theta1(accept H0) of the most powerful randomised level-alpha0 test with n observations.
+
+    Every plan stopping by n observations is a test based on n observations, so
+    no plan with smaller alpha1 exists (Neyman-Pearson lemma).  The plans of this
+    module see the data only through the lattice, a function of the observations,
+    so the bound holds for them too.  None where it is not computed (exponential
+    data).  The likelihood ratio is monotone in the sum for these families.
+    """
+    if isinstance(family, Gaussian):
+        from statistics import NormalDist
+
+        shift = math.sqrt(n) * abs(theta1 - theta0) / family.sigma
+        return 0.5 * math.erfc((shift - NormalDist().inv_cdf(1.0 - alpha0)) / math.sqrt(2.0))
+    if isinstance(family, Bernoulli):
+        support = range(n + 1)
+
+        def log_pmf(k: int, theta: float) -> float:
+            binomial = math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+            return binomial + k * math.log(theta) + (n - k) * math.log1p(-theta)
+    elif isinstance(family, Poisson):
+        lo_mean, hi_mean = n * min(theta0, theta1), n * max(theta0, theta1)
+        lo = max(0, math.floor(lo_mean - 40.0 * math.sqrt(lo_mean) - 40.0))
+        support = range(lo, math.ceil(hi_mean + 40.0 * math.sqrt(hi_mean) + 40.0) + 1)
+
+        def log_pmf(k: int, theta: float) -> float:
+            return k * math.log(n * theta) - n * theta - math.lgamma(k + 1)
+    else:
+        return None
+    # reject H0 first where the likelihood ratio of theta1 to theta0 is largest
+    order = reversed(support) if theta1 > theta0 else iter(support)
+    size = power = 0.0
+    for k in order:
+        p0, p1 = math.exp(log_pmf(k, theta0)), math.exp(log_pmf(k, theta1))
+        if size + p0 <= alpha0:
+            size += p0
+            power += p1
+        else:
+            power += (alpha0 - size) / p0 * p1  # randomise on the boundary
+            break
+    return max(0.0, 1.0 - power)
+
+
+def _attainable(family, theta0, theta1, alpha0, alpha1, n) -> bool:
+    beta = _neyman_pearson_error(family, theta0, theta1, alpha0, n)
+    return beta is None or beta <= alpha1 * (1.0 + 1e-9) + 1e-15
+
+
+def _check_attainable(family, theta0, theta1, alpha0, alpha1, horizon) -> None:
+    """Fail at once, rather than after a long search, when no plan can exist."""
+    if not _attainable(family, theta0, theta1, alpha0, alpha1, horizon):
+        beta = _neyman_pearson_error(family, theta0, theta1, alpha0, horizon)
+        raise ValueError(
+            f"no plan with at most {horizon} observations meets the error rates; increase the horizon.  "
+            f"Even the most powerful test with {horizon} observations at level {alpha0:g} accepts H0 "
+            f"at theta1 with probability {beta:.4g} > {alpha1:g} (Neyman-Pearson)."
+        )
 
 
 def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, step) -> KieferWeissDesign:
@@ -679,9 +741,10 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
         candidates.append((value, d))
         return where - d.theta_star
 
-    design(None)  # the first-order theta*: the search never returns anything worse
-    if not candidates:
-        raise ValueError(f"no plan with at most {horizon} observations meets the error rates; increase the horizon")
+    # the first-order theta*: the search never returns anything worse; its errors propagate
+    first = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, step=step)
+    value, _ = first.maximum_expected_n(grid=12)
+    candidates.append((value, first))
     a, b = lo + margin, hi - margin
     ga, gb = design(a), design(b)
     if ga is not None and gb is not None and ga > 0 > gb:

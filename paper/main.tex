@@ -1134,7 +1134,12 @@ implementation uses the JSON Canonicalization Scheme~\cite{rfc8785},
 which fixes number formatting (the shortest representation that
 round-trips), string escaping and key order. Integers that a binary64
 value cannot hold exactly are refused by the input contracts, and 64-bit
-values such as $R_t$ are stored as strings.
+values such as $R_t$ are stored as strings. The same requirement applies
+earlier, to observations: one whose value cannot be recorded exactly in
+JSON (a non-finite number, an integer beyond $2^{53}$, a key that is not
+a string) is invalid input, rejected before it reaches a topology
+buffer, so that neither the observation log nor a checkpoint ever holds
+a value that a replay would read back differently.
 
 % ------------------------------------------------------------
 \subsection{Provenance}
@@ -1194,7 +1199,12 @@ arithmetic~\cite{goldberg1991,higham2002} as much as about statistics.
 The usual mechanisms apply: likelihoods are kept in the log domain,
 normalizing constants are computed with a stable log-sum-exp, long sums
 use compensated accumulation~\cite{kahan1965,neumaier1974}, and
-non-finite values are rejected before they are committed.
+non-finite values are rejected before they are committed. The runtime
+enforces the last point for every procedure: a transition that
+overflows, or yields a non-finite state or output, raises a numerical
+error and commits nothing. Procedures that estimate a variance also
+report a numerical error when rescaled data make the estimate
+underflow, rather than deciding on a meaningless statistic.
 
 More important for the architecture is to say what ``equal
 trajectories'' means. We distinguish four levels.
@@ -1538,7 +1548,13 @@ for some pair of multipliers are non-randomised, and near the smallest
 feasible horizon they need not reach every pair of error probabilities
 that some test of that size reaches; randomised boundaries would. The
 implementation then tries smaller horizons, which also respect the
-constraint, and reports a failure only if none succeeds.
+constraint, and reports a failure only if none succeeds. Before any of
+this it compares the targets with the Neyman--Pearson bound: a plan
+that stops by $H$ is a test based on $H$ observations, so its
+$\alpha_1$ is at least that of the most powerful randomised level-$\alpha_0$
+test of that size, computed exactly for Bernoulli, Poisson and normal
+data. Targets below the bound are reported at once, instead of after a
+search that cannot succeed.
 
 \paragraph{Validation.}
 A reference procedure can be validated against analytical facts without
@@ -1741,7 +1757,13 @@ functions~\cite{lan1983,jennison2000} by recursive numerical
 integration~\cite{armitage1969}; the O'Brien--Fleming-type efficacy
 boundaries for three and five analyses reproduce the published values to
 three decimals, and with estimated variance each boundary is converted to
-a $t$ boundary of the same significance level. The
+a $t$ boundary of the same significance level. The $t$ distribution is
+computed from the standard library alone: the incomplete beta function
+by its continued fraction, in logarithms where the tail underflows, and
+Fisher's expansion to third order when the degrees of freedom are
+large; on a grid of degrees of freedom from $0.1$ to $10^{200}$ and
+arguments up to $10^{300}$ it agrees with 80-digit reference values to
+a relative error below $10^{-10}$. The
 implementation also includes four topology operators (independent,
 positional pairing, key join, time alignment), three delivery policies,
 a synchronous pull runtime, and an asynchronous push runtime with
@@ -1757,7 +1779,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$170$ tests in total; the remainder cover transactional updates,
+$183$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under

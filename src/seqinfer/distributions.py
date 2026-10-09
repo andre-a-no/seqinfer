@@ -41,7 +41,7 @@ def _beta_continued_fraction(a: float, b: float, x: float) -> float:
 
 _SQRT2 = math.sqrt(2.0)
 _LOG_SQRT_2PI = 0.5 * math.log(2.0 * math.pi)
-_NORMAL_DF = 1e15  # beyond this, t and normal tails agree to machine precision for every |t| that matters
+_HUGE_DF = 1e15  # beyond this, the incomplete beta function is not used
 _TINY = 1e-280  # tails below this are recomputed in logarithms
 
 
@@ -89,26 +89,51 @@ def _log_normal_upper(z: float) -> float:
     q = 0.5 * math.erfc(z / _SQRT2)
     if q > _TINY:
         return math.log(q)
-    z2 = z * z
-    series = 1.0 - 1.0 / z2 + 3.0 / z2**2 - 15.0 / z2**3 + 105.0 / z2**4  # Mills ratio, z > 37
-    return -0.5 * z2 - math.log(z) - _LOG_SQRT_2PI + math.log(series)
+    w = 1.0 / (z * z)  # may underflow to 0; z * z itself may overflow, and the log tail is then -inf
+    series = 1.0 - w * (1.0 - w * (3.0 - w * (15.0 - 105.0 * w)))  # Mills ratio, z > 37
+    return -0.5 * z * z - math.log(z) - _LOG_SQRT_2PI + math.log(series)
 
 
 def _fisher_applies(t: float, df: float) -> bool:
-    """Fisher's two-term expansion is the more accurate method here (error about t^12 / df^3)."""
-    return df >= 1e6 and (t == 0.0 or 12.0 * math.log(t) <= math.log(1e-12) + 3.0 * math.log(df))
+    """Fisher's expansion to 1/df^3 is the more accurate method here (relative error about t^16 / (6144 df^4))."""
+    return df >= 1e5 and (t == 0.0 or 16.0 * math.log(t) <= math.log(6e-11) + 4.0 * math.log(df))
 
 
 def _fisher_correction(t: float, df: float) -> float:
-    """(P(T > t) - (1 - Phi(t))) / phi(t), to second order in 1/df (Fisher 1925)."""
-    t3 = t**3
-    return (t3 + t) / (4.0 * df) + (3.0 * t3 * t**4 + 19.0 * t3 * t * t + 17.0 * t3 - 15.0 * t) / (96.0 * df * df)
+    """(P(T > t) - (1 - Phi(t))) / phi(t), to third order in 1/df (Fisher 1925).
+
+    The coefficients were checked against 120-digit evaluations of the incomplete beta function.
+    """
+    t2 = t * t
+    g1 = t * (t2 + 1.0) / 4.0
+    g2 = t * (((3.0 * t2 - 7.0) * t2 - 5.0) * t2 - 3.0) / 96.0
+    g3 = t * (((((t2 - 11.0) * t2 + 14.0) * t2 + 6.0) * t2 - 3.0) * t2 - 15.0) / 384.0
+    return (g1 + (g2 + g3 / df) / df) / df
+
+
+def _normal_applies(t: float, df: float) -> bool:
+    """Fisher's first correction is below 1e-17 of the tail and of its distance from 1/2."""
+    return math.isinf(df) or (t * t + 1.0) * max(1.0, t * t) < 4e-17 * df
+
+
+def _log_huge_df_tail(t: float, df: float) -> float:
+    """log P(T > t) for df > 1e15 beyond the reach of Fisher's expansion (t > 2000).
+
+    P(T > t) = f(t) (1 + t^2/df) / t (1 + O(1/t^2)), f the density: the error of
+    the logarithm is below 1e-6, against a logarithm below -2e6.
+    """
+    s2 = (t / math.sqrt(df)) ** 2
+    log1p_s2 = math.log1p(s2) if math.isfinite(s2) else 2.0 * (math.log(t) - 0.5 * math.log(df))
+    log_density = _lgamma_ratio(0.5 * df, 0.5) - 0.5 * math.log(df * math.pi) - 0.5 * (df + 1.0) * log1p_s2
+    return log_density - math.log(t) + log1p_s2
 
 
 def _upper_tail(t: float, df: float) -> float:
     """P(T > t) for t >= 0."""
-    if df > _NORMAL_DF:
+    if _normal_applies(t, df):
         return 0.5 * math.erfc(t / _SQRT2)
+    if df > _HUGE_DF and not _fisher_applies(t, df):
+        return math.exp(_log_huge_df_tail(t, df))
     if _fisher_applies(t, df):
         phi = math.exp(-0.5 * t * t - _LOG_SQRT_2PI)
         return 0.5 * math.erfc(t / _SQRT2) + phi * _fisher_correction(t, df)
@@ -123,25 +148,32 @@ def _beta_tail_is_tiny(t: float, df: float) -> bool:
     return t > 0.0 and _log_s(t, df) > math.log(1e100)
 
 
-def _beta_upper_tail(t: float, df: float) -> float:
-    """P(T > t) = I_x(df/2, 1/2) / 2 with x = df / (df + t^2), x and 1 - x formed from s = t / sqrt(df)."""
+def _beta_arguments(t: float, df: float) -> tuple[float, float, tuple[float, float]]:
+    """x = df / (df + t^2), y = 1 - x and their logarithms, formed from s = t / sqrt(df) without cancellation.
+
+    With df large, log x is multiplied by df / 2, so it must be accurate relative to itself.
+    """
     s = t / math.sqrt(df)
-    a = 0.5 * df
     if s < 1.0:
         s2 = s * s
-        x, y = 1.0 / (1.0 + s2), s2 / (1.0 + s2)
         logs = (-math.log1p(s2), 2.0 * math.log(s) - math.log1p(s2)) if s > 0.0 else (0.0, -math.inf)
-    else:
-        r2 = 1.0 / (s * s)
-        x, y = r2 / (1.0 + r2), 1.0 / (1.0 + r2)
-        logs = (-2.0 * math.log(s) - math.log1p(r2), -math.log1p(r2))
-    return 0.5 * regularized_beta(x, a, 0.5, y, logs)
+        return 1.0 / (1.0 + s2), s2 / (1.0 + s2), logs
+    r2 = 1.0 / (s * s)
+    return r2 / (1.0 + r2), 1.0 / (1.0 + r2), (-2.0 * math.log(s) - math.log1p(r2), -math.log1p(r2))
+
+
+def _beta_upper_tail(t: float, df: float) -> float:
+    """P(T > t) = I_x(df/2, 1/2) / 2."""
+    x, y, logs = _beta_arguments(t, df)
+    return 0.5 * regularized_beta(x, 0.5 * df, 0.5, y, logs)
 
 
 def _log_upper_tail(t: float, df: float) -> float:
     """log P(T > t) for t >= 0, also where the tail underflows."""
-    if df > _NORMAL_DF:
+    if _normal_applies(t, df):
         return _log_normal_upper(t)
+    if df > _HUGE_DF and not _fisher_applies(t, df):
+        return _log_huge_df_tail(t, df)
     if _fisher_applies(t, df):
         log_phi = -0.5 * t * t - _LOG_SQRT_2PI
         log_q = _log_normal_upper(t)
@@ -156,10 +188,7 @@ def _log_upper_tail(t: float, df: float) -> float:
     if tail > _TINY:
         return math.log(tail)
     # deep in the tail x is small, so I_x comes from the direct continued fraction: take its logarithm
-    s = math.exp(log_s)
-    r2 = 1.0 / (s * s)
-    x = r2 / (1.0 + r2)
-    log_x, log_y = -2.0 * log_s - math.log1p(r2), -math.log1p(r2)
+    x, _, (log_x, log_y) = _beta_arguments(t, df)
     log_front = _log_inverse_beta(a, 0.5) + a * log_x + 0.5 * log_y
     return math.log(0.5) + log_front + math.log(_beta_continued_fraction(a, 0.5, x)) - math.log(a)
 

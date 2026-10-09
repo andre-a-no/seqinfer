@@ -81,7 +81,8 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   against 0.5 it needs 31.0 observations on average at θ*, against 31.3
   for Lorden's 2-SPRT with thresholds calibrated to the same errors: the
   2-SPRT is already close to optimal there. Seconds for discrete data,
-  under ten seconds for normal data.
+  under ten seconds for normal data. Targets that no test with `horizon`
+  observations can meet (the Neyman–Pearson bound) are reported at once.
 
 **Group sequential designs** (`seqinfer.group_sequential`):
 `group_sequential_design(alpha, fractions, spending)` computes efficacy
@@ -117,7 +118,10 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
   structured `incident` record. `on_invalid="raise"` or an exception class
   makes it fatal; `max_invalid_streak=N` stops the run after N invalid
   inputs in a row, when the source rather than a message is broken. Contracts are strict: `numpy` scalars, booleans and
-  strings are refused with a message saying how to convert them.
+  strings are refused with a message saying how to convert them. Observations must be exactly recordable in JSON
+  (finite numbers, integers within 2^53, string keys); others are invalid input, so logs and checkpoints always replay.
+- **Numerical failures are loud.** A transition that overflows or produces a non-finite state or output raises
+  `NumericalError` and commits nothing; variance-based tests also raise it when rescaled data make the variance underflow.
 - **Portable digests.** History digests and checkpoint identifiers use
   RFC 8785 canonical JSON. `conformance/` holds language-independent test
   vectors; `node conformance/check.mjs` reproduces them in JavaScript.

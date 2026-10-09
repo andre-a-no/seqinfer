@@ -606,6 +606,28 @@ class SecondReviewNumerics(unittest.TestCase):
         self.assertAlmostEqual(t_ppf(0.05, 1e200), -1.6448536269514724, places=13)
         self.assertEqual(t_ppf(1e-300, 0.1), -math.inf)  # the quantile is about -1e2990
 
+    def test_fisher_expansion_at_large_df(self):
+        from seqinfer.distributions import _fisher_correction, _log_normal_upper, _log_upper_tail
+
+        # log P(T > t), 120-digit references; the expansion once had wrong second-order coefficients
+        for t, df, ref in (
+            (3.0, 1e6, -6.607701598412306),
+            (2.0, 1e5, -3.7831250047718967),
+            (37.0, 1e10, -689.0305386544447),
+            (39.0, 1e10, -765.0830986523333),
+            (60.0, 1e9, -1805.0103188885957),  # log x once lost digits that df/2 = 5e8 then multiplied
+            (37.0, 1e16, -689.0305855768437),  # the normal limit was once taken for every t beyond df = 1e15
+            (3000.0, 1e16, -4500008.923281211),
+            (1e155, 1e16, -3.384800086701247e18),  # was -inf
+            (1e50, 1e200, -5.000000000000001e99),
+        ):
+            self.assertAlmostEqual(_log_upper_tail(t, df) / ref, 1.0, places=13, msg=f"t={t}, df={df}")
+        for t, df, ref in ((37.0, 1e15, -689.0305855764212), (37.0, 2e15, -689.030585576656)):
+            self.assertAlmostEqual(_log_upper_tail(t, df) / ref, 1.0, places=14, msg=f"t={t}, df={df}")
+        self.assertAlmostEqual(_fisher_correction(3.0, 1e12) * 1e12, 7.5 + 49.125e-12, places=12)
+        self.assertEqual(_log_normal_upper(1e100), -5e199)  # no overflow in the Mills series
+        self.assertEqual(_log_normal_upper(1e200), -math.inf)
+
     def test_rescaled_data_fail_loudly_not_wrongly(self):
         from seqinfer import NumericalError
         from seqinfer.procedures import GroupSequentialTest, TMixtureSPRT
@@ -696,6 +718,41 @@ class LeastFavourable(unittest.TestCase):
 
 class DesignReviewRegressions(unittest.TestCase):
     """Defects found by review of the design modules; each test reproduces one."""
+
+    def test_least_favourable_reports_bad_arguments(self):
+        for args in ((0.3, 0.5, 1.5, 0.1, 30), (0.3, 0.5, 0.05, 0.1, 0), (0.3, 0.3, 0.05, 0.1, 30)):
+            with self.subTest(args=args), self.assertRaisesRegex(ValueError, "need theta0 != theta1"):
+                kiefer_weiss_plan(*args, theta_star="least-favourable")
+
+    def test_impossible_targets_fail_at_once(self):
+        import time
+
+        cases = [
+            ((0.4905, 0.5701, 0.168, 0.0274, 78), Bernoulli()),  # took 332 s
+            ((0.4, 0.5, 0.05, 0.1, 10), Bernoulli()),
+            ((2.0, 2.5, 0.05, 0.1, 10), Poisson()),  # 97 s
+            ((50.0, 55.0, 0.05, 0.1, 5), Poisson()),  # 172 s
+            ((0.0, 0.5, 0.05, 0.1, 5), Gaussian(1.0)),  # over 550 s
+        ]
+        for args, family in cases:
+            for theta_star in (None, "least-favourable"):
+                start = time.perf_counter()
+                with self.subTest(args=args, ts=theta_star), self.assertRaisesRegex(ValueError, "Neyman-Pearson"):
+                    kiefer_weiss_plan(*args, family=family, theta_star=theta_star)
+                self.assertLess(time.perf_counter() - start, 2.0)
+
+    def test_neyman_pearson_bound(self):
+        from seqinfer.design import _neyman_pearson_error
+
+        # one Bernoulli observation, 0.5 vs 0.7 at level 0.05: reject x = 1 with probability 0.1
+        self.assertAlmostEqual(_neyman_pearson_error(Bernoulli(), 0.5, 0.7, 0.05, 1), 0.93, places=14)
+        self.assertAlmostEqual(_neyman_pearson_error(Bernoulli(), 0.5, 0.3, 0.05, 1), 0.93, places=14)
+        self.assertIsNone(_neyman_pearson_error(Exponential(), 1.0, 0.5, 0.05, 10))
+        # every plan the module returns respects the bound
+        for family, args in ((Bernoulli(), (0.3, 0.5, 0.05, 0.1, 60)), (Poisson(), (3.0, 2.0, 0.05, 0.1, 30))):
+            d = kiefer_weiss_plan(*args, family=family)
+            bound = _neyman_pearson_error(family, args[0], args[1], d.at_theta0.reject, d.plan.horizon)
+            self.assertGreaterEqual(d.at_theta1.accept, bound * (1 - 1e-9))
 
     def test_feasible_problems_near_the_smallest_horizon_get_a_plan(self):
         for args, family in (
