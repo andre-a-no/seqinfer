@@ -33,7 +33,7 @@ jobs:
       - run: python -W error::ResourceWarning -m unittest discover -s tests -t . -v
       - name: examples
         run: |
-          for example in examples/0[1235-6]_*.py; do python "$example"; done
+          for example in examples/0[1235-8]_*.py; do python "$example"; done
           python examples/04_kiefer_weiss_oc.py 500
       - name: conformance vectors are up to date
         run: |
