@@ -13,6 +13,7 @@ from .particle import BootstrapParticleFilter
 from .plan import PlanTest
 from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
+from .t_mixture import TMixtureSPRT
 from .two_sample import MeanDifference
 from .two_sprt import TwoSPRT, kiefer_weiss_point
 
@@ -36,6 +37,7 @@ __all__ = [
     "Poisson",
     "SequentialSignTest",
     "ShiryaevRoberts",
+    "TMixtureSPRT",
     "TwoSPRT",
     "kiefer_weiss_point",
 ]

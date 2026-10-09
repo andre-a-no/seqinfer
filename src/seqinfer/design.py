@@ -180,6 +180,55 @@ class KieferWeissDesign:
     at_theta_star: OperatingCharacteristic
     lagrangian: float  # optimal value of the Lagrangian, from the backward induction
     exact: bool
+    family: Family | None = None
+    step: float | None = None
+
+    def maximum_expected_n(self, grid: int = 24) -> tuple[float, float]:
+        """max over theta in [theta0, theta1] of E_theta[N], and where it is attained."""
+        assert self.family is not None
+        return maximum_expected_n(
+            self.plan, self.family, self.at_theta0.theta, self.at_theta1.theta, step=self.step, grid=grid
+        )
+
+
+_GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
+
+
+def maximum_expected_n(
+    plan: PlanTest, family: Family, lower: float, upper: float, *, step: float | None = None, grid: int = 24
+) -> tuple[float, float]:
+    """The largest expected sample size of `plan` for theta between `lower` and `upper`, and its argmax.
+
+    A grid locates the maximum; golden-section search refines it between
+    the neighbouring grid points.
+    """
+    lo, hi = min(lower, upper), max(lower, upper)
+
+    def asn(theta: float) -> float:
+        return operating_characteristic(plan, family, theta, step=step).expected_n
+
+    thetas = [lo + (hi - lo) * i / grid for i in range(grid + 1)]
+    values = [asn(t) for t in thetas]
+    i = max(range(len(values)), key=values.__getitem__)
+    a, b = thetas[max(i - 1, 0)], thetas[min(i + 1, grid)]
+    best_theta, best = thetas[i], values[i]
+    c, d = b - _GOLDEN * (b - a), a + _GOLDEN * (b - a)
+    fc, fd = asn(c), asn(d)
+    for _ in range(40):
+        if b - a < 1e-4 * (hi - lo):
+            break
+        if fc > fd:
+            b, d, fd = d, c, fc
+            c = b - _GOLDEN * (b - a)
+            fc = asn(c)
+        else:
+            a, c, fc = c, d, fd
+            d = a + _GOLDEN * (b - a)
+            fd = asn(d)
+    for t, v in ((c, fc), (d, fd)):
+        if v > best:
+            best_theta, best = t, v
+    return best, best_theta
 
 
 def _affine_llr(family: Family, num: float, den: float) -> tuple[float, float]:
@@ -343,7 +392,7 @@ def kiefer_weiss_plan(
     horizon: int,
     *,
     family: Family | None = None,
-    theta_star: float | None = None,
+    theta_star: float | str | None = None,
     step: float | None = None,
 ) -> KieferWeissDesign:
     """Optimal plan with at most `horizon` observations; see the module docstring.
@@ -352,8 +401,24 @@ def kiefer_weiss_plan(
     never exceeds the horizon and has error probabilities at most alpha0
     and alpha1 -- exactly for discrete data, on the lattice for normal data.
     Raises ValueError if no plan within the horizon can meet them.
+
+    `theta_star` is where the expected sample size is minimised.  By
+    default it is the first-order point of Lorden (1976).  With
+    ``theta_star="least-favourable"`` it solves the Kiefer-Weiss problem
+    itself: by Lorden's characterisation the optimal test is the solution
+    of the modified problem whose expected sample size is largest at
+    theta* itself, so theta* is found by bisection on argmax_theta
+    E_theta[N] - theta*, each candidate designed in full.  Near the
+    solution the maximum expected sample size is flat in theta*; for
+    discrete data it also moves in small steps, because the attainable
+    error rates do, so the gain over the first-order theta* is often a
+    fraction of a percent.
     """
     family = family if family is not None else Bernoulli()
+    if theta_star == "least-favourable":
+        return _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step)
+    if isinstance(theta_star, str):
+        raise ValueError("theta_star must be a number, None or 'least-favourable'")
     family.check(theta0)
     family.check(theta1)
     if theta0 == theta1 or not (0 < alpha0 < 1 and 0 < alpha1 < 1) or horizon < 1:
@@ -477,5 +542,34 @@ def kiefer_weiss_plan(
 
     return KieferWeissDesign(
         plan, theta_star, math.exp(u0), math.exp(u1), oc(theta0), oc(theta1), oc(theta_star), p.value,
-        problem.lat.exact,
+        problem.lat.exact, family, step,
     )
+
+
+def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> KieferWeissDesign:
+    lo, hi = min(theta0, theta1), max(theta0, theta1)
+    margin = 0.02 * (hi - lo)
+
+    def design(ts: float) -> tuple[float, KieferWeissDesign]:
+        d = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, theta_star=ts, step=step)
+        return d.maximum_expected_n()[1] - ts, d
+
+    a, b = lo + margin, hi - margin
+    ga, da = design(a)
+    gb, db = design(b)
+    if ga <= 0:  # the maximum sits at or below every candidate: take the lowest
+        return da
+    if gb >= 0:
+        return db
+    best = da if abs(ga) < abs(gb) else db
+    best_gap = min(abs(ga), abs(gb))
+    while b - a > 2e-3 * (hi - lo):
+        mid = 0.5 * (a + b)
+        g, d = design(mid)
+        if abs(g) < best_gap:
+            best, best_gap = d, abs(g)
+        if g > 0:
+            a = mid
+        else:
+            b = mid
+    return best

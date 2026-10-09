@@ -518,5 +518,132 @@ class GroupSequential(unittest.TestCase):
             GroupSequentialTest(1.0, analyses=[10, 5], bounds=[2.0, 2.0])
 
 
+class StudentT(unittest.TestCase):
+    def test_distribution_function_against_known_quantiles(self):
+        from seqinfer.distributions import t_cdf, t_ppf
+
+        known = ((0.975, 10, 2.228138851986274), (0.975, 1, 12.706204736174698), (0.9, 2, 1.885618083164127))
+        for p, df, quantile in known:
+            self.assertAlmostEqual(t_ppf(p, df), quantile, places=10)
+            self.assertAlmostEqual(t_cdf(quantile, df), p, places=13)
+        self.assertEqual(t_cdf(0.0, 7), 0.5)
+        self.assertAlmostEqual(t_cdf(-1.3, 4) + t_cdf(1.3, 4), 1.0, places=14)
+
+    def test_large_degrees_of_freedom_approach_the_normal(self):
+        from statistics import NormalDist
+
+        from seqinfer.distributions import t_cdf
+
+        self.assertAlmostEqual(t_cdf(1.96, 1e7), NormalDist().cdf(1.96), places=6)
+
+
+class TMixture(unittest.TestCase):
+    def test_bayes_factor_matches_direct_integration(self):
+        from seqinfer.procedures import TMixtureSPRT
+
+        proc = TMixtureSPRT(0.0, effect=0.7)
+        xs = [0.9, -0.4, 2.1, 1.3, 0.2, 1.7]
+        state = proc.initial_state()
+        for v in xs:
+            state, out = proc.step(state, {"x": v}, None)
+
+        def lik(mu, sig):
+            return math.exp(sum(-0.5 * ((x - mu) / sig) ** 2 for x in xs)) / sig ** len(xs)
+
+        ls = [math.log(1e-3) + i * math.log(1e6) / 800 for i in range(801)]
+        ds = [-5.6 + i * 11.2 / 400 for i in range(401)]
+        dl, dd = ls[1] - ls[0], ds[1] - ds[0]
+        h0 = sum(lik(0.0, math.exp(ls_)) for ls_ in ls) * dl
+        h1 = sum(
+            lik(d * math.exp(ls_), math.exp(ls_)) * math.exp(-0.5 * (d / 0.7) ** 2) / (0.7 * math.sqrt(2 * math.pi))
+            for ls_ in ls for d in ds
+        ) * dd * dl
+        self.assertAlmostEqual(out.log_bf, math.log(h1 / h0), places=4)
+
+    def test_valid_whatever_the_variance(self):
+        from seqinfer.procedures import TMixtureSPRT
+
+        reps = 800
+        rates = [
+            rejection_rate(TMixtureSPRT(3.0), lambda r, s=sigma: (lambda: r.gauss(3.0, s)), reps, 300, 25)
+            for sigma in (0.01, 1.0, 40.0)
+        ]
+        self.assertEqual(len(set(rates)), 1)  # scale invariance: identical decisions on rescaled data
+        self.assertLessEqual(rates[0], upper_bound(0.05, reps))
+
+    def test_power_and_confidence_sequence(self):
+        from seqinfer.procedures import TMixtureSPRT
+
+        self.assertEqual(rejection_rate(TMixtureSPRT(0.0), lambda r: (lambda: r.gauss(2.1, 7.0)), 100, 2000, 26), 1.0)
+        proc = TMixtureSPRT(0.0, alpha=0.1, stop_on_reject=False)
+        rnd, reps, misses = random.Random(27), 800, 0
+        for _ in range(reps):
+            state = proc.initial_state()
+            for _ in range(300):
+                state, out = proc.step(state, {"x": rnd.gauss(2.0, 3.0)}, None)
+                if out.lower is not None and not out.lower <= 2.0 <= out.upper:
+                    misses += 1
+                    break
+        self.assertLessEqual(misses / reps, upper_bound(0.1, reps))
+
+    def test_interval_is_the_inverted_test(self):
+        from seqinfer.procedures import TMixtureSPRT
+
+        proc = TMixtureSPRT(0.0, alpha=0.05, stop_on_reject=False)
+        rnd, state = random.Random(28), proc.initial_state()
+        for _ in range(200):
+            state, out = proc.step(state, {"x": rnd.gauss(0.4, 2.0)}, None)
+            if out.lower is None or abs(out.log_bf - math.log(20)) < 1e-9:
+                continue
+            self.assertEqual(not out.lower <= 0.0 <= out.upper, out.log_bf >= math.log(20))
+
+
+class GroupSequentialExtensions(unittest.TestCase):
+    def test_estimated_variance_keeps_the_type_one_error_approximately(self):
+        from seqinfer.group_sequential import group_sequential_design
+        from seqinfer.procedures import GroupSequentialTest
+
+        d = group_sequential_design(0.025, (0.2, 0.4, 0.6, 0.8, 1.0))
+        proc = GroupSequentialTest.from_design(d, 100, sigma=None)
+        self.assertGreater(proc.bound_at(0), d.bounds[0])  # t boundaries are wider
+        reps = 3000
+        rate = rejection_rate(proc, lambda r: (lambda: r.gauss(5.0, 3.0) - 5.0), reps, 100, 29)
+        self.assertLess(abs(rate - 0.025), 3 * math.sqrt(0.025 * 0.975 / reps) + 0.003)
+
+    def test_futility_boundaries(self):
+        from seqinfer.group_sequential import group_sequential_design
+
+        d = group_sequential_design(0.025, (1 / 3, 2 / 3, 1.0), futility="obrien-fleming", power=0.9)
+        for got, published in zip(d.bounds, (3.7103, 2.5114, 1.9930), strict=True):
+            self.assertAlmostEqual(got, published, places=3)
+        self.assertEqual(d.futility[-1], d.bounds[-1])  # the boundaries meet at the end
+        self.assertAlmostEqual(d.power(d.drift), 0.9, places=6)
+        cumulative = 0.0
+        for q, spent in zip(d.futility_crossing(d.drift)[:-1], d.beta_spent[:-1], strict=True):
+            cumulative += q
+            self.assertAlmostEqual(cumulative, spent, places=7)
+        self.assertAlmostEqual(sum(d.crossing(0.0, binding=False)), 0.025, places=9)  # non-binding
+        self.assertLess(sum(d.crossing(0.0)), 0.025)
+        fixed = (1.959964 + 1.281552) ** 2 / 0.25
+        self.assertGreater(d.max_sample_size(0.5, 1.0), fixed)  # the price of looking early
+
+    def test_futility_executed_on_a_stream(self):
+        from seqinfer.group_sequential import group_sequential_design
+        from seqinfer.procedures import ACCEPT_H0, GroupSequentialTest
+
+        d = group_sequential_design(0.025, (1 / 3, 2 / 3, 1.0), futility="obrien-fleming", power=0.9)
+        n_max = d.max_sample_size(0.5, 1.0)
+        proc = GroupSequentialTest.from_design(d, n_max, sigma=1.0)
+        reps = 3000
+        power = rejection_rate(proc, lambda r: (lambda: r.gauss(0.5, 1.0)), reps, n_max, 30)
+        self.assertLess(abs(power - 0.9), 3 * math.sqrt(0.09 / reps))
+        state, out = proc.initial_state(), None
+        for _ in range(proc.analyses[0]):
+            state, out = proc.step(state, {"x": -1.0}, None)
+        self.assertEqual((out.analysis, out.decision), (1, ACCEPT_H0))  # stopped for futility
+        with self.assertRaises(ValueError):
+            group_sequential_design(0.025, (0.5, 1.0), futility="pocock")  # needs the power
+
+
 if __name__ == "__main__":
     unittest.main()

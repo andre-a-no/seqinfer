@@ -87,12 +87,24 @@ class _Recursion:
                 p += m * _N.cdf((-upper - x - mu) / sd)
         return p
 
-    def advance(self, t: float, b: float) -> None:
-        """Move to t, keeping only paths that did not cross."""
+    def cross_below(self, t: float, f: float) -> float:
+        """P(continue to t_{k-1} and end at or below the futility boundary f sqrt(t) at t)."""
+        sd = math.sqrt(t - self.t)
+        mu = self.drift * (t - self.t)
+        lower = f * math.sqrt(t)
+        return sum(m * _N.cdf((lower - x - mu) / sd) for x, m in zip(self.xs, self.mass, strict=True))
+
+    def advance(self, t: float, b: float, f: float | None = None) -> None:
+        """Move to t, keeping only paths that crossed neither boundary."""
         sd = math.sqrt(t - self.t)
         mu = self.drift * (t - self.t)
         upper = b * math.sqrt(t)
-        lower = -upper if self.two_sided else min(_LOWER * math.sqrt(t), upper - 1.0) + self.drift * t
+        if f is not None:
+            lower = f * math.sqrt(t)
+        elif self.two_sided:
+            lower = -upper
+        else:
+            lower = min(_LOWER * math.sqrt(t), upper - 1.0) + self.drift * t
         ys = self._grid(lower, upper, sd)
         h = (ys[1] - ys[0]) / 3.0
         weights = _simpson(len(ys))
@@ -114,28 +126,48 @@ class GroupSequentialDesign:
     spent: tuple[float, ...]  # cumulative alpha by analysis (one side)
     alpha: float
     two_sided: bool
+    futility: tuple[float, ...] | None = None  # non-binding futility boundaries for Z_k
+    beta_spent: tuple[float, ...] | None = None  # cumulative beta by analysis
+    drift: float | None = None  # theta sqrt(I_max) the futility boundaries were built for
 
-    def crossing(self, drift: float = 0.0, points_per_sd: int = 24) -> tuple[float, ...]:
-        """P(first crossing at analysis k) when Z(t) sqrt(t) has the given drift per unit information."""
+    def _walk(self, drift: float, points_per_sd: int, binding: bool) -> tuple[list[float], list[float]]:
+        """First-crossing probabilities of the efficacy and of the futility boundary at each analysis."""
         rec = _Recursion(drift, self.two_sided, points_per_sd)
-        out = []
+        futility = self.futility if binding else None
+        up, down = [], []
+        last = len(self.fractions) - 1
         for k, (t, b) in enumerate(zip(self.fractions, self.bounds, strict=True)):
-            out.append(rec.cross(t, b))
-            if k + 1 < len(self.fractions):
-                rec.advance(t, b)
-        return tuple(out)
+            up.append(rec.cross(t, b))
+            f = futility[k] if futility is not None else None
+            down.append(rec.cross_below(t, f) if f is not None else 0.0)
+            if k < last:
+                rec.advance(t, b, f)
+        return up, down
+
+    def crossing(self, drift: float = 0.0, points_per_sd: int = 24, *, binding: bool = True) -> tuple[float, ...]:
+        """P(stop for efficacy at analysis k), with Z(t) sqrt(t) drifting at `drift` per unit information.
+
+        With futility boundaries, `binding=True` assumes the trial stops when
+        it crosses one; `binding=False` ignores them, which is how the type I
+        error of a non-binding design is controlled.
+        """
+        return tuple(self._walk(drift, points_per_sd, binding)[0])
+
+    def futility_crossing(self, drift: float = 0.0, points_per_sd: int = 24) -> tuple[float, ...]:
+        """P(stop for futility at analysis k); zeros without futility boundaries."""
+        return tuple(self._walk(drift, points_per_sd, True)[1])
 
     def power(self, drift: float) -> float:
         return sum(self.crossing(drift))
 
     def expected_fraction(self, drift: float) -> float:
-        """Expected information at stopping, as a fraction of the maximum."""
-        cross = self.crossing(drift)
+        """Expected information at stopping, as a fraction of the maximum (futility obeyed)."""
+        up, down = self._walk(drift, 24, True)
         stopped_early = 0.0
         expected = 0.0
-        for t, p in zip(self.fractions[:-1], cross[:-1], strict=True):
-            expected += t * p
-            stopped_early += p
+        for t, p, q in zip(self.fractions[:-1], up[:-1], down[:-1], strict=True):
+            expected += t * (p + q)
+            stopped_early += p + q
         return expected + 1.0 * (1.0 - stopped_early)
 
     def drift_for_power(self, power: float) -> float:
@@ -151,9 +183,18 @@ class GroupSequentialDesign:
                 hi = mid
         return hi
 
-    def max_sample_size(self, effect: float, sigma: float, power: float) -> int:
-        """Smallest maximum sample size for a normal mean: I_max = n / sigma^2, drift = effect sqrt(I_max)."""
-        drift = self.drift_for_power(power)
+    def max_sample_size(self, effect: float, sigma: float, power: float | None = None) -> int:
+        """Smallest maximum sample size for a normal mean: I_max = n / sigma^2, drift = effect sqrt(I_max).
+
+        A design with futility boundaries was built for one power; leave
+        `power` out to use it.
+        """
+        if power is None:
+            if self.drift is None:
+                raise ValueError("give the power: this design was not built for one")
+            drift = self.drift
+        else:
+            drift = self.drift_for_power(power)
         return math.ceil((drift * sigma / abs(effect)) ** 2)
 
 
@@ -163,12 +204,23 @@ def group_sequential_design(
     spending="obrien-fleming",
     *,
     two_sided: bool = False,
+    futility=None,
+    power: float | None = None,
     points_per_sd: int = 24,
 ) -> GroupSequentialDesign:
-    """Efficacy boundaries for K analyses at the given information fractions.
+    """Efficacy boundaries, and optionally futility boundaries, for K analyses.
 
     `alpha` is the overall type I error: one-sided, or the total of both
     sides when `two_sided` (then each side spends alpha/2).
+
+    `futility` is a spending function for beta = 1 - power (same forms as
+    `spending`); it requires `power` and a one-sided design.  Futility
+    boundaries are non-binding: the efficacy boundaries are computed as if
+    they did not exist, so the type I error stays at most alpha whether or
+    not a trial stops when it crosses one.  The design's drift is chosen
+    so that, with futility obeyed, the power is exactly `power` and the
+    two boundaries meet at the last analysis (Pampallona and Tsiatis 1994;
+    the "non-binding" designs of gsDesign).
     """
     if not 0 < alpha < 1:
         raise ValueError("alpha must lie in (0, 1)")
@@ -199,4 +251,53 @@ def group_sequential_design(
         bounds.append(b)
         if k + 1 < len(ts):
             rec.advance(t, b if math.isfinite(b) else 40.0)
-    return GroupSequentialDesign(tuple(ts), tuple(bounds), tuple(cumulative), alpha, two_sided)
+    if futility is None:
+        return GroupSequentialDesign(tuple(ts), tuple(bounds), tuple(cumulative), alpha, two_sided)
+    if two_sided:
+        raise ValueError("futility boundaries are implemented for one-sided designs")
+    if power is None or not 0 < power < 1:
+        raise ValueError("futility boundaries need the power they are designed for")
+    beta = 1.0 - power
+    beta_spend = spending_function(futility, beta)
+    beta_cumulative = [beta_spend(t) for t in ts]
+    if abs(beta_cumulative[-1] - beta) > 1e-9:
+        raise ValueError("the futility spending function must spend exactly beta by t = 1")
+    finite = [b if math.isfinite(b) else 40.0 for b in bounds]
+
+    def futility_for(drift: float) -> tuple[list[float], float]:
+        """Futility boundaries spending beta at this drift, and the beta actually left at the end."""
+        rec = _Recursion(drift, False, points_per_sd)
+        fs, previous = [], 0.0
+        for t, b, c in zip(ts[:-1], finite[:-1], beta_cumulative[:-1], strict=True):
+            target = c - previous
+            previous = c
+            if rec.cross_below(t, b) <= target:  # the boundaries meet before the end
+                f = b
+            else:
+                lo, hi = -40.0, b
+                for _ in range(60):
+                    mid = 0.5 * (lo + hi)
+                    if rec.cross_below(t, mid) > target:
+                        hi = mid
+                    else:
+                        lo = mid
+                f = 0.5 * (lo + hi)
+            fs.append(f)
+            rec.advance(t, b, f)
+        return fs, previous + rec.cross_below(ts[-1], finite[-1])
+
+    # Type II error (futility obeyed) falls as the drift grows; find the drift giving exactly beta.
+    lo, hi = 0.0, 1.0
+    while futility_for(hi)[1] > beta:
+        lo, hi = hi, 2.0 * hi
+    while hi - lo > 1e-7:
+        mid = 0.5 * (lo + hi)
+        if futility_for(mid)[1] > beta:
+            lo = mid
+        else:
+            hi = mid
+    fs, _ = futility_for(hi)
+    fs.append(finite[-1])
+    return GroupSequentialDesign(
+        tuple(ts), tuple(bounds), tuple(cumulative), alpha, two_sided, tuple(fs), tuple(beta_cumulative), hi
+    )
