@@ -60,6 +60,13 @@ _TAIL = 1e-17
 _NORMAL_WIDTH = 8.0  # the normal lattice covers theta +/- 8 sigma
 _EXPONENTIAL_TAIL = 30.0  # the exponential lattice stops where the tail is e^-30
 _CONTINUE = "continue"
+_LABELS = (_CONTINUE, REJECT_H0, ACCEPT_H0)
+_NUMPY_WIDTH = 8  # lattices with at least this many weights use the numpy pass when numpy is installed
+
+try:  # optional: the backward pass in array operations, several times faster on wide lattices
+    import numpy as _np
+except ImportError:  # pragma: no cover - exercised on interpreters without numpy
+    _np = None
 _HORIZON_RETRIES = 25  # smaller horizons tried when the requested one cannot be met
 
 
@@ -332,6 +339,71 @@ class _Problem:
         return math.exp(c), 0.0, math.exp(c - u1), ACCEPT_H0
 
     def solve(self, u0: float, u1: float) -> _Pass:
+        # array operations pay off only on wide lattices (normal, exponential, Poisson with larger rates)
+        if _np is not None and len(self.lat.weights) >= _NUMPY_WIDTH:
+            return self._solve_numpy(u0, u1)
+        return self._solve_python(u0, u1)
+
+    def _stop_arrays(self, u0: float, u1: float, n: int, k_first: int, k_last: int):
+        """`_stop` for every k in [k_first, k_last]: cost, Z0, Z1 and whether to reject."""
+        assert _np is not None
+        s = _np.arange(k_first, k_last + 1, dtype=float) * self.lat.step + n * self.lat.shift
+        r = u0 + n * self.a0 + self.b0 * s
+        c = u1 + n * self.a1 + self.b1 * s
+        reject = r < c
+        cost = _np.exp(_np.where(reject, r, c))
+        z0 = _np.where(reject, _np.exp(r - u0), 0.0)
+        z1 = _np.where(reject, 0.0, _np.exp(c - u1))
+        return cost, z0, z1, reject
+
+    def _solve_numpy(self, u0: float, u1: float) -> _Pass:
+        """The backward pass of `_solve_python`, one stage at a time as array operations.
+
+        The same recursion; sums over the lattice weights are dot products in
+        numpy, so results agree with the pure-Python pass up to rounding.
+        """
+        assert _np is not None
+        np = _np
+        lat, H = self.lat, self.horizon
+        weights = np.asarray(lat.weights, dtype=float)
+        off, width = lat.offset, len(lat.weights)
+        stages: list[tuple[int, list[str]]] = [(0, [])] * H
+        nxt_lo, nxt_n = 0, H
+        nxt = np.zeros((4, 0))  # rows: value, Z0, Z1, E[N] at stage n+1
+        for n in range(H - 1, -1, -1):
+            k_lo, k_hi = self._region(u0, u1, n) if n > 0 else (0, 0)
+            if k_hi < k_lo:  # nothing can continue at this stage
+                stages[n - 1] = (k_lo, [])
+                nxt_lo, nxt, nxt_n = k_lo, np.zeros((4, 0)), n
+                continue
+            e_lo, e_hi = k_lo + off, k_hi + off + width - 1
+            # stage n+1 on [e_lo, e_hi]: computed values where known, stopping values elsewhere
+            cost, z0, z1, _ = self._stop_arrays(u0, u1, nxt_n, e_lo, e_hi)
+            ext = np.vstack((cost, z0, z1, np.zeros_like(cost)))
+            a, b = max(e_lo, nxt_lo), min(e_hi, nxt_lo + nxt.shape[1] - 1)
+            if a <= b:
+                ext[:, a - e_lo : b - e_lo + 1] = nxt[:, a - nxt_lo : b - nxt_lo + 1]
+            # sum_i w_i ext[:, j + i] for every j: a sliding window against the weights
+            windows = np.lib.stride_tricks.sliding_window_view(ext, width, axis=1)
+            sums = windows @ weights  # shape (4, k_hi - k_lo + 1)
+            cont = 1.0 + sums[0]
+            if n == 0:
+                cur = np.vstack((cont, sums[1], sums[2], 1.0 + sums[3]))
+            else:
+                s_cost, s_z0, s_z1, reject = self._stop_arrays(u0, u1, n, k_lo, k_hi)
+                go = cont < s_cost
+                cur = np.vstack((
+                    np.where(go, cont, s_cost),
+                    np.where(go, sums[1], s_z0),
+                    np.where(go, sums[2], s_z1),
+                    np.where(go, 1.0 + sums[3], 0.0),
+                ))
+                codes = np.where(go, 0, np.where(reject, 1, 2)).tolist()
+                stages[n - 1] = (k_lo, [_LABELS[code] for code in codes])
+            nxt_lo, nxt, nxt_n = k_lo, cur, n
+        return _Pass(float(nxt[0, 0]), float(nxt[1, 0]), float(nxt[2, 0]), float(nxt[3, 0]), stages)
+
+    def _solve_python(self, u0: float, u1: float) -> _Pass:
         lat, H = self.lat, self.horizon
         weights, off, width = lat.weights, lat.offset, len(lat.weights)
         # at stage H everything stops: an empty computed region, values from the stopping costs

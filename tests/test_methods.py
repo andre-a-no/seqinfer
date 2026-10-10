@@ -587,6 +587,50 @@ class ProcedureReviewRegressions(unittest.TestCase):
         self.assertAlmostEqual(_upper_tail(8.0, 1e5) / 6.286959938128186e-16, 1.0, places=10)
 
 
+class NumpyBackwardPass(unittest.TestCase):
+    """The array version of the backward pass computes the same recursion as the pure-Python one."""
+
+    def setUp(self):
+        from seqinfer import design
+
+        if design._np is None:
+            self.skipTest("numpy is not installed")
+        self.design = design
+
+    def test_same_regions_and_values(self):
+        import random
+
+        rnd = random.Random(3)
+        cases = [
+            (Bernoulli(), 0.3, 0.5, 0.4, 60, None),
+            (Poisson(), 2.0, 3.0, 2.45, 30, None),
+            (Gaussian(1.0), 0.0, 0.5, 0.25, 40, None),
+            (Gaussian(2.0), 1.0, 0.0, 0.5, 30, 0.25),
+            (Exponential(), 1.0, 0.5, 0.72, 30, None),
+        ]
+        for family, t0, t1, ts, horizon, step in cases:
+            problem = self.design._Problem(family, t0, t1, ts, horizon, step)
+            for _ in range(4):
+                u0, u1 = rnd.uniform(0, 8), rnd.uniform(0, 8)
+                a, b = problem._solve_python(u0, u1), problem._solve_numpy(u0, u1)
+                with self.subTest(family=family.spec(), u=(u0, u1)):
+                    self.assertEqual(a.stages, b.stages)
+                    for name in ("value", "alpha0", "alpha1", "asn"):
+                        x, y = getattr(a, name), getattr(b, name)
+                        self.assertLessEqual(abs(x - y), 1e-12 * max(abs(x), abs(y)))
+
+    def test_same_plans(self):
+        np = self.design._np
+        for args, family in (((0.0, 0.5, 0.05, 0.1, 60), Gaussian(1.0)), ((1.0, 0.5, 0.05, 0.1, 40), Exponential())):
+            fast = kiefer_weiss_plan(*args, family=family, cache=False)
+            try:
+                self.design._np = None
+                slow = kiefer_weiss_plan(*args, family=family, cache=False)
+            finally:
+                self.design._np = np
+            self.assertEqual(fast.plan.plan, slow.plan.plan)
+
+
 class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 

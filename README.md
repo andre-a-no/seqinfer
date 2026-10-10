@@ -81,10 +81,12 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   against 0.5 (horizon 120) it needs 31.0 observations on average at θ*,
   against 31.3 for Lorden's 2-SPRT with thresholds calibrated to the same
   errors: the 2-SPRT is already close to optimal there. A design takes
-  about a second for the Bernoulli example and from seconds to a few
-  minutes for normal data on the default lattice, longer near the
-  smallest feasible horizon; the least favourable θ* designs ten to twenty
-  candidates and takes as many times longer. Targets that no test with `horizon`
+  about a second for the Bernoulli example and from seconds to a minute
+  for normal data on the default lattice; the least favourable θ* designs
+  ten to twenty candidates and takes as many times longer. With `numpy`
+  installed (optional: `pip install seqinfer[fast]`) the backward pass on
+  wide lattices — normal, exponential, Poisson with larger rates — runs as
+  array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
   observations can meet (the Neyman–Pearson bound) are reported at once.
 
 **Design cache** (`seqinfer.cache`): every plan `kiefer_weiss_plan`

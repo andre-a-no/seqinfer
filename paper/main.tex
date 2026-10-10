@@ -1545,8 +1545,9 @@ probabilities $0.05$ and $0.2$ and $H=60$, the search returns
 $\theta^*=0.340$ with a maximum expected sample size of $17.13$,
 attained at $0.347$, against $17.15$ for the first-order point
 $\theta^*=0.289$. Each candidate is designed in full, so on the default
-lattice the search took about two hours, against a minute and a half for
-a single design.
+lattice the search took about two hours in pure Python and twelve
+minutes with the backward pass written as array operations (numpy, when
+installed), which gives the same plans.
 
 For discrete data there is a further limit. The plans that are optimal
 for some pair of multipliers are non-randomised, and near the smallest

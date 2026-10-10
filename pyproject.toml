@@ -24,6 +24,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+fast = ["numpy>=1.22"]  # the backward pass of seqinfer.design as array operations
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -50,3 +53,7 @@ strict_equality = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+ignore_missing_imports = true  # optional; the design module uses it when it is installed
