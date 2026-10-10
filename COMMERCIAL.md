@@ -38,7 +38,8 @@ organisation, with or without support) are agreed individually.
 
 Copyright holder and licensor:
 
-**Novikov Laboratories LLC** (Kazan, Tatarstan, Russian Federation)
+**Novikov Laboratories LLC** (ООО «Лаборатории Новиковых»; OGRN 1231600027548,
+INN 1685011563), Kazan, Tatarstan, Russian Federation
 
 - Email: andrei@hobukob.ru, a.hobukob@gmail.com
 
@@ -75,8 +76,9 @@ sequential-analysis распространяется по двойной лиц�
 закрытом продукте или сервисе, покупает лицензию и тем самым поддерживает
 её развитие.
 
-Правообладатель и лицензиар — ООО «Новиков Лабораториз» (Novikov
-Laboratories LLC), Казань, Республика Татарстан, Российская Федерация.
+Правообладатель и лицензиар — ООО «Лаборатории Новиковых» (Novikov
+Laboratories LLC; ОГРН 1231600027548, ИНН 1685011563), Казань, Республика
+Татарстан, Российская Федерация.
 Контакты: andrei@hobukob.ru, a.hobukob@gmail.com. Опишите, пожалуйста, ваш
 продукт и то, как вы собираетесь использовать sequential-analysis.
 

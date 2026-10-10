@@ -1,10 +1,10 @@
 # Contributor License Agreement / Лицензионное соглашение участника
 
 > **DRAFT — not in force.** This text is a proposal to be reviewed by a lawyer
-> before it is used. Bracketed fields are to be filled in.
+> before it is used. Bracketed fields are filled in by the contributor.
 >
 > **ПРОЕКТ — не действует.** Текст предложен для проверки юристом до начала
-> использования. Поля в квадратных скобках подлежат заполнению.
+> использования. Поля в квадратных скобках заполняет участник.
 
 The Russian text prevails in case of discrepancy. / При расхождении текстов
 преимущественную силу имеет текст на русском языке.
@@ -15,7 +15,7 @@ The Russian text prevails in case of discrepancy. / При расхождени�
 
 **Лицензионный договор (простая неисключительная лицензия) о передаче прав на вклад в программу sequential-analysis**
 
-**Лицензиат:** Общество с ограниченной ответственностью «Новиков Лабораториз» (Novikov Laboratories LLC), ОГРН [—], ИНН [—], адрес: [—], г. Казань, Республика Татарстан, Российская Федерация (далее — «Компания»).
+**Лицензиат:** Общество с ограниченной ответственностью «Лаборатории Новиковых» (Novikov Laboratories LLC), ОГРН 1231600027548, ИНН 1685011563, КПП 168501001, место нахождения: г. Казань, Республика Татарстан, Российская Федерация, адрес — согласно сведениям ЕГРЮЛ (далее — «Компания»).
 
 **Лицензиар:** [ФИО / наименование], [паспортные данные или ОГРН], адрес электронной почты [—], учётная запись GitHub [—] (далее — «Участник»).
 
@@ -61,7 +61,7 @@ The Russian text prevails in case of discrepancy. / При расхождени�
 
 **Contributor License Agreement (simple non-exclusive license) for contributions to sequential-analysis**
 
-**Licensee:** Novikov Laboratories LLC (ООО «Новиков Лабораториз»), OGRN [—], INN [—], address: [—], Kazan, Republic of Tatarstan, Russian Federation (the "Company").
+**Licensee:** Novikov Laboratories LLC (ООО «Лаборатории Новиковых»), OGRN 1231600027548, INN 1685011563, KPP 168501001, seated in Kazan, Republic of Tatarstan, Russian Federation, at the address entered in the Unified State Register of Legal Entities (the "Company").
 
 **Licensor:** [name], [ID or registration number], e-mail [—], GitHub account [—] (the "Contributor").
 
