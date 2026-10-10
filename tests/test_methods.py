@@ -631,6 +631,21 @@ class NumpyBackwardPass(unittest.TestCase):
             self.assertEqual(fast.plan.plan, slow.plan.plan)
 
 
+class QuickRaise(unittest.TestCase):
+    def test_same_plans_as_the_coordinate_search(self):
+        from seqinfer import design
+
+        for args in ((1.0, 0.0, 0.01, 0.1, 30), (0.0, 1.0, 0.001, 0.01, 50)):
+            plans = []
+            for quick in (False, True):
+                design._QUICK_RAISE = quick
+                try:
+                    plans.append(kiefer_weiss_plan(*args, family=Gaussian(1.0), cache=False).plan.plan)
+                finally:
+                    design._QUICK_RAISE = True
+            self.assertEqual(plans[0], plans[1])
+
+
 class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 

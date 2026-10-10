@@ -67,6 +67,7 @@ try:  # optional: the backward pass in array operations, several times faster on
     import numpy as _np
 except ImportError:  # pragma: no cover - exercised on interpreters without numpy
     _np = None
+_QUICK_RAISE = True  # try a small joint raise before the coordinate search
 _HORIZON_RETRIES = 25  # smaller horizons tried when the requested one cannot be met
 
 
@@ -566,7 +567,7 @@ def kiefer_weiss_plan(
     return design
 
 
-_ALGORITHM = "1"  # bump when a change of the design algorithm changes its results
+_ALGORITHM = "2"  # bump when a change of the design algorithm may change its results
 
 
 def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> dict | None:
@@ -786,6 +787,10 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
     # the lattice for normal data), so an exact root need not exist, and the set of
     # multipliers meeting both targets can be a narrow band.  Fall back, in order, on
     # a coordinate search, a joint raise and a coarse grid; the slack is spent below.
+    if not feasible(u) and _QUICK_RAISE and best < 1e-3:
+        # Broyden ended next to the root on the wrong side of a target: a small joint raise
+        # is enough, and the slack is spent below exactly as after the other fallbacks
+        u = _joint_raise(u, feasible, limit=1e-2) or u
     if not feasible(u):
         u = _coordinate_search(u, residual, feasible) or _joint_raise(u, feasible) or _grid_search(feasible)
     if u is None:
@@ -881,12 +886,12 @@ def _coordinate_search(u, residual, feasible, rounds: int = 30):
     return None
 
 
-def _joint_raise(u, feasible):
-    """The smallest equal raise of both multipliers that meets both targets."""
+def _joint_raise(u, feasible, limit: float = 200.0):
+    """The smallest equal raise of both multipliers (at most `limit`) that meets both targets."""
     lo, hi = 0.0, 1e-4
     while not feasible((u[0] + hi, u[1] + hi)):
         lo, hi = hi, 2 * hi
-        if hi > 200:
+        if hi > limit:
             return None
     while hi - lo > 1e-9:
         mid = 0.5 * (lo + hi)
