@@ -691,6 +691,15 @@ class LeastFavourableRoot(unittest.TestCase):
             self.assertLessEqual(d.at_theta1.accept, args[3])
 
 
+class CoarseNormalLattice(unittest.TestCase):
+    def test_targets_are_met_on_a_coarse_lattice(self):
+        # the normal lattice is normalised for each theta; on a coarse one the likelihood ratio needs that offset
+        for step in (2.0, 1.0):
+            d = kiefer_weiss_plan(0.0, 1.0, 0.05, 0.05, 30, family=Gaussian(1.0), step=step, cache=False)
+            self.assertLessEqual(d.at_theta0.reject, 0.05)
+            self.assertLessEqual(d.at_theta1.accept, 0.05)
+
+
 class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 

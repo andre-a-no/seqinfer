@@ -121,6 +121,56 @@ class DesignCache(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "family must be Bernoulli"):
             kiefer_weiss_plan(*ARGS, family="bernoulli", cache=self.dir)
 
+    def test_a_plan_for_another_question_is_not_trusted(self):
+        # a file with the right key but the design of another problem passed as "verified"
+        self.design(0.2, 0.5, 0.05, 0.05, 60)
+        self.design()
+        files = {json.loads(f.read_text())["key"]["theta0"]: f for f in self.dir.glob("*.json")}
+        mine = json.loads(files[0.3].read_text())
+        mine["design"] = json.loads(files[0.2].read_text())["design"]
+        files[0.3].write_text(json.dumps(mine))
+        d, events = self.design()
+        self.assertEqual([e["action"] for e in events], ["ignored", "saved"])
+        self.assertEqual(d.at_theta0.theta, 0.3)
+        self.assertLessEqual(d.at_theta0.reject, 0.05)
+
+    def test_corrupt_files_never_fail_the_design(self):
+        self.design()
+        (path,) = self.dir.glob("*.json")
+        good = json.loads(path.read_text())
+        for seconds in ("1.0", None):
+            path.write_text(json.dumps({**good, "seconds": seconds}))
+            _, events = self.design()
+            self.assertEqual([e["action"] for e in events], ["loaded"])
+        path.write_text("[" * 100000 + "]" * 100000)
+        _, events = self.design()
+        self.assertEqual([e["action"] for e in events], ["ignored", "saved"])
+
+    def test_clear_deletes_only_its_own_entries(self):
+        self.design()
+        (self.dir / "package.json").write_text("{}")
+        (self.dir / "kiefer_weiss-x.json").mkdir()
+        with self.assertLogs("sequential_analysis.cache", "WARNING"):
+            self.assertEqual(clear_design_cache(self.dir), 1)
+        self.assertTrue((self.dir / "package.json").exists())
+
+    def test_arguments_are_checked_and_normalised_before_the_cache(self):
+        try:
+            import numpy
+        except ImportError:
+            self.skipTest("numpy is not installed")
+        self.design()
+        with self.assertRaises(TypeError):  # a cache hit must not skip the checks
+            kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, 80.0, cache=self.dir)
+        with self.assertLogs("sequential_analysis.cache", "WARNING") as logs:
+            kiefer_weiss_plan(numpy.float64(0.3), 0.5, 0.05, 0.05, numpy.int64(80), cache=self.dir)
+        self.assertEqual([r.incident["action"] for r in logs.records], ["loaded"])
+        self.assertIsNone(design_cache_dir("off"))
+        with self.assertRaises(TypeError):
+            design_cache_dir(0)
+        with self.assertRaises(ValueError):
+            design_cache_dir("")
+
     def test_clear(self):
         self.design()
         with self.assertLogs("sequential_analysis.cache", "WARNING"):

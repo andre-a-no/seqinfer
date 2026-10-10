@@ -59,7 +59,14 @@ def design_cache_dir(cache: Any = None) -> Path | None:
     if cache is False:
         return None
     if cache is not None and cache is not True:
-        return Path(os.fspath(cache)).expanduser().resolve()
+        if not isinstance(cache, (str, os.PathLike)):
+            raise TypeError(f"cache must be a directory, True, False or None, got {cache!r}")
+        text = os.fspath(cache)
+        if isinstance(text, str) and text.strip().lower() in _OFF:
+            return None  # as for SEQUENTIAL_ANALYSIS_CACHE
+        if not str(text).strip():
+            raise ValueError("cache must name a directory; use False to turn the cache off")
+        return Path(text).expanduser().resolve()
     env = os.environ.get("SEQUENTIAL_ANALYSIS_CACHE")
     if env is not None:
         if env.strip().lower() in _OFF or not env.strip():
@@ -75,9 +82,10 @@ def clear_design_cache(cache: Any = None) -> int:
     if directory is None or not directory.is_dir():
         return 0
     removed = 0
-    for path in directory.glob("*.json"):
-        path.unlink()
-        removed += 1
+    for path in directory.glob("kiefer_weiss-*.json"):  # only the cache's own entries
+        if path.is_file() and not path.is_symlink():
+            path.unlink()
+            removed += 1
     report("cleared", f"design cache: removed {removed} stored design(s) from {directory}", directory)
     return removed
 
@@ -107,7 +115,7 @@ def read_entry(path: Path, key: dict) -> dict | None:
             raise ValueError("it answers a different question")
         if not isinstance(entry.get("design"), dict):
             raise ValueError("it holds no design")
-    except (OSError, ValueError) as error:  # json.JSONDecodeError is a ValueError
+    except (OSError, ValueError, RecursionError) as error:  # JSONDecodeError is a ValueError; deep nesting recurses
         report("ignored", f"design cache: ignored {path} ({error}); computing the design again", path, key)
         return None
     return entry

@@ -283,7 +283,22 @@ def _affine_llr(family: Family, num: float, den: float, step: float | None = Non
         b = (r1 - r0) / (x1 - x0)
         return r0 - b * x0, b
     a = family.llr(0, num, den)
+    if isinstance(family, Gaussian):
+        # The normal lattice is normalised for each theta separately; on a coarse lattice the
+        # normalising constants differ (Poisson summation: by about exp(-2 pi^2 sigma^2 / h^2)),
+        # and the ratio of the lattice probabilities has that offset per observation.
+        ln, ld = lattice(family, num, step), lattice(family, den, step)
+        if math.exp(-2.0 * math.pi**2 * (family.sigma / ln.step) ** 2) > 1e-17:
+            a += math.log(_gaussian_norm(family, den, ln.step) / _gaussian_norm(family, num, ln.step))
     return a, family.llr(1, num, den) - a
+
+
+def _gaussian_norm(family: Gaussian, theta: float, h: float) -> float:
+    """The sum of the normal lattice's unnormalised weights at theta (see `lattice`)."""
+    sigma = family.sigma
+    lo = math.floor((theta - _NORMAL_WIDTH * sigma) / h)
+    hi = math.ceil((theta + _NORMAL_WIDTH * sigma) / h)
+    return sum([math.exp(-0.5 * ((j * h - theta) / sigma) ** 2) for j in range(lo, hi + 1)])  # as in lattice()
 
 
 @dataclass
@@ -550,6 +565,17 @@ def kiefer_weiss_plan(
             f"family must be Bernoulli(), Poisson(), Gaussian(sigma) or Exponential() from "
             f"sequential_analysis.procedures, got {family!r}"
         )
+    # the same arguments are accepted, normalised and refused whether or not the cache is used
+    theta0, theta1, alpha0, alpha1 = (_real(v, name) for v, name in
+                                      ((theta0, "theta0"), (theta1, "theta1"), (alpha0, "alpha0"), (alpha1, "alpha1")))
+    horizon = _integer(horizon, "horizon")
+    step = None if step is None else _real(step, "step")
+    if theta_star is not None and not isinstance(theta_star, str):
+        theta_star = _real(theta_star, "theta_star")
+    family.check(theta0)
+    family.check(theta1)
+    if theta0 == theta1 or not (0 < alpha0 < 1 and 0 < alpha1 < 1) or horizon < 1:
+        raise ValueError("need theta0 != theta1, error rates in (0, 1) and horizon >= 1")
     directory = design_cache_dir(cache)
     key = _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) if directory else None
     if directory is None or key is None:
@@ -557,16 +583,19 @@ def kiefer_weiss_plan(
     path = entry_path(directory, "kiefer_weiss", key)
     entry = read_entry(path, key)
     if entry is not None:
-        design = _verified(entry["design"], family, alpha0, alpha1, horizon)
+        design = _verified(entry["design"], family, theta0, theta1, alpha0, alpha1, horizon, theta_star, step)
         if design is not None:
-            report(
-                "loaded",
-                f"design cache: loaded {_describe(key)} from {path} (computed in {entry.get('seconds', 0):.1f} s); "
-                f"error rates verified",
-                path, key,
-            )
+            seconds = entry.get("seconds")
+            took = f" (computed in {seconds:.1f} s)" if type(seconds) in (int, float) else ""
+            message = f"design cache: loaded {_describe(key)} from {path}{took}; error rates verified"
+            report("loaded", message, path, key)
             return design
-        report("ignored", f"design cache: ignored {path} (its plan does not reproduce); computing again", path, key)
+        report(
+            "ignored",
+            f"design cache: ignored {path} (its plan does not answer this question or does not reproduce); "
+            f"computing again",
+            path, key,
+        )
     started = time.perf_counter()
     design = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step)
     seconds = time.perf_counter() - started
@@ -575,7 +604,7 @@ def kiefer_weiss_plan(
     return design
 
 
-_ALGORITHM = "4"  # bump when a change of the design algorithm may change its results
+_ALGORITHM = "5"  # bump when a change of the design algorithm may change its results
 
 
 def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> dict | None:
@@ -615,9 +644,49 @@ def _design_json(d: KieferWeissDesign) -> dict:
     }
 
 
-def _verified(data: dict, family: Family, alpha0: float, alpha1: float, horizon: int) -> KieferWeissDesign | None:
-    """The stored design, if its plan reproduces the stored operating characteristic and meets the targets."""
+def _real(value: Any, name: str) -> float:
+    """A real number as float (numpy scalars included); bool and non-numbers are refused."""
+    import numbers
+
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise TypeError(f"{name} must be a real number, got {value!r}")
+    return float(value)
+
+
+def _integer(value: Any, name: str) -> int:
+    """An integer as int (numpy integers included); bool, floats and non-numbers are refused."""
+    import operator
+
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, got {value!r}")
     try:
+        return operator.index(value)
+    except TypeError:
+        raise TypeError(f"{name} must be an integer, got {value!r}") from None
+
+
+def _verified(
+    data: dict, family: Family, theta0: float, theta1: float, alpha0: float, alpha1: float, horizon: int,
+    theta_star: float | str | None, step: float | None,
+) -> KieferWeissDesign | None:
+    """The stored design, if it answers this question: the requested parameters and lattice, a plan that
+    reproduces the stored operating characteristic, and error rates within the targets.  The file's own
+    record of the question is not trusted; its plan is checked against the arguments of the call."""
+    try:
+        if data["at_theta0"]["theta"] != theta0 or data["at_theta1"]["theta"] != theta1:
+            return None
+        stored_star = float(data["theta_star"])
+        if theta_star is None:
+            theta_star = kiefer_weiss_point(family, theta0, theta1, math.log(1 / alpha0), math.log(1 / alpha1))
+        if isinstance(theta_star, str):  # least favourable: anywhere strictly between
+            if not min(theta0, theta1) < stored_star < max(theta0, theta1):
+                return None
+        elif stored_star != theta_star or data["at_theta_star"]["theta"] != theta_star:
+            return None
+        exact = lattice(family, stored_star, step).exact
+        lattice_step = None if exact else lattice(family, stored_star, step).step
+        if data["step"] != lattice_step or bool(data["exact"]) != exact:
+            return None
         config = data["plan"]
         plan = PlanTest(
             config["continuation"], contract=family.contract(config["input"]),
@@ -625,9 +694,8 @@ def _verified(data: dict, family: Family, alpha0: float, alpha1: float, horizon:
         )
         if json.loads(json.dumps(plan.config())) != config or plan.horizon > horizon:
             return None
-        step = data["step"]
-        ocs = [operating_characteristic(plan, family, data[k]["theta"], step=step)
-               for k in ("at_theta0", "at_theta1", "at_theta_star")]
+        step = lattice_step
+        ocs = [operating_characteristic(plan, family, theta, step=step) for theta in (theta0, theta1, stored_star)]
         for oc, k in zip(ocs, ("at_theta0", "at_theta1", "at_theta_star"), strict=True):
             stored = data[k]
             for field in ("reject", "accept", "expected_n"):
@@ -636,8 +704,8 @@ def _verified(data: dict, family: Family, alpha0: float, alpha1: float, horizon:
         if ocs[0].reject > alpha0 * (1 + 1e-12) or ocs[1].accept > alpha1 * (1 + 1e-12):
             return None
         return KieferWeissDesign(
-            plan, float(data["theta_star"]), float(data["lambda0"]), float(data["lambda1"]), ocs[0], ocs[1], ocs[2],
-            float(data["lagrangian"]), bool(data["exact"]), family, step,
+            plan, stored_star, float(data["lambda0"]), float(data["lambda1"]), ocs[0], ocs[1], ocs[2],
+            float(data["lagrangian"]), exact, family, step,
         )
     except (KeyError, TypeError, ValueError, ArithmeticError):
         return None
@@ -845,8 +913,15 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
     def oc(theta: float) -> OperatingCharacteristic:
         return operating_characteristic(plan, family, theta, step=None if problem.lat.exact else problem.lat.step)
 
+    at0, at1 = oc(theta0), oc(theta1)
+    # the forward pass is the definition of the plan's error rates: never return a plan that misses them
+    if at0.reject > alpha0 * (1.0 + 1e-9) or at1.accept > alpha1 * (1.0 + 1e-9):
+        raise ValueError(
+            f"the plan for at most {horizon} observations misses the error rates on the lattice "
+            f"({at0.reject:.4g} and {at1.accept:.4g}); give a finer lattice step"
+        )
     return KieferWeissDesign(
-        plan, theta_star, math.exp(u0), math.exp(u1), oc(theta0), oc(theta1), oc(theta_star), p.value,
+        plan, theta_star, math.exp(u0), math.exp(u1), at0, at1, oc(theta_star), p.value,
         problem.lat.exact, family, None if problem.lat.exact else problem.lat.step,
     )
 
