@@ -1,17 +1,18 @@
 # Contributing
 
-Thank you for your interest in seqinfer.
+Thank you for your interest in sequential-analysis.
 
 ## Contributor License Agreement
 
-seqinfer is offered under the GNU AGPL v3 and under commercial licenses
+sequential-analysis is offered under the GNU AGPL v3 and under commercial licenses
 (see [COMMERCIAL.md](COMMERCIAL.md)). To keep that possible, Novikov
 Laboratories LLC must hold the rights needed to license every part of the
 code under both. We can therefore merge a contribution only after its
 author has signed the Contributor License Agreement (CLA).
 
-Before opening a pull request with code, please write to
-andrei@hobukob.ru to receive the CLA. Small fixes of typos in
+The agreement is in [CLA.md](CLA.md) (Russian and English; a draft until it
+has been reviewed by a lawyer). Before opening a pull request with code,
+please sign it and send it to andrei@hobukob.ru. Small fixes of typos in
 documentation are welcome without it.
 
 If you write code as part of your job, your employer may own it; in that

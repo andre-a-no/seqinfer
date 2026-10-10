@@ -8,10 +8,10 @@ effect of half a standard deviation.  The design gives the boundaries,
 the maximum sample size and the expected sample size; the trial then
 runs on a simulated stream and looks at the data only at the analyses.
 """
-from seqinfer import Recorder, Run, run_sync
-from seqinfer.group_sequential import group_sequential_design
-from seqinfer.procedures import GroupSequentialTest
-from seqinfer.sources import gaussian
+from sequential_analysis import Recorder, Run, run_sync
+from sequential_analysis.group_sequential import group_sequential_design
+from sequential_analysis.procedures import GroupSequentialTest
+from sequential_analysis.sources import gaussian
 
 effect, sigma = 0.5, 1.0
 design = group_sequential_design(alpha=0.025, fractions=[0.2, 0.4, 0.6, 0.8, 1.0], spending="obrien-fleming")

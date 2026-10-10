@@ -5,7 +5,7 @@
 import json
 import random
 
-from seqinfer import (
+from sequential_analysis import (
     Chain,
     Delivery,
     Independent,
@@ -15,7 +15,7 @@ from seqinfer import (
     TimeAlign,
     difference,
 )
-from seqinfer.procedures import (
+from sequential_analysis.procedures import (
     CUSUM,
     EMA,
     SPRT,
@@ -33,7 +33,7 @@ from seqinfer.procedures import (
     TMixtureSPRT,
     TwoSPRT,
 )
-from seqinfer.sources import from_values, gaussian, interleave
+from sequential_analysis.sources import from_values, gaussian, interleave
 
 
 def fixed_clock():

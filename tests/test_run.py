@@ -9,12 +9,14 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
-from seqinfer import (
+from sequential_analysis import (
     Chain,
     ContractViolation,
     Delivery,
     IncompatibleCheckpoint,
+    Independent,
     InputContract,
+    InvalidInputStreak,
     KeyJoin,
     LifecycleError,
     NumericalError,
@@ -28,8 +30,16 @@ from seqinfer import (
     run_async,
     run_sync,
 )
-from seqinfer.procedures import CUSUM, EMA, SPRT, BootstrapParticleFilter, Gaussian, LocalLevelKalman, MeanDifference
-from seqinfer.sources import ObservationLog, as_async, from_values, replay, skip_to
+from sequential_analysis.procedures import (
+    CUSUM,
+    EMA,
+    SPRT,
+    BootstrapParticleFilter,
+    Gaussian,
+    LocalLevelKalman,
+    MeanDifference,
+)
+from sequential_analysis.sources import ObservationLog, as_async, from_values, replay, skip_to
 
 try:
     import numpy
@@ -84,7 +94,11 @@ class TransactionalUpdates(unittest.TestCase):
     def test_invalid_input_is_rejected_before_inference(self):
         for bad in ({"x": -1.0}, {"x": float("nan")}, {"x": "3"}, {"x": True}, {"y": 1.0}, {}):
             run = Run(FragileSum(), on_invalid="raise")
-            with self.subTest(bad=bad), self.assertRaises(ContractViolation), self.assertLogs("seqinfer", "WARNING"):
+            with (
+                self.subTest(bad=bad),
+                self.assertRaises(ContractViolation),
+                self.assertLogs("sequential_analysis", "WARNING"),
+            ):
                 run.step(bad)
             self.assertEqual(run.state, Total())
             self.assertIs(run.status, RunStatus.FAILED)
@@ -92,7 +106,7 @@ class TransactionalUpdates(unittest.TestCase):
     def test_skip_policy_records_what_it_dropped(self):
         rec = Recorder()
         run = Run(FragileSum(), consumers=[rec])  # skipping is the default
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run_sync(run, from_values("x", [1.0, -5.0, 2.0, float("inf"), 3.0]))
         self.assertEqual(rec.outputs, [1.0, 3.0, 6.0])
         self.assertEqual(run.counters["invalid_skipped"], 2)
@@ -136,7 +150,7 @@ class Lifecycle(unittest.TestCase):
     def test_consumers_cannot_drive_the_run(self):
         run = Run(LocalLevelKalman(0.1, 1.0))
         run.consumers.append(lambda event: run.step({"y": 0.0}))
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run.step({"y": 1.0})
         self.assertEqual(run.t, 1)
         self.assertIn("LifecycleError", run.consumer_errors[0]["error"])
@@ -297,7 +311,7 @@ class ContractMessages(unittest.TestCase):
 
 class TransformIdentity(unittest.TestCase):
     def test_transforms_are_recorded_by_name_version_and_config(self):
-        from seqinfer import Difference, Field
+        from sequential_analysis import Difference, Field
 
         topo = PositionalPair(("a", "b")).map(Difference("a", "b"))
         self.assertEqual(
@@ -307,7 +321,7 @@ class TransformIdentity(unittest.TestCase):
         self.assertEqual(chain.config()["link"]["config"], {"field": "n", "out": "x"})
 
     def test_a_changed_transform_refuses_to_restore(self):
-        from seqinfer import Difference
+        from sequential_analysis import Difference
 
         proc = SPRT(Gaussian(1.0), 0.0, 0.5)
         run = Run(proc, topology=PositionalPair(("a", "b")).map(Difference("a", "b")))
@@ -326,7 +340,7 @@ class TransformIdentity(unittest.TestCase):
 
 class CsvSource(unittest.TestCase):
     def test_reads_converts_and_numbers_rows(self):
-        from seqinfer.sources import from_csv
+        from sequential_analysis.sources import from_csv
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "data.csv"
@@ -339,7 +353,7 @@ class CsvSource(unittest.TestCase):
             self.assertEqual(run.state.total, 2.0)
 
     def test_bad_values_and_columns_name_the_line(self):
-        from seqinfer.sources import from_csv
+        from sequential_analysis.sources import from_csv
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "data.csv"
@@ -383,7 +397,7 @@ class MalformedCheckpoints(unittest.TestCase):
         Run.restore(FragileSum(), self.good)  # the undamaged one still works
 
     def test_load_checkpoint_reports_bad_files(self):
-        from seqinfer import load_checkpoint, save_checkpoint
+        from sequential_analysis import load_checkpoint, save_checkpoint
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cp.json"
@@ -406,7 +420,7 @@ class ReviewRegressions(unittest.TestCase):
 
     def test_a_huge_integer_is_an_invalid_input_not_a_crash(self):
         run = Run(EMA(0.5))
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run.offer(Observation("x", 10**400, seq=0))
         self.assertEqual((run.status, run.counters["invalid_skipped"]), (RunStatus.RUNNING, 1))
 
@@ -416,11 +430,11 @@ class ReviewRegressions(unittest.TestCase):
             values.append(numpy.float32(1.0))
         with ObservationLog(self.dir / "log.jsonl") as log:
             live = Run(EMA(0.5), log=log)
-            with self.assertLogs("seqinfer", "WARNING"):
+            with self.assertLogs("sequential_analysis", "WARNING"):
                 for i, v in enumerate(values):
                     live.offer(Observation("x", v, seq=i))
         again = Run(EMA(0.5))
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run_sync(again, replay(self.dir / "log.jsonl"))
         self.assertEqual((again.t, again.history_digest), (live.t, live.history_digest))
         self.assertEqual(again.counters["invalid_skipped"], live.counters["invalid_skipped"])
@@ -476,10 +490,194 @@ class ReviewRegressions(unittest.TestCase):
 
     def test_step_with_a_non_mapping_is_an_invalid_input(self):
         run = Run(EMA(0.5))
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             for bad in (None, 5, [("x",)]):
                 self.assertIsNone(run.step(bad))
         self.assertEqual(run.counters["invalid_skipped"], 3)
+
+
+class SecondReviewRegressions(unittest.TestCase):
+    """Defects found by the second review of the runtime; each test reproduces one."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def replayed_equals_live(self, observations, topology=None):
+        make_topology = topology or Independent
+        path = self.dir / f"log{len(list(self.dir.iterdir()))}.jsonl"
+        with ObservationLog(path) as log:
+            live = Run(EMA(0.5), topology=make_topology(), log=log)
+            with self.assertLogs("sequential_analysis", "WARNING"):
+                for obs in observations:
+                    live.offer(obs)
+        again = Run(EMA(0.5), topology=make_topology())
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run_sync(again, replay(path))
+        self.assertEqual((again.t, again.history_digest), (live.t, live.history_digest))
+        return live
+
+    def test_values_a_log_cannot_record_are_invalid_inputs(self):
+        import fractions
+        import uuid
+
+        odd = [Observation("x", 1.5, seq=0, key=uuid.uuid4()), Observation("x", fractions.Fraction(1, 3), seq=1),
+               Observation("x", (1.0, 2.0), seq=2), Observation("x", 2.0, seq=3)]
+        if numpy is not None:
+            odd.append(Observation("x", numpy.float64(1.5), seq=4))
+        live = self.replayed_equals_live(odd)
+        self.assertEqual(live.t, 1)  # only the plain 2.0
+        mapped = [Observation("x", fractions.Fraction(1, 3), seq=0), Observation("x", 2.0, seq=1)]
+        self.replayed_equals_live(mapped, lambda: Independent().map(lambda x: {"x": float(x["x"])}, "to_float"))
+
+    def test_restore_does_not_redeliver_observations_that_arrived_ahead(self):
+        stream = [Observation("x", float(i), seq=i) for i in (0, 2, 1, 3)]
+        straight = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(straight, stream)
+        run = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(run, stream[:2])
+        resumed = Run.restore(EMA(0.5), run.checkpoint(), delivery=Delivery("arrival", dedup=False))
+        run_sync(resumed, skip_to(stream, resumed.delivery))
+        self.assertEqual((resumed.t, resumed.history_digest), (straight.t, straight.history_digest))
+
+    def test_transform_failures_keep_their_place(self):
+        from sequential_analysis.topology import Topology
+
+        class Two(Topology):
+            def spec(self):
+                return {"type": "two"}
+
+            def push(self, obs):
+                return [{"x": v} for v in obs.value]
+
+        run = Run(EMA(0.5), topology=Two().map(lambda x: {"x": x["x"] + 0.0}, "plus0"), max_invalid_streak=2)
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run.offer(Observation("x", [1.0, "bad"], seq=0))
+            with self.assertRaises(InvalidInputStreak):
+                run.offer(Observation("x", ["bad", 2.0], seq=1))  # two invalid inputs in a row
+        self.assertEqual(run.t, 1)
+
+    def test_run_async_pulls_nothing_from_a_stopped_run(self):
+        run = Run(SPRT(Gaussian(1.0), 0.0, 1.0, 0.4, 0.4))
+        run.step({"x": 10.0})
+        consumed = asyncio.run(run_async(run, [as_async(from_values("x", [1.0]))]))
+        self.assertEqual((consumed, run.counters["after_terminal"]), (0, 0))
+
+    def test_an_in_memory_log_keeps_what_was_recorded(self):
+        log = ObservationLog()
+        run = Run(MeanDifference(), topology=PositionalPair(("a", "b")), log=log)
+        value = [1.0, 2.0]
+        run.offer(Observation("a", value, seq=0))
+        checkpoint = run.checkpoint()
+        value[0] = 99.0  # the caller reuses its buffer
+        Run.restore(MeanDifference(), checkpoint, topology=PositionalPair(("a", "b")), log=log)
+
+
+class ThirdReviewRegressions(unittest.TestCase):
+    """Defects found by the third review of the runtime; each test reproduces one."""
+
+    def assert_invalid(self, run, obs):
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
+            run.offer(obs)
+        self.assertEqual(logs.records[-1].incident["action"], "skipped")
+        self.assertIs(run.status, RunStatus.RUNNING)
+
+    def test_unrecordable_envelopes_are_invalid_input_and_checkpoints_stay_possible(self):
+        cases = [
+            (Independent, Observation("x", 1.0, seq=2**60)),
+            (Independent, Observation("x", 1.0, source=3, seq=0)),  # was restored as "3": duplicates came back
+            (Independent, Observation("x", 1.0, seq="0")),
+            (Independent, Observation("\ud800", 1.0)),
+            (lambda: KeyJoin(["x", "y"]), Observation("x", 1.0, key=2**60)),
+            (lambda: KeyJoin(["x", "y"]), Observation("x", 1.0, key="\ud800")),
+            (Independent, Observation("x", "\ud800")),
+            (Independent, {"input": "x", "value": 1.0}),  # not an Observation: used to fail the run
+        ]
+        for make, obs in cases:
+            with self.subTest(obs=obs):
+                run = Run(EMA(0.5), topology=make())
+                run.start()
+                self.assert_invalid(run, obs)
+                checkpoint = json.loads(json.dumps(run.checkpoint()))
+                Run.restore(EMA(0.5), checkpoint, topology=make())
+
+    def test_time_beyond_2_53_is_invalid(self):
+        from sequential_analysis import TimeAlign
+
+        run = Run(EMA(0.5), topology=TimeAlign(["x", "y"], 1.0))
+        run.start()
+        self.assert_invalid(run, Observation("x", 1.0, time=2**60))
+        run.checkpoint()
+
+    def test_constructor_arguments_are_checked(self):
+        from sequential_analysis import TimeAlign
+
+        with self.assertRaises(TypeError):
+            Run(EMA(0.5), log="path.jsonl")
+        with self.assertRaises(ValueError):
+            Run(EMA(0.5), run_id=5)
+        for bad in (2**60, "0", 1.5):
+            with self.subTest(start=bad), self.assertRaises(ValueError):
+                Delivery(start=bad)
+        for bad in (float("nan"), float("inf"), -1.0):
+            with self.subTest(tolerance=bad), self.assertRaises(ValueError):
+                TimeAlign(["a", "b"], bad)
+
+    def test_restore_cross_checks_derived_fields(self):
+        sprt = SPRT(Gaussian(1.0), 0.0, 1.0, 0.05, 0.05)
+        run = Run(sprt)
+        run.start()
+        for _ in range(40):
+            run.offer(Observation("x", 3.0))
+        self.assertTrue(run.terminal)
+        checkpoint = json.loads(json.dumps(run.checkpoint()))
+        checkpoint["terminal"] = False
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "terminal"):
+            Run.restore(sprt, checkpoint)
+
+        pf = BootstrapParticleFilter(0.1, 1.0, particles=8)
+        checkpoint = json.loads(json.dumps(Run(pf, seed=1).checkpoint()))
+        checkpoint["rng"] = None
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "random state"):
+            Run.restore(pf, checkpoint)
+        checkpoint = json.loads(json.dumps(Run(EMA(0.5)).checkpoint()))
+        checkpoint["rng"] = "0123456789abcdef"
+        with self.assertRaisesRegex(IncompatibleCheckpoint, "random state"):
+            Run.restore(EMA(0.5), checkpoint)
+
+    def test_tampered_buffers_are_refused(self):
+        def taken(topology, *observations):
+            run = Run(EMA(0.5), topology=topology)
+            run.start()
+            for obs in observations:
+                run.offer(obs)
+            return json.loads(json.dumps(run.checkpoint()))
+
+        pair = lambda: PositionalPair(["a", "b"])
+        edits = [
+            (Independent, lambda c: c["delivery"]["state"].update(next=[])),
+            (Independent, lambda c: c["delivery"]["state"].update(next={"a": 2.7})),
+            (Independent, lambda c: c["delivery"]["state"].update(duplicates=-1)),
+            (pair, lambda c: c["topology"]["state"].update(a="xy")),
+            (pair, lambda c: c["topology"]["state"].update(c=[1.0])),
+            (Independent, lambda c: c["counters"].update(invalid_skipped=-1)),
+            (Independent, lambda c: c.update(consumer_errors="x")),
+        ]
+        for make, edit in edits:
+            checkpoint = taken(make(), Observation("x" if make is Independent else "a", 1.0, seq=0))
+            Run.restore(EMA(0.5), json.loads(json.dumps(checkpoint)), topology=make())  # untouched: fine
+            edit(checkpoint)
+            with self.subTest(checkpoint=checkpoint), self.assertRaises(IncompatibleCheckpoint):
+                Run.restore(EMA(0.5), checkpoint, topology=make())
+
+    def test_the_incident_that_stops_a_streak_says_so(self):
+        run = Run(EMA(0.5), max_invalid_streak=2)
+        run.start()
+        with self.assertLogs("sequential_analysis", "WARNING") as logs, self.assertRaises(InvalidInputStreak):
+            run.offer(Observation("x", "a"))
+            run.offer(Observation("x", "b"))
+        self.assertEqual([r.incident["action"] for r in logs.records], ["skipped", "stopped"])
 
 
 class StreamFailure(Exception):
@@ -494,7 +692,7 @@ class InvalidInputPolicy(unittest.TestCase):
 
     def test_skipped_input_is_reported_as_a_warning(self):
         run = Run(FragileSum(), run_id="r")
-        with self.assertLogs("seqinfer", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
             run.offer(Observation("x", 1.0, seq=0))
             run.offer(Observation("x", -2.0, seq=1))
         self.assertEqual((run.t, run.state.total, run.counters["invalid_skipped"]), (1, 1.0, 1))
@@ -507,7 +705,7 @@ class InvalidInputPolicy(unittest.TestCase):
 
     def test_raise_is_explicit_and_still_reported(self):
         run = Run(FragileSum(), on_invalid="raise")
-        with self.assertLogs("seqinfer", "WARNING") as logs, self.assertRaises(ContractViolation):
+        with self.assertLogs("sequential_analysis", "WARNING") as logs, self.assertRaises(ContractViolation):
             run.step({"x": -1.0})
         self.assertEqual(self.incidents(logs)[0]["action"], "rejected")
         self.assertIs(run.status, RunStatus.FAILED)
@@ -517,7 +715,7 @@ class InvalidInputPolicy(unittest.TestCase):
         self.assertEqual(run.provenance["on_invalid"], "raise:tests.test_run.StreamFailure")
         run.step({"x": 1.0})
         checkpoint = run.checkpoint()
-        with self.assertLogs("seqinfer", "WARNING"), self.assertRaises(StreamFailure) as caught:
+        with self.assertLogs("sequential_analysis", "WARNING"), self.assertRaises(StreamFailure) as caught:
             run.step({"x": -1.0})
         self.assertIsInstance(caught.exception.__cause__, ContractViolation)
         self.assertIs(run.status, RunStatus.FAILED)
@@ -532,7 +730,7 @@ class InvalidInputPolicy(unittest.TestCase):
     def test_invalid_input_for_a_later_chain_stage_skips_the_whole_step(self):
         chain = Chain(FragileSum(), FragileSum(), link=lambda total: {"x": total - 3.0}, link_name="total-3")
         run = Run(chain)
-        with self.assertLogs("seqinfer", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
             run.step({"x": 1.0})  # second stage would get -2.0
         self.assertEqual((run.t, run.state), (0, (Total(), Total())))
         (incident,) = self.incidents(logs)
@@ -543,7 +741,7 @@ class InvalidInputPolicy(unittest.TestCase):
 
     def test_observations_the_topology_cannot_use_are_invalid_inputs(self):
         run = Run(MeanDifference(), topology=KeyJoin(("a", "b")))
-        with self.assertLogs("seqinfer", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
             run.offer(Observation("a", 1.0))  # no key
             run.offer(Observation("c", 1.0, key="k"))  # not an input of the topology
         self.assertEqual([i["stage"] for i in self.incidents(logs)], ["topology", "topology"])
@@ -551,12 +749,12 @@ class InvalidInputPolicy(unittest.TestCase):
         self.assertIs(run.status, RunStatus.RUNNING)
 
     def test_a_transform_failing_on_bad_data_skips_only_that_input(self):
-        from seqinfer import Difference
+        from sequential_analysis import Difference
 
         run = Run(MeanDifference(), topology=PositionalPair(("a", "b")).map(Difference("a", "b", out="a")))
         for v in (1.0, "broken", 3.0):  # the "a" side runs ahead; a string slipped through an adapter
             run.offer(Observation("a", v))
-        with self.assertLogs("seqinfer", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
             for v in (0.5, 0.5, 0.5):  # three pairs are emitted, the middle one cannot be differenced
                 run.offer(Observation("b", v))
         self.assertIs(run.status, RunStatus.RUNNING)
@@ -568,16 +766,16 @@ class InvalidInputPolicy(unittest.TestCase):
         def broken(event):
             raise RuntimeError("disk full")
 
-        with self.assertLogs("seqinfer", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
             Run(FragileSum(), consumers=[broken]).step({"x": 1.0})
         self.assertEqual(self.incidents(logs)[0]["kind"], "consumer_error")
 
     def test_a_streak_of_invalid_inputs_stops_the_run(self):
-        from seqinfer import InvalidInputStreak
+        from sequential_analysis import InvalidInputStreak
 
         run = Run(FragileSum(), max_invalid_streak=3)
         self.assertEqual(run.provenance["max_invalid_streak"], 3)
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             for value in (-1.0, -1.0, 1.0, -1.0, -1.0):  # a valid input resets the streak
                 run.step({"x": value})
             checkpoint = run.checkpoint()
@@ -590,7 +788,7 @@ class InvalidInputPolicy(unittest.TestCase):
 
         restored = Run.restore(FragileSum(), checkpoint)  # threshold and current streak carry over
         restored.start()
-        with self.assertLogs("seqinfer", "WARNING"), self.assertRaises(InvalidInputStreak):
+        with self.assertLogs("sequential_analysis", "WARNING"), self.assertRaises(InvalidInputStreak):
             restored.step({"x": -1.0})
 
     def test_streak_threshold_must_be_positive(self):
@@ -630,7 +828,7 @@ class Files(unittest.TestCase):
             ObservationLog(self.dir / "x.jsonl", sync="sometimes")
 
     def test_jsonl_sink(self):
-        from seqinfer import JsonlSink
+        from sequential_analysis import JsonlSink
 
         path = self.dir / "outputs.jsonl"
         with JsonlSink(path, encode=lambda o: o) as sink:
@@ -790,16 +988,16 @@ class Guards(unittest.TestCase):
             raise RuntimeError("disk full")
 
         run = Run(FragileSum(), consumers=[broken])
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run.step({"x": 1.0})
         restored = Run.restore(FragileSum(), run.checkpoint())
         self.assertEqual(restored.consumer_errors, run.consumer_errors)
         self.assertEqual(len(restored.consumer_errors), 1)
 
     def test_provenance_records_the_package_version(self):
-        import seqinfer
+        import sequential_analysis
 
-        self.assertEqual(Run(FragileSum()).provenance["seqinfer"], seqinfer.__version__)
+        self.assertEqual(Run(FragileSum()).provenance["sequential_analysis"], sequential_analysis.__version__)
 
 
 if __name__ == "__main__":

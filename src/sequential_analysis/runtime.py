@@ -67,6 +67,8 @@ async def run_async(
             f"Use overflow='block', or Delivery('arrival')"
         )
     _attach(run, f"async/push/{overflow}")
+    if stop_on_terminal and run.terminal:  # pull nothing for a run that has already stopped
+        return 0
     queue: asyncio.Queue = asyncio.Queue(maxsize)
 
     async def pump(producer: AsyncIterable[Observation]) -> None:

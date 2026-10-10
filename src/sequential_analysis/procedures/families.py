@@ -7,7 +7,7 @@ A family provides the log likelihood ratio of one observation, the
 Kullback-Leibler divergence, a parameter check and the input contract.
 Gaussian (known variance), Bernoulli, Poisson and Exponential are
 exponential families: the sum of the observations is sufficient, which is
-what `seqinfer.design` relies on.
+what `sequential_analysis.design` relies on.
 """
 from __future__ import annotations
 

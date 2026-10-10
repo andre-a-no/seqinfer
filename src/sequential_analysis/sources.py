@@ -19,13 +19,13 @@ from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from itertools import zip_longest
 from typing import Any, cast
 
-from .core import Observation
+from .core import UNRECORDABLE, Observation, recording_problem
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
 from .files import AppendFile
 from .rng import SplitMix64
 
-_LOG_GENESIS = hashlib.sha256(b"seqinfer.log/2").hexdigest()
+_LOG_GENESIS = hashlib.sha256(b"sequential-analysis.log/2").hexdigest()
 
 
 def from_values(
@@ -124,16 +124,19 @@ def merge_ordered(*sources: Iterable[Observation]) -> Iterator[Observation]:
 def skip_to(source: Iterable[Observation], positions: Mapping[str, int] | Delivery) -> Iterator[Observation]:
     """Seek: drop what a restored run has already consumed, according to its source checkpoint.
 
-    Pass the run's Delivery (``run.delivery``): sources it has not seen yet
-    then start at its ``start`` number.  A bare mapping of positions treats
-    unseen sources as starting at 0.
+    Pass the run's Delivery (``run.delivery``): it also knows the sources it
+    has not seen yet (they start at its ``start`` number) and, under the
+    arrival policy, the observations delivered ahead of a gap.  A bare
+    mapping of positions only knows the next sequence number per source.
     """
     if isinstance(positions, Delivery):
-        start, positions = positions.start, positions.positions()
-    else:
-        start = 0
+        delivery = positions
+        for obs in source:
+            if not delivery.delivered(obs):
+                yield obs
+        return
     for obs in source:
-        if obs.seq is None or obs.seq >= positions.get(obs.source, start):
+        if obs.seq is None or obs.seq >= positions.get(obs.source, 0):
             yield obs
 
 
@@ -155,8 +158,10 @@ class ObservationLog:
     holds back (the `sequence` policy) are not in it, so that the log
     position and the source positions in a checkpoint describe the same
     cut.  Invalid values are logged as they were, and a replay skips them
-    as the run did.  With a path, lines are appended as JSON; without
-    one, the log lives in memory.
+    as the run did; an observation delivery cannot handle at all (see
+    `sequential_analysis.core.envelope_problem`) is never delivered, so never logged.
+    With a path, lines are appended as JSON; without one, the log lives in
+    memory.
 
     The log has a position -- number of records, byte offset and a hash
     chain over the records -- that a run stores in its checkpoint.
@@ -167,11 +172,11 @@ class ObservationLog:
 
     The file stays open between records; `sync` chooses between "flush"
     (survives a crash of the process) and "fsync" (survives a power
-    failure), see `seqinfer.files`.  Whatever the mode, the log is forced
+    failure), see `sequential_analysis.files`.  Whatever the mode, the log is forced
     to the disk whenever a checkpoint records its position.  Close the
     log, or use it as a context manager, when the run is over.
 
-    seqinfer does not keep observations beyond the last checkpoint.  After a
+    sequential_analysis does not keep observations beyond the last checkpoint.  After a
     restore, the run receives them again from its sources (see `skip_to`).
     A source that cannot deliver past observations again -- a live
     instrument without a buffer, a stream without retention -- has to be
@@ -208,16 +213,18 @@ class ObservationLog:
         contracts reject just as they rejected the original.
         """
         record = obs.to_json()
-        try:
-            text = json.dumps(record, sort_keys=True)
-        except (TypeError, ValueError):
-            record["value"] = {"unserializable": repr(obs.value)}
-            try:
-                text = json.dumps(record, sort_keys=True)
-            except (TypeError, ValueError):
-                record = {k: v if isinstance(v, (str, int, float, type(None))) else repr(v) for k, v in record.items()}
-                text = json.dumps(record, sort_keys=True)
-        return (text + "\n").encode("utf-8")
+        if recording_problem(obs) is not None:
+            # The run rejects this observation; record a marker that a replay rejects
+            # at the same point, with the fields delivery and provenance need.
+            record = {
+                "input": obs.input,
+                "source": obs.source,
+                "seq": obs.seq if type(obs.seq) is int else None,
+                "key": None,
+                "time": None,
+                "value": {UNRECORDABLE: repr(obs.value)[:200]},
+            }
+        return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
 
     @staticmethod
     def _chain(digest: str, line: bytes) -> str:
@@ -304,7 +311,8 @@ class ObservationLog:
         position = self._scan()
         line = self._line(obs)
         if self._file is None:
-            self._items.append(obs)
+            # keep what was recorded, not the caller's object, which may change later
+            self._items.append(Observation.from_json(json.loads(line)))
         else:
             self._file.write(line)
         position["count"] += 1

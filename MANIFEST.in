@@ -1,0 +1,10 @@
+# The source distribution can run its own test suite and conformance checks.
+include CHANGELOG.md CLA.md CONTRIBUTING.md COMMERCIAL.md LICENSE README.md
+recursive-include tests *.py
+recursive-include conformance *.json *.mjs
+recursive-include examples *.py
+prune paper
+prune tools
+# tests/test_conformance.py rebuilds the vectors with it
+include tools/make_conformance.py
+global-exclude __pycache__ *.py[cod]

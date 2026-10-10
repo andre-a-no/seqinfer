@@ -10,11 +10,11 @@ rates and average sample numbers, with no simulation.  The plan is then
 executed on a simulated stream like any other procedure.  At the end the
 same design problem is solved for counts and for normal measurements.
 """
-from seqinfer import Recorder, Run, run_sync
-from seqinfer.design import kiefer_weiss_plan, operating_characteristic
-from seqinfer.procedures import Bernoulli, Gaussian, Poisson
-from seqinfer.rng import SplitMix64
-from seqinfer.sources import from_values
+from sequential_analysis import Recorder, Run, run_sync
+from sequential_analysis.design import kiefer_weiss_plan, operating_characteristic
+from sequential_analysis.procedures import Bernoulli, Gaussian, Poisson
+from sequential_analysis.rng import SplitMix64
+from sequential_analysis.sources import from_values
 
 design = kiefer_weiss_plan(theta0=0.3, theta1=0.5, alpha0=0.05, alpha1=0.05, horizon=150)
 plan = design.plan

@@ -1134,7 +1134,12 @@ implementation uses the JSON Canonicalization Scheme~\cite{rfc8785},
 which fixes number formatting (the shortest representation that
 round-trips), string escaping and key order. Integers that a binary64
 value cannot hold exactly are refused by the input contracts, and 64-bit
-values such as $R_t$ are stored as strings.
+values such as $R_t$ are stored as strings. The same requirement applies
+earlier, to observations: one whose value cannot be recorded exactly in
+JSON (a non-finite number, an integer beyond $2^{53}$, a string that
+UTF-8 cannot encode, a source name that is not a string) is invalid
+input, rejected before it reaches a topology buffer, so that neither the observation log nor a checkpoint ever holds
+a value that a replay would read back differently.
 
 % ------------------------------------------------------------
 \subsection{Provenance}
@@ -1194,7 +1199,12 @@ arithmetic~\cite{goldberg1991,higham2002} as much as about statistics.
 The usual mechanisms apply: likelihoods are kept in the log domain,
 normalizing constants are computed with a stable log-sum-exp, long sums
 use compensated accumulation~\cite{kahan1965,neumaier1974}, and
-non-finite values are rejected before they are committed.
+non-finite values are rejected before they are committed. The runtime
+enforces the last point for every procedure: a transition that
+overflows, or yields a non-finite state or output, raises a numerical
+error and commits nothing. Procedures that estimate a variance also
+report a numerical error when rescaled data make the estimate
+underflow, rather than deciding on a meaningless statistic.
 
 More important for the architecture is to say what ``equal
 trajectories'' means. We distinguish four levels.
@@ -1502,12 +1512,13 @@ the multipliers by Broyden's method takes a few passes. The resulting
 plan is executed by the same plan executor. For $\theta_0=0.3$ against
 $\theta_1=0.5$ with $\alpha_0=\alpha_1=0.05$ and $H=150$, it attains
 error probabilities $0.0498$ and $0.0496$ and a maximum expected sample
-size of $45.2$, against $52.9$ for Wald's SPRT calibrated to the same
-error probabilities. The value of the Lagrangian obtained by backward
+size of $45.2$, against $50.8$ for Wald's SPRT with thresholds
+calibrated to the same error probabilities ($56.9$ with Wald's
+approximate thresholds $\pm\log 19$). The value of the Lagrangian obtained by backward
 induction agrees with the forward evaluation of the plan to machine
 precision, and the exact operating characteristic agrees with
 simulation through the executor. For a normal mean, $\theta_0=0$ against
-$\theta_1=0.5$ with $\sigma=1$, the plan computed on a lattice of step
+$\theta_1=0.5$ with $\sigma=1$ and $H=120$, the plan computed on a lattice of step
 $\sigma/16$ has error probabilities $0.0515\pm0.0015$ when executed on
 simulated normal data, and an expected sample size at $\theta^*$ of
 $31.0$. The 2-SPRT with thresholds calibrated to the same error
@@ -1519,26 +1530,78 @@ The modified problem fixes $\theta^*$. The Kiefer--Weiss problem asks
 for the $\theta^*$ at which the resulting test has the smallest maximum
 expected sample size, and by Lorden's characterisation~\cite{lorden1980}
 that is the $\theta^*$ at which the maximum is attained at $\theta^*$
-itself. The implementation generates candidates by bisection on
-$\arg\max_\theta E_\theta N-\theta^*$, designing each in full, and
-returns the candidate, the first-order point included, with the smallest
-maximum expected sample size. For the Bernoulli example the first-order
+itself. For discrete data the implementation generates candidates by
+bisection on $g(\theta^*)=\arg\max_\theta E_\theta N-\theta^*$, designing
+each in full, and returns the candidate, the first-order point included,
+with the smallest maximum expected sample size. For the Bernoulli example the first-order
 $\theta^*=0.3971$ gives a maximum expected sample size of $45.17$,
 attained at $0.3933$; the search returns $\theta^*=0.3925$ with $45.01$,
 attained at $0.3936$. Near the solution the maximum is flat in
 $\theta^*$, and for discrete data it moves in small steps because the
 attainable error probabilities do, so the gain over the first-order
-point is small and the characterisation holds only approximately. For
-normal data, $\theta_0=0$ against $\theta_1=0.5$ with error
-probabilities $0.05$ and $0.2$, the bisection converges to
-$\theta^*=0.347$ with the maximum at $0.346$.
+point is small and the characterisation holds only approximately.
+
+For normal data the characterisation itself is well determined: the
+function $g(\theta^*)=\arg\max_\theta E_\theta N-\theta^*$ is smooth and
+decreasing, and on a symmetric problem its root is the midpoint to
+$3\cdot10^{-4}$ of $\theta_1-\theta_0$. The maximum expected sample size
+is not: over a tenth of the interval around the root it changes by about
+$2\cdot10^{-4}$ of its value, the order of the calibration error of the
+multipliers, so that which candidate has the smallest maximum would be
+partly decided by rounding, and would change with the candidates a search
+happens to visit. For $\theta_0=0$ against $\theta_1=0.5$ with error
+probabilities $0.05$ and $0.2$ and $H=60$, the candidate with the smallest
+maximum among those of a bisection over the whole interval is
+$\theta^*=0.340$ with $17.131$, the root of the characterisation is
+$0.3462$ with $17.140$, and the first-order point $0.289$ gives $17.148$:
+the three plans differ by less than a tenth of a percent. For data on a
+lattice (normal, exponential) the implementation therefore returns the
+root of the characterisation, found by the Illinois variant of regula
+falsi to $2\cdot10^{-4}$ of $\theta_1-\theta_0$; it is reproducible to that
+tolerance, and a symmetric problem gets the midpoint to it.
+
+Because the root is well determined, it can be tabulated. In the
+standardised coordinate $\lambda=(\theta^*-\theta_0)/(\theta_1-\theta_0)$
+it depends on $\alpha_0$, $\alpha_1$ and the horizon, which enters
+through $\rho=\delta\sqrt H/(z_{\alpha_0}+z_{\alpha_1})$, the ratio of the
+horizon to the shortest fixed-sample test; exchanging the hypotheses maps
+$\lambda$ to $1-\lambda$, so the correction to the first-order point is
+antisymmetric in $(\alpha_0,\alpha_1)$. A pilot study showed it smooth in
+$\log\alpha_0$, $\log\alpha_1$, nearly constant in $\rho$ above $1.5$
+(and in $\delta$ at fixed $\rho$, to $1.5\cdot10^{-3}$), with a boundary
+layer of up to $0.015$ as $\rho$ approaches $1$. The roots were computed
+on Gauss--Lobatto--Legendre nodes, which are D-optimal for polynomial
+regression~\cite{guest1958}, in tensor product (63 nodes for $\alpha_0,\alpha_1\in[0.005,
+0.2]$, $\rho\in[1.5,2.5]$, only on one side of the diagonal), and fitted
+by an antisymmetric Legendre series of degree $5$ in each $\log\alpha$
+and $1$ in $\rho$; on 11 Halton points not used in the fit the error is
+$1.2\cdot10^{-4}$ rms and at most $3.3\cdot10^{-4}$. The search for the
+least favourable $\theta^*$ starts from a bracket of $\pm0.004$ around
+the tabulated root ($\pm0.03$ below $\rho=1.5$) and falls back to the
+whole interval when the bracket does not contain a sign change. The
+example above takes 83 seconds; the bisection over the whole interval
+with the earlier implementation, without numpy and without the
+calibration below, took two hours.
+
+Each candidate is designed in full. The backward pass is written as
+array operations (numpy, when installed), and once Broyden's method has
+come within $10^{-3}$ of the targets the multipliers are adjusted by a
+small joint raise before the slower coordinate search is tried; on
+thirteen designs across the four families both changes leave the plans
+unchanged.
 
 For discrete data there is a further limit. The plans that are optimal
 for some pair of multipliers are non-randomised, and near the smallest
 feasible horizon they need not reach every pair of error probabilities
 that some test of that size reaches; randomised boundaries would. The
 implementation then tries smaller horizons, which also respect the
-constraint, and reports a failure only if none succeeds.
+constraint, and reports a failure only if none succeeds. Before any of
+this it compares the targets with the Neyman--Pearson bound: a plan
+that stops by $H$ is a test based on $H$ observations, so its
+$\alpha_1$ is at least that of the most powerful randomised level-$\alpha_0$
+test of that size, computed exactly for Bernoulli, Poisson and normal
+data. Targets below the bound are reported at once, instead of after a
+search that cannot succeed.
 
 \paragraph{Validation.}
 A reference procedure can be validated against analytical facts without
@@ -1692,7 +1755,7 @@ same contracts, and implementations in different languages need not
 have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
-standard library and comprises about $5\,200$ lines, with one module per
+standard library and comprises about $5\,600$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1724,8 +1787,11 @@ a test martingale for every $\sigma$~\cite{lai1976,perezortiz2024}, both
 with an always-valid $p$-value and a confidence sequence, and two
 nonparametric
 tests by betting~\cite{shafer2021,waudbysmith2024,ramdas2023}, one for the
-mean of bounded observations and a sign test for the median, both valid
-for every distribution satisfying the null hypothesis. For change-point
+mean of bounded observations and a sign test of
+$P(X>m)=P(X<m)$, both valid for every distribution satisfying the null
+hypothesis. The sign test is a test of the median only when the
+distribution has no atom at $m$: with ties at $m$, the median can be
+$m$ while the signs are unbalanced, and the test then rejects. For change-point
 detection: CUSUM~\cite{page1954} and the Shiryaev--Roberts
 procedure~\cite{shiryaev1963,roberts1966,pollak1985}. For filtering and
 estimation: a Kalman filter for the local-level model with an optional
@@ -1741,7 +1807,13 @@ functions~\cite{lan1983,jennison2000} by recursive numerical
 integration~\cite{armitage1969}; the O'Brien--Fleming-type efficacy
 boundaries for three and five analyses reproduce the published values to
 three decimals, and with estimated variance each boundary is converted to
-a $t$ boundary of the same significance level. The
+a $t$ boundary of the same significance level. The $t$ distribution is
+computed from the standard library alone: the incomplete beta function
+by its continued fraction, in logarithms where the tail underflows, and
+Fisher's expansion to third order when the degrees of freedom are
+large; on a grid of degrees of freedom from $0.1$ to $10^{200}$ and
+arguments up to $10^{300}$ it agrees with 80-digit reference values to
+a relative error below $10^{-10}$. The
 implementation also includes four topology operators (independent,
 positional pairing, key join, time alignment), three delivery policies,
 a synchronous pull runtime, and an asynchronous push runtime with
@@ -1757,7 +1829,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$170$ tests in total; the remainder cover transactional updates,
+$213$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under

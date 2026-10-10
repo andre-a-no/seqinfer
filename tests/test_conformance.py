@@ -8,8 +8,8 @@ import sys
 import unittest
 from pathlib import Path
 
-from seqinfer import Run
-from seqinfer.canonical import _number, canonical_json
+from sequential_analysis import Run
+from sequential_analysis.canonical import _number, canonical_json
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))

@@ -6,7 +6,7 @@
 Executing a plan is a Sequential Procedure (`PlanTest`).  Computing one is
 a design problem, solved here offline, before the experiment.  Both
 functions work on the running sum S_n, which is sufficient for the
-one-parameter exponential families in `seqinfer.procedures`.
+one-parameter exponential families in `sequential_analysis.procedures`.
 
 The sum is carried on a lattice.  For Bernoulli and Poisson data the
 lattice is the integers and every result is exact up to floating point
@@ -41,19 +41,33 @@ kiefer_weiss_plan
 """
 from __future__ import annotations
 
+import json
 import math
+import time
 from dataclasses import dataclass
 from operator import mul
+from typing import Any
 
+from .cache import design_cache_dir, entry_path, read_entry, report, write_entry
+from .canonical import canonical_json
 from .procedures.families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .procedures.plan import PlanTest
 from .procedures.sprt import ACCEPT_H0, REJECT_H0
 from .procedures.two_sprt import kiefer_weiss_point
+from .version import __version__
 
 _TAIL = 1e-17
 _NORMAL_WIDTH = 8.0  # the normal lattice covers theta +/- 8 sigma
 _EXPONENTIAL_TAIL = 30.0  # the exponential lattice stops where the tail is e^-30
 _CONTINUE = "continue"
+_LABELS = (_CONTINUE, REJECT_H0, ACCEPT_H0)
+_NUMPY_WIDTH = 8  # lattices with at least this many weights use the numpy pass when numpy is installed
+
+try:  # optional: the backward pass in array operations, several times faster on wide lattices
+    import numpy as _np
+except ImportError:  # pragma: no cover - exercised on interpreters without numpy
+    _np = None
+_QUICK_RAISE = True  # try a small joint raise before the coordinate search
 _HORIZON_RETRIES = 25  # smaller horizons tried when the requested one cannot be met
 
 
@@ -269,7 +283,22 @@ def _affine_llr(family: Family, num: float, den: float, step: float | None = Non
         b = (r1 - r0) / (x1 - x0)
         return r0 - b * x0, b
     a = family.llr(0, num, den)
+    if isinstance(family, Gaussian):
+        # The normal lattice is normalised for each theta separately; on a coarse lattice the
+        # normalising constants differ (Poisson summation: by about exp(-2 pi^2 sigma^2 / h^2)),
+        # and the ratio of the lattice probabilities has that offset per observation.
+        ln, ld = lattice(family, num, step), lattice(family, den, step)
+        if math.exp(-2.0 * math.pi**2 * (family.sigma / ln.step) ** 2) > 1e-17:
+            a += math.log(_gaussian_norm(family, den, ln.step) / _gaussian_norm(family, num, ln.step))
     return a, family.llr(1, num, den) - a
+
+
+def _gaussian_norm(family: Gaussian, theta: float, h: float) -> float:
+    """The sum of the normal lattice's unnormalised weights at theta (see `lattice`)."""
+    sigma = family.sigma
+    lo = math.floor((theta - _NORMAL_WIDTH * sigma) / h)
+    hi = math.ceil((theta + _NORMAL_WIDTH * sigma) / h)
+    return sum([math.exp(-0.5 * ((j * h - theta) / sigma) ** 2) for j in range(lo, hi + 1)])  # as in lattice()
 
 
 @dataclass
@@ -326,6 +355,71 @@ class _Problem:
         return math.exp(c), 0.0, math.exp(c - u1), ACCEPT_H0
 
     def solve(self, u0: float, u1: float) -> _Pass:
+        # array operations pay off only on wide lattices (normal, exponential, Poisson with larger rates)
+        if _np is not None and len(self.lat.weights) >= _NUMPY_WIDTH:
+            return self._solve_numpy(u0, u1)
+        return self._solve_python(u0, u1)
+
+    def _stop_arrays(self, u0: float, u1: float, n: int, k_first: int, k_last: int):
+        """`_stop` for every k in [k_first, k_last]: cost, Z0, Z1 and whether to reject."""
+        assert _np is not None
+        s = _np.arange(k_first, k_last + 1, dtype=float) * self.lat.step + n * self.lat.shift
+        r = u0 + n * self.a0 + self.b0 * s
+        c = u1 + n * self.a1 + self.b1 * s
+        reject = r < c
+        cost = _np.exp(_np.where(reject, r, c))
+        z0 = _np.where(reject, _np.exp(r - u0), 0.0)
+        z1 = _np.where(reject, 0.0, _np.exp(c - u1))
+        return cost, z0, z1, reject
+
+    def _solve_numpy(self, u0: float, u1: float) -> _Pass:
+        """The backward pass of `_solve_python`, one stage at a time as array operations.
+
+        The same recursion; sums over the lattice weights are dot products in
+        numpy, so results agree with the pure-Python pass up to rounding.
+        """
+        assert _np is not None
+        np = _np
+        lat, H = self.lat, self.horizon
+        weights = np.asarray(lat.weights, dtype=float)
+        off, width = lat.offset, len(lat.weights)
+        stages: list[tuple[int, list[str]]] = [(0, [])] * H
+        nxt_lo, nxt_n = 0, H
+        nxt = np.zeros((4, 0))  # rows: value, Z0, Z1, E[N] at stage n+1
+        for n in range(H - 1, -1, -1):
+            k_lo, k_hi = self._region(u0, u1, n) if n > 0 else (0, 0)
+            if k_hi < k_lo:  # nothing can continue at this stage
+                stages[n - 1] = (k_lo, [])
+                nxt_lo, nxt, nxt_n = k_lo, np.zeros((4, 0)), n
+                continue
+            e_lo, e_hi = k_lo + off, k_hi + off + width - 1
+            # stage n+1 on [e_lo, e_hi]: computed values where known, stopping values elsewhere
+            cost, z0, z1, _ = self._stop_arrays(u0, u1, nxt_n, e_lo, e_hi)
+            ext = np.vstack((cost, z0, z1, np.zeros_like(cost)))
+            a, b = max(e_lo, nxt_lo), min(e_hi, nxt_lo + nxt.shape[1] - 1)
+            if a <= b:
+                ext[:, a - e_lo : b - e_lo + 1] = nxt[:, a - nxt_lo : b - nxt_lo + 1]
+            # sum_i w_i ext[:, j + i] for every j: a sliding window against the weights
+            windows = np.lib.stride_tricks.sliding_window_view(ext, width, axis=1)
+            sums = windows @ weights  # shape (4, k_hi - k_lo + 1)
+            cont = 1.0 + sums[0]
+            if n == 0:
+                cur = np.vstack((cont, sums[1], sums[2], 1.0 + sums[3]))
+            else:
+                s_cost, s_z0, s_z1, reject = self._stop_arrays(u0, u1, n, k_lo, k_hi)
+                go = cont < s_cost
+                cur = np.vstack((
+                    np.where(go, cont, s_cost),
+                    np.where(go, sums[1], s_z0),
+                    np.where(go, sums[2], s_z1),
+                    np.where(go, 1.0 + sums[3], 0.0),
+                ))
+                codes = np.where(go, 0, np.where(reject, 1, 2)).tolist()
+                stages[n - 1] = (k_lo, [_LABELS[code] for code in codes])
+            nxt_lo, nxt, nxt_n = k_lo, cur, n
+        return _Pass(float(nxt[0, 0]), float(nxt[1, 0]), float(nxt[2, 0]), float(nxt[3, 0]), stages)
+
+    def _solve_python(self, u0: float, u1: float) -> _Pass:
         lat, H = self.lat, self.horizon
         weights, off, width = lat.weights, lat.offset, len(lat.weights)
         # at stage H everything stops: an empty computed region, values from the stopping costs
@@ -434,6 +528,7 @@ def kiefer_weiss_plan(
     family: Family | None = None,
     theta_star: float | str | None = None,
     step: float | None = None,
+    cache: Any = None,
 ) -> KieferWeissDesign:
     """Optimal plan with at most `horizon` observations; see the module docstring.
 
@@ -447,23 +542,185 @@ def kiefer_weiss_plan(
     ``theta_star="least-favourable"`` it solves the Kiefer-Weiss problem
     itself.  By Lorden's characterisation the optimal test is the solution
     of the modified problem whose expected sample size is largest at
-    theta* itself; candidates are generated by bisection on argmax_theta
-    E_theta[N] - theta*, each designed in full, and the candidate (the
-    first-order point included) with the smallest maximum expected sample
-    size is returned.  For discrete data the attainable error rates move
-    in steps, so the best candidate need not satisfy the characterisation
-    exactly, and the gain over the first-order theta* is often a fraction
-    of a percent.
+    theta* itself, the root of g(theta*) = argmax_theta E_theta[N] - theta*.
+    For normal and exponential data that root is returned, found by the
+    Illinois method from a bracket around the tabulated root (normal data)
+    or over the whole interval; there the maximum of E[N] is too flat in
+    theta* for comparisons between candidates to mean anything.  For
+    discrete data the attainable error rates move in steps and g need not
+    have a root: the candidates of a bisection on g, the first-order point
+    included, are compared, and the one with the smallest maximum expected
+    sample size is returned; the gain over the first-order theta* is often
+    a fraction of a percent.
+
+    Every plan computed is stored in the design cache and returned from it
+    when the same question is asked again, after its error rates have been
+    verified; `cache` selects the directory, or False turns the cache off
+    (see `sequential_analysis.cache`).  Saving and loading are reported on the logger
+    "sequential_analysis.cache".
     """
     family = family if family is not None else Bernoulli()
-    if theta_star == "least-favourable":
-        return _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step)
-    if isinstance(theta_star, str):
+    if not isinstance(family, (Bernoulli, Poisson, Gaussian, Exponential)):
+        raise TypeError(
+            f"family must be Bernoulli(), Poisson(), Gaussian(sigma) or Exponential() from "
+            f"sequential_analysis.procedures, got {family!r}"
+        )
+    # the same arguments are accepted, normalised and refused whether or not the cache is used
+    theta0, theta1, alpha0, alpha1 = (_real(v, name) for v, name in
+                                      ((theta0, "theta0"), (theta1, "theta1"), (alpha0, "alpha0"), (alpha1, "alpha1")))
+    horizon = _integer(horizon, "horizon")
+    step = None if step is None else _real(step, "step")
+    if theta_star is not None and not isinstance(theta_star, str):
+        theta_star = _real(theta_star, "theta_star")
+    family.check(theta0)
+    family.check(theta1)
+    if theta0 == theta1 or not (0 < alpha0 < 1 and 0 < alpha1 < 1) or horizon < 1:
+        raise ValueError("need theta0 != theta1, error rates in (0, 1) and horizon >= 1")
+    directory = design_cache_dir(cache)
+    key = _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) if directory else None
+    if directory is None or key is None:
+        return _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step)
+    path = entry_path(directory, "kiefer_weiss", key)
+    entry = read_entry(path, key)
+    if entry is not None:
+        design = _verified(entry["design"], family, theta0, theta1, alpha0, alpha1, horizon, theta_star, step)
+        if design is not None:
+            seconds = entry.get("seconds")
+            took = f" (computed in {seconds:.1f} s)" if type(seconds) in (int, float) else ""
+            message = f"design cache: loaded {_describe(key)} from {path}{took}; error rates verified"
+            report("loaded", message, path, key)
+            return design
+        report(
+            "ignored",
+            f"design cache: ignored {path} (its plan does not answer this question or does not reproduce); "
+            f"computing again",
+            path, key,
+        )
+    started = time.perf_counter()
+    design = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step)
+    seconds = time.perf_counter() - started
+    if write_entry(path, key, _design_json(design), seconds, time.time()):
+        report("saved", f"design cache: computed {_describe(key)} in {seconds:.1f} s and saved it to {path}", path, key)
+    return design
+
+
+_ALGORITHM = "5"  # bump when a change of the design algorithm may change its results
+
+
+def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> dict | None:
+    """The question, as canonical JSON can hold it; None (no caching) for arguments it cannot."""
+    key = {
+        "function": "kiefer_weiss_plan",
+        "sequential_analysis": __version__,
+        "algorithm": _ALGORITHM,
+        "theta0": theta0, "theta1": theta1, "alpha0": alpha0, "alpha1": alpha1, "horizon": horizon,
+        "family": family.spec(), "theta_star": theta_star, "step": step,
+    }
+    try:
+        canonical_json(key)
+    except (TypeError, ValueError):
+        return None
+    normalized: dict = json.loads(json.dumps(key))
+    return normalized
+
+
+def _describe(key: dict) -> str:
+    return (
+        f"kiefer_weiss_plan({key['theta0']}, {key['theta1']}, {key['alpha0']}, {key['alpha1']}, "
+        f"horizon={key['horizon']}, family={key['family']['family']}, theta_star={key['theta_star']!r})"
+    )
+
+
+def _oc_json(oc: OperatingCharacteristic) -> dict:
+    return {"theta": oc.theta, "reject": oc.reject, "accept": oc.accept, "expected_n": oc.expected_n}
+
+
+def _design_json(d: KieferWeissDesign) -> dict:
+    return {
+        "plan": d.plan.config(),
+        "theta_star": d.theta_star, "lambda0": d.lambda0, "lambda1": d.lambda1, "lagrangian": d.lagrangian,
+        "at_theta0": _oc_json(d.at_theta0), "at_theta1": _oc_json(d.at_theta1),
+        "at_theta_star": _oc_json(d.at_theta_star), "exact": d.exact, "step": d.step,
+    }
+
+
+def _real(value: Any, name: str) -> float:
+    """A real number as float (numpy scalars included); bool and non-numbers are refused."""
+    import numbers
+
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise TypeError(f"{name} must be a real number, got {value!r}")
+    return float(value)
+
+
+def _integer(value: Any, name: str) -> int:
+    """An integer as int (numpy integers included); bool, floats and non-numbers are refused."""
+    import operator
+
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, got {value!r}")
+    try:
+        return operator.index(value)
+    except TypeError:
+        raise TypeError(f"{name} must be an integer, got {value!r}") from None
+
+
+def _verified(
+    data: dict, family: Family, theta0: float, theta1: float, alpha0: float, alpha1: float, horizon: int,
+    theta_star: float | str | None, step: float | None,
+) -> KieferWeissDesign | None:
+    """The stored design, if it answers this question: the requested parameters and lattice, a plan that
+    reproduces the stored operating characteristic, and error rates within the targets.  The file's own
+    record of the question is not trusted; its plan is checked against the arguments of the call."""
+    try:
+        if data["at_theta0"]["theta"] != theta0 or data["at_theta1"]["theta"] != theta1:
+            return None
+        stored_star = float(data["theta_star"])
+        if theta_star is None:
+            theta_star = kiefer_weiss_point(family, theta0, theta1, math.log(1 / alpha0), math.log(1 / alpha1))
+        if isinstance(theta_star, str):  # least favourable: anywhere strictly between
+            if not min(theta0, theta1) < stored_star < max(theta0, theta1):
+                return None
+        elif stored_star != theta_star or data["at_theta_star"]["theta"] != theta_star:
+            return None
+        exact = lattice(family, stored_star, step).exact
+        lattice_step = None if exact else lattice(family, stored_star, step).step
+        if data["step"] != lattice_step or bool(data["exact"]) != exact:
+            return None
+        config = data["plan"]
+        plan = PlanTest(
+            config["continuation"], contract=family.contract(config["input"]),
+            reject_high=config["reject_high"], label=config["label"], input=config["input"],
+        )
+        if json.loads(json.dumps(plan.config())) != config or plan.horizon > horizon:
+            return None
+        step = lattice_step
+        ocs = [operating_characteristic(plan, family, theta, step=step) for theta in (theta0, theta1, stored_star)]
+        for oc, k in zip(ocs, ("at_theta0", "at_theta1", "at_theta_star"), strict=True):
+            stored = data[k]
+            for field in ("reject", "accept", "expected_n"):
+                if abs(getattr(oc, field) - stored[field]) > 1e-9 * max(1.0, abs(stored[field])):
+                    return None
+        if ocs[0].reject > alpha0 * (1 + 1e-12) or ocs[1].accept > alpha1 * (1 + 1e-12):
+            return None
+        return KieferWeissDesign(
+            plan, stored_star, float(data["lambda0"]), float(data["lambda1"]), ocs[0], ocs[1], ocs[2],
+            float(data["lagrangian"]), exact, family, step,
+        )
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return None
+
+
+def _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> KieferWeissDesign:
+    if isinstance(theta_star, str) and theta_star != "least-favourable":
         raise ValueError("theta_star must be a number, None or 'least-favourable'")
     family.check(theta0)
     family.check(theta1)
     if theta0 == theta1 or not (0 < alpha0 < 1 and 0 < alpha1 < 1) or horizon < 1:
         raise ValueError("need theta0 != theta1, error rates in (0, 1) and horizon >= 1")
+    _check_attainable(family, theta0, theta1, alpha0, alpha1, horizon)
+    if isinstance(theta_star, str):  # "least-favourable"
+        return _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step)
     if theta_star is None:
         theta_star = kiefer_weiss_point(family, theta0, theta1, math.log(1 / alpha0), math.log(1 / alpha1))
     if not min(theta0, theta1) < theta_star < max(theta0, theta1):
@@ -474,12 +731,74 @@ def kiefer_weiss_plan(
     error: ValueError | None = None
     retries = _HORIZON_RETRIES if isinstance(family, (Bernoulli, Poisson)) else 1  # only discrete data has gaps
     for h in range(horizon, max(0, horizon - retries), -1):
+        if h < horizon and not _attainable(family, theta0, theta1, alpha0, alpha1, h):
+            break  # nor at any smaller horizon
         try:
             return _calibrated(family, theta0, theta1, alpha0, alpha1, h, theta_star, step)
         except ValueError as e:
             error = error or e
     assert error is not None
     raise error
+
+
+def _neyman_pearson_error(family: Family, theta0: float, theta1: float, alpha0: float, n: int) -> float | None:
+    """P_theta1(accept H0) of the most powerful randomised level-alpha0 test with n observations.
+
+    Every plan stopping by n observations is a test based on n observations, so
+    no plan with smaller alpha1 exists (Neyman-Pearson lemma).  The plans of this
+    module see the data only through the lattice, a function of the observations,
+    so the bound holds for them too.  None where it is not computed (exponential
+    data).  The likelihood ratio is monotone in the sum for these families.
+    """
+    if isinstance(family, Gaussian):
+        from statistics import NormalDist
+
+        shift = math.sqrt(n) * abs(theta1 - theta0) / family.sigma
+        return 0.5 * math.erfc((shift + NormalDist().inv_cdf(alpha0)) / math.sqrt(2.0))  # z_alpha0 = -inv_cdf(alpha0)
+    if isinstance(family, Bernoulli):
+        support = range(n + 1)
+
+        def log_pmf(k: int, theta: float) -> float:
+            binomial = math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+            return binomial + k * math.log(theta) + (n - k) * math.log1p(-theta)
+    elif isinstance(family, Poisson):
+        lo_mean, hi_mean = n * min(theta0, theta1), n * max(theta0, theta1)
+        lo = max(0, math.floor(lo_mean - 40.0 * math.sqrt(lo_mean) - 40.0))
+        support = range(lo, math.ceil(hi_mean + 40.0 * math.sqrt(hi_mean) + 40.0) + 1)
+
+        def log_pmf(k: int, theta: float) -> float:
+            return k * math.log(n * theta) - n * theta - math.lgamma(k + 1)
+    else:
+        return None
+    # reject H0 first where the likelihood ratio of theta1 to theta0 is largest
+    order = reversed(support) if theta1 > theta0 else iter(support)
+    size = 0.0
+    for k in order:
+        p0, p1 = math.exp(log_pmf(k, theta0)), math.exp(log_pmf(k, theta1))
+        if size + p0 <= alpha0:
+            size += p0
+            continue
+        # randomise on the boundary; the error is summed over the acceptance region itself,
+        # not as 1 - power, which would leave rounding of order 1e-16 in place of a tiny error
+        beta = (1.0 - (alpha0 - size) / p0) * p1
+        return beta + math.fsum(math.exp(log_pmf(j, theta1)) for j in order)
+    return 0.0
+
+
+def _attainable(family, theta0, theta1, alpha0, alpha1, n) -> bool:
+    beta = _neyman_pearson_error(family, theta0, theta1, alpha0, n)
+    return beta is None or beta <= alpha1 * (1.0 + 1e-9) + 1e-15
+
+
+def _check_attainable(family, theta0, theta1, alpha0, alpha1, horizon) -> None:
+    """Fail at once, rather than after a long search, when no plan can exist."""
+    if not _attainable(family, theta0, theta1, alpha0, alpha1, horizon):
+        beta = _neyman_pearson_error(family, theta0, theta1, alpha0, horizon)
+        raise ValueError(
+            f"no plan with at most {horizon} observations meets the error rates; increase the horizon.  "
+            f"Even the most powerful test with {horizon} observations at level {alpha0:g} accepts H0 "
+            f"at theta1 with probability {beta:.4g} > {alpha1:g} (Neyman-Pearson)."
+        )
 
 
 def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, step) -> KieferWeissDesign:
@@ -544,6 +863,10 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
     # the lattice for normal data), so an exact root need not exist, and the set of
     # multipliers meeting both targets can be a narrow band.  Fall back, in order, on
     # a coordinate search, a joint raise and a coarse grid; the slack is spent below.
+    if not feasible(u) and _QUICK_RAISE and best < 1e-3:
+        # Broyden ended next to the root on the wrong side of a target: a small joint raise
+        # is enough, and the slack is spent below exactly as after the other fallbacks
+        u = _joint_raise(u, feasible, limit=1e-2) or u
     if not feasible(u):
         u = _coordinate_search(u, residual, feasible) or _joint_raise(u, feasible) or _grid_search(feasible)
     if u is None:
@@ -590,8 +913,15 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
     def oc(theta: float) -> OperatingCharacteristic:
         return operating_characteristic(plan, family, theta, step=None if problem.lat.exact else problem.lat.step)
 
+    at0, at1 = oc(theta0), oc(theta1)
+    # the forward pass is the definition of the plan's error rates: never return a plan that misses them
+    if at0.reject > alpha0 * (1.0 + 1e-9) or at1.accept > alpha1 * (1.0 + 1e-9):
+        raise ValueError(
+            f"the plan for at most {horizon} observations misses the error rates on the lattice "
+            f"({at0.reject:.4g} and {at1.accept:.4g}); give a finer lattice step"
+        )
     return KieferWeissDesign(
-        plan, theta_star, math.exp(u0), math.exp(u1), oc(theta0), oc(theta1), oc(theta_star), p.value,
+        plan, theta_star, math.exp(u0), math.exp(u1), at0, at1, oc(theta_star), p.value,
         problem.lat.exact, family, None if problem.lat.exact else problem.lat.step,
     )
 
@@ -639,12 +969,12 @@ def _coordinate_search(u, residual, feasible, rounds: int = 30):
     return None
 
 
-def _joint_raise(u, feasible):
-    """The smallest equal raise of both multipliers that meets both targets."""
+def _joint_raise(u, feasible, limit: float = 200.0):
+    """The smallest equal raise of both multipliers (at most `limit`) that meets both targets."""
     lo, hi = 0.0, 1e-4
     while not feasible((u[0] + hi, u[1] + hi)):
         lo, hi = hi, 2 * hi
-        if hi > 200:
+        if hi > limit:
             return None
     while hi - lo > 1e-9:
         mid = 0.5 * (lo + hi)
@@ -664,28 +994,155 @@ def _grid_search(feasible):
     return None
 
 
+_TABLE: dict | bool | None = False  # not loaded yet
+
+
+def _least_favourable_table() -> dict | None:
+    """The precomputed table of least favourable theta* for normal data (tools/least_favourable_table.py)."""
+    global _TABLE
+    if _TABLE is False:
+        try:
+            from importlib.resources import files
+
+            _TABLE = json.loads(files("sequential_analysis").joinpath("data/least_favourable_normal.json").read_text())
+        except (OSError, ValueError, ModuleNotFoundError):
+            _TABLE = None
+    return _TABLE if isinstance(_TABLE, dict) else None
+
+
+def _legendre(n: int, x: float) -> float:
+    p0, p1 = 1.0, x
+    if n == 0:
+        return 1.0
+    for k in range(2, n + 1):
+        p0, p1 = p1, ((2 * k - 1) * x * p1 - (k - 1) * p0) / k
+    return p1
+
+
+def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> float | None:
+    """lambda = (theta* - theta0) / (theta1 - theta0) of the least favourable theta* for normal data, from the table.
+
+    `rho` = delta sqrt(H) / (z_alpha0 + z_alpha1), delta = |theta1 - theta0| / sigma: how much longer the
+    horizon is than the shortest fixed-sample test.  The value is the root of Lorden's characterisation
+    (largest expected sample size at theta* itself), fitted to computed roots within about 3e-4 for
+    alpha0, alpha1 in [0.005, 0.2] and rho in [1.5, 2.5]; it hardly depends on rho there, so larger rho
+    use the value at 2.5.  Below 1.5, where the horizon nearly binds, the value at 1.5 is returned and
+    may be off by 0.015.  None for error rates outside the table.  The search for the least favourable
+    theta* uses it only to bracket its bisection.
+    """
+    table = _least_favourable_table()
+    if table is None:
+        return None
+    (la, lb), (ra, rb) = table["log_alpha"], table["rho"]
+    u = [
+        (2.0 * (math.log(alpha0) - la) / (lb - la)) - 1.0,
+        (2.0 * (math.log(alpha1) - la) / (lb - la)) - 1.0,
+        (2.0 * (min(max(rho, ra), rb) - ra) / (rb - ra)) - 1.0,
+    ]
+    if any(not -1.0 - 1e-9 <= x <= 1.0 + 1e-9 for x in u[:2]):
+        return None
+    total = 0.0
+    for (i, j, k), c in zip(table["terms"], table["coefficients"], strict=True):
+        # antisymmetric in (alpha0, alpha1): exchanging the hypotheses maps lambda to 1 - lambda
+        total += c * (_legendre(i, u[0]) * _legendre(j, u[1]) - _legendre(j, u[0]) * _legendre(i, u[1])) * _legendre(
+            k, u[2]
+        )
+    a0, a1 = math.log(1.0 / alpha0), math.log(1.0 / alpha1)
+    return math.sqrt(a0) / (math.sqrt(a0) + math.sqrt(a1)) + total
+
+
+def _least_favourable_hint(family, theta0, theta1, alpha0, alpha1, horizon) -> tuple[float, float] | None:
+    """(theta*, half-width of a bracket) from the table, for normal data within its range; else None."""
+    if not isinstance(family, Gaussian):
+        return None
+    table = _least_favourable_table()
+    if table is None:
+        return None
+    from statistics import NormalDist
+
+    z = NormalDist().inv_cdf(1.0 - alpha0) + NormalDist().inv_cdf(1.0 - alpha1)
+    rho = abs(theta1 - theta0) / family.sigma * math.sqrt(horizon) / z
+    lam = tabulated_least_favourable(alpha0, alpha1, rho)
+    if lam is None:
+        return None
+    width = table["bracket"] if rho >= table["rho"][0] else table["bracket_below"]
+    return theta0 + lam * (theta1 - theta0), width * abs(theta1 - theta0)
+
+
 def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> KieferWeissDesign:
+    """The Kiefer-Weiss test: the modified test whose expected sample size is largest at theta* itself.
+
+    g(theta*) = argmax_theta E_theta[N] - theta* is decreasing; its root is the solution (Lorden 1980).
+
+    Data on a lattice (normal, exponential): the root of g, by the Illinois method.  g is smooth there,
+    while the maximum of E[N] is so flat in theta* that comparing it between candidates would be decided
+    by the rounding of the calibrated error rates; the root is well determined and reproducible.
+
+    Discrete data (Bernoulli, Poisson): the attainable error rates move in steps, g jumps and need not
+    have a root, so the candidates met by a bisection on g, the first-order point included, are
+    compared by their maximum expected sample size, and the smallest is returned.
+    """
     lo, hi = min(theta0, theta1), max(theta0, theta1)
     margin = 0.02 * (hi - lo)
+    discrete = isinstance(family, (Bernoulli, Poisson))
     candidates: list[tuple[float, KieferWeissDesign]] = []
+    found: dict[float, tuple[float, KieferWeissDesign]] = {}
 
     def design(ts: float | None) -> float | None:
-        """argmax E[N] - theta* for this candidate (None if it cannot be designed); keeps the candidate."""
+        """g at this theta* (None if it cannot be designed); keeps the candidate."""
         try:
-            d = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, theta_star=ts, step=step)
+            d = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, ts, step)
         except ValueError:
             return None
-        value, where = d.maximum_expected_n(grid=12)
+        value, where = d.maximum_expected_n(grid=12 if discrete else 24)
         candidates.append((value, d))
+        found[d.theta_star] = (where - d.theta_star, d)
         return where - d.theta_star
 
-    design(None)  # the first-order theta*: the search never returns anything worse
-    if not candidates:
-        raise ValueError(f"no plan with at most {horizon} observations meets the error rates; increase the horizon")
+    if discrete:
+        # the first-order theta*: the search never returns anything worse; its errors propagate
+        first = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, None, step)
+        value, _ = first.maximum_expected_n(grid=12)
+        candidates.append((value, first))
     a, b = lo + margin, hi - margin
-    ga, gb = design(a), design(b)
-    if ga is not None and gb is not None and ga > 0 > gb:
-        # Lorden: the solution has its largest expected sample size at theta* itself
+    ga = gb = None
+    hint = _least_favourable_hint(family, theta0, theta1, alpha0, alpha1, horizon)
+    if hint is not None:
+        # a bracket around the tabulated root; the full interval if it does not contain a sign change
+        centre, width = hint
+        ha, hb = max(a, centre - width), min(b, centre + width)
+        if ha < hb:
+            ga, gb = design(ha), design(hb)
+            if ga is not None and gb is not None and ga > 0 > gb:
+                a, b = ha, hb
+            else:
+                ga = gb = None
+    if ga is None or gb is None:
+        ga, gb = design(a), design(b)
+    bracketed = ga is not None and gb is not None and ga > 0 > gb
+    if bracketed and not discrete:
+        assert ga is not None and gb is not None
+        a_, b_, fa, fb, side = a, b, ga, gb, 0
+        while b_ - a_ > 2e-4 * (hi - lo):
+            c = b_ - fb * (b_ - a_) / (fb - fa)
+            fc = design(c)
+            if fc is None:
+                break
+            if abs(fc) < 1e-6 * (hi - lo):
+                break
+            if fc > 0:  # the root lies above c
+                a_, fa = c, fc
+                if side == 1:
+                    fb /= 2.0  # Illinois: halve the end that keeps staying
+                side = 1
+            else:
+                b_, fb = c, fc
+                if side == -1:
+                    fa /= 2.0
+                side = -1
+        # the designed candidate nearest the root
+        return min(found.values(), key=lambda item: abs(item[0]))[1]
+    if bracketed:
         while b - a > 2e-3 * (hi - lo):
             mid = 0.5 * (a + b)
             g = design(mid)
@@ -695,5 +1152,8 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
                 a = mid
             else:
                 b = mid
-    # the steps of discrete error rates can break the characterisation; the objective decides
+    if not discrete:  # g has no sign change: the first-order point joins the comparison (its errors propagate)
+        first = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, None, step)
+        candidates.append((first.maximum_expected_n(grid=24)[0], first))
+    # discrete data, or no sign change of g: the objective decides
     return min(candidates, key=lambda c: c[0])[1]

@@ -15,8 +15,8 @@ the distribution of the Y_i, so by Ville's inequality
 P(sup_n K_n >= 1/alpha) <= alpha.  Rejecting when the wealth reaches
 1/alpha is a level-alpha test that may be monitored after every
 observation and stopped at any time; 1 / max_k K_k is an always-valid
-p-value.  The only assumption is boundedness (for the mean test) or a
-median (for the sign test); no distribution family is involved.
+p-value.  The only assumption is boundedness (for the mean test) or
+P(X > m) = P(X < m) (for the sign test); no distribution family is involved.
 
 Bets follow the aGRAPA rule: lambda = (mu - m) / (s2 + (mu - m)^2) from
 predictable estimates mu, s2 of the mean and variance, truncated to
@@ -174,9 +174,15 @@ class SequentialSignTest(_Betting):
     """Anytime-valid sign test of the median: H0 says P(X > median0) = P(X < median0).
 
     Only the signs of X - median0 are used, so the test is valid for every
-    distribution with that median, with no moment assumptions at all
-    (Cauchy data are fine).  Observations equal to median0 carry no sign;
-    they are counted as ties and skipped.  For paired data, test the
+    distribution with P(X > median0) = P(X < median0), with no moment
+    assumptions at all (Cauchy data are fine).  Observations equal to
+    median0 carry no sign; they are counted as ties and skipped.
+
+    Without an atom at median0 that hypothesis says median0 is the median.
+    With one -- discrete data, paired differences that are often zero -- a
+    distribution can have median median0 and still more mass above it than
+    below (0 with probability 0.5, 1 with 0.3, -1 with 0.2), and the test
+    then rightly rejects H0, which is about the signs, not the median.  For paired data, test the
     differences against 0: pair the inputs with PositionalPair and map
     them with `difference`.
 

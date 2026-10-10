@@ -1,4 +1,4 @@
-# seqinfer
+# sequential-analysis
 
 Sequential statistical inference, separated from the experimental runtime.
 
@@ -9,7 +9,7 @@ filter, an optimal test from a design code — is a transition function
 
     (S_t, O_t, R_t) = F(S_{t-1}, X_t, R_{t-1})
 
-and nothing else. seqinfer keeps everything around it in separate,
+and nothing else. sequential-analysis keeps everything around it in separate,
 replaceable layers: where the observations come from (adapters), how inputs
 are related (topology: pairing, key joins, time alignment), how they are
 ordered and deduplicated (delivery), how they are acquired (a synchronous
@@ -19,21 +19,25 @@ unchanged on a file, a live instrument or a simulator, and a resumed run
 is bit-for-bit identical to an uninterrupted one.
 
 The library is the reference implementation of the architecture described
-in [`paper/main.tex`](paper/main.tex) ([PDF](paper/main.pdf)). It has no dependencies beyond the
+in [`paper/main.tex`](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.tex) ([PDF](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.pdf)). It has no dependencies beyond the
 Python standard library (3.10+).
 
 ## Installation
 
 ```
-pip install .
+pip install sequential-analysis          # from PyPI, once released
+pip install .                            # from a checkout
+pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
 ```
+
+The package is imported as `sequential_analysis`.
 
 ## A first run
 
 ```python
-from seqinfer import Run, run_sync
-from seqinfer.procedures import Gaussian, TwoSPRT
-from seqinfer.sources import gaussian
+from sequential_analysis import Run, run_sync
+from sequential_analysis.procedures import Gaussian, TwoSPRT
+from sequential_analysis.sources import gaussian
 
 test = TwoSPRT(Gaussian(sigma=1.0), theta0=0.0, theta1=0.5, alpha0=0.05, alpha1=0.05)
 run = Run(test)
@@ -55,14 +59,14 @@ nonparametric monitoring, and a group sequential trial.
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
 | Group sequential trials | `GroupSequentialTest` (planned analyses; efficacy and non-binding futility boundaries; known or estimated variance) |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
-| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (median, no moment assumptions; paired data via topology) |
+| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (P(X > m) = P(X < m), the median for data without an atom at m; no moment assumptions; paired data via topology) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
 | Filtering and estimation | `LocalLevelKalman` (with control input), `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 `Bernoulli`, `Poisson`, `Exponential`.
 
-**Design** (`seqinfer.design`), computed offline before the experiment:
+**Design** (`sequential_analysis.design`), computed offline before the experiment:
 
 - `operating_characteristic(plan, family, theta)` — error probabilities,
   stopping-time distribution and expected sample size of a plan, without
@@ -74,16 +78,54 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   Bernoulli, Poisson, normal and exponential data. With
   `theta_star="least-favourable"` it solves the Kiefer–Weiss problem
   itself: θ* is placed where the maximum expected sample size is attained
-  (Lorden's characterisation). For response
+  (Lorden's characterisation) — the root of that condition for normal and
+  exponential data, the best candidate of a bisection for discrete data,
+  where the condition holds only approximately. For response
   rates 30% against 50% at error rates 0.05 it lowers the maximum expected
-  sample size from 52.9 (Wald's SPRT calibrated to the same errors) to
+  sample size from 50.8 (Wald's SPRT calibrated to the same errors) to
   45.2, and to 45.0 with the least favourable θ*. For a normal mean 0
-  against 0.5 it needs 31.0 observations on average at θ*, against 31.3
-  for Lorden's 2-SPRT with thresholds calibrated to the same errors: the
-  2-SPRT is already close to optimal there. Seconds for discrete data,
-  under ten seconds for normal data.
+  against 0.5 (horizon 120) it needs 31.0 observations on average at θ*,
+  against 31.3 for Lorden's 2-SPRT with thresholds calibrated to the same
+  errors: the 2-SPRT is already close to optimal there. A design takes
+  about a second for the Bernoulli example and from seconds to a minute
+  for normal data on the default lattice; the least favourable θ* designs
+  ten to twenty candidates and takes as many times longer. With `numpy`
+  installed (optional: `pip install "sequential-analysis[fast]"`) the backward pass on
+  wide lattices — normal, exponential, Poisson with larger rates — runs as
+  array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
+  observations can meet (the Neyman–Pearson bound) are reported at once.
 
-**Group sequential designs** (`seqinfer.group_sequential`):
+**Least favourable θ\* for normal data** is precomputed:
+`tabulated_least_favourable(alpha0, alpha1, rho)` gives the root of Lorden's
+characterisation for α₀, α₁ ∈ [0.005, 0.2] to about 3·10⁻⁴ of θ₁ − θ₀
+(`rho` is how much longer the horizon is than the shortest fixed-sample
+test; the root hardly depends on it above 1.5). `theta_star="least-favourable"`
+starts its search from it, which makes it two to four times faster; the
+search still verifies the characterisation. The table is computed by
+`tools/least_favourable_table.py` on Gauss–Lobatto–Legendre nodes
+(D-optimal for polynomial regression) and checked on Halton points not
+used in the fit.
+
+**Design cache** (`sequential_analysis.cache`): every plan `kiefer_weiss_plan`
+computes is stored on disk and returned from there when the same question
+is asked again — the key is every argument, the family, the library version
+and the version of the design algorithm. A stored plan is not trusted
+blindly: its operating characteristic is recomputed and must reproduce the
+stored one and meet the requested error rates, otherwise it is computed
+again. Every save, load and ignored file is reported on the logger
+`sequential_analysis.cache` (visible by default):
+
+```
+design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/sequential-analysis/kiefer_weiss-4785….json
+design cache: loaded kiefer_weiss_plan(...) from ~/.cache/sequential-analysis/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
+```
+
+The directory is `cache=` if given, else `$SEQUENTIAL_ANALYSIS_CACHE`, else
+`$XDG_CACHE_HOME/sequential-analysis` or `~/.cache/sequential-analysis`; `cache=False` or
+`SEQUENTIAL_ANALYSIS_CACHE=off` turns it off, `clear_design_cache()` empties it. A
+cache that cannot be written is reported and never fails the design.
+
+**Group sequential designs** (`sequential_analysis.group_sequential`):
 `group_sequential_design(alpha, fractions, spending)` computes efficacy
 boundaries for planned analyses from an alpha-spending function
 (O'Brien–Fleming and Pocock types, power family, or your own), one- or
@@ -93,7 +135,7 @@ and the maximum sample size for a target power. With
 spending. The O'Brien–Fleming boundaries for five looks reproduce the
 published 4.877, 3.357, 2.680, 2.290, 2.031.
 
-**Inputs**: `seqinfer.sources` binds values, files (`from_csv`, with
+**Inputs**: `sequential_analysis.sources` binds values, files (`from_csv`, with
 explicit conversion), simulators and replayed logs to logical inputs.
 Transformations between topology and procedure, or between the stages of
 a `Chain`, are `Transform` objects (`Difference`, `Field`, or your own)
@@ -113,16 +155,21 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
   damaged or foreign checkpoint is refused with a message naming the
   problem.
 - **Invalid input never stops the run by default.** It is skipped,
-  counted and reported as a warning on the `seqinfer` logger with a
+  counted and reported as a warning on the `sequential_analysis` logger with a
   structured `incident` record. `on_invalid="raise"` or an exception class
   makes it fatal; `max_invalid_streak=N` stops the run after N invalid
   inputs in a row, when the source rather than a message is broken. Contracts are strict: `numpy` scalars, booleans and
-  strings are refused with a message saying how to convert them.
+  strings are refused with a message saying how to convert them. Observations must be exactly recordable in JSON
+  (finite numbers, integers within 2^53, UTF-8 strings, string source names, int sequence numbers); others are
+  invalid input, so logs and checkpoints always replay. One that delivery cannot even order (a source that is not a
+  string, a sequence number that is not an int) is rejected before delivery and is not logged.
+- **Numerical failures are loud.** A transition that overflows or produces a non-finite state or output raises
+  `NumericalError` and commits nothing; variance-based tests also raise it when rescaled data make the variance underflow.
 - **Portable digests.** History digests and checkpoint identifiers use
   RFC 8785 canonical JSON. `conformance/` holds language-independent test
   vectors; `node conformance/check.mjs` reproduces them in JavaScript.
 
-What seqinfer does **not** do: it does not keep observations beyond the
+What sequential-analysis does **not** do: it does not keep observations beyond the
 last checkpoint. After a restore they must come again from the sources; a
 source that cannot replay them has to be buffered by the application.
 
@@ -136,14 +183,20 @@ node conformance/check.mjs
 cd paper && latexmk -pdf main.tex   # the paper; needs TeX Live with biber
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/andre-a-no/sequential-analysis/blob/main/CONTRIBUTING.md).
 
 ## License
 
-seqinfer is dual-licensed. It is free software under the
-[GNU AGPL v3](LICENSE). Use in proprietary software or in services whose
-source is not published requires a commercial license from
-Novikov Laboratories LLC — see [COMMERCIAL.md](COMMERCIAL.md).
+sequential-analysis is dual-licensed:
+
+- **Free** under the [GNU AGPL v3](https://github.com/andre-a-no/sequential-analysis/blob/main/LICENSE) — for research, teaching
+  and development, for open-source projects under the AGPL (or GPL v3), and
+  for products and services whose complete source code is published under
+  the AGPL.
+- **Commercial license** — for closed-source products and for network
+  services whose source code is not published. Contact Novikov Laboratories
+  LLC; who needs which license is set out in
+  [COMMERCIAL.md](https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md).
 
 Authors: Alexander Stepanov, Andrej Novikov.
 Copyright © 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation).

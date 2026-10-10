@@ -22,8 +22,8 @@ quick look (with correspondingly wider Monte Carlo error).
 """
 import sys
 
-from seqinfer import SplitMix64
-from seqinfer.procedures import REJECT_H0, SPRT, Gaussian, TwoSPRT
+from sequential_analysis import SplitMix64
+from sequential_analysis.procedures import REJECT_H0, SPRT, Gaussian, TwoSPRT
 
 REPS = int(sys.argv[1]) if len(sys.argv) > 1 else 20_000
 SEED = 20261003
