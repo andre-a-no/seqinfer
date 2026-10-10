@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sequential-analysis"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Sequential statistical procedures (SPRT, Kiefer-Weiss, anytime-valid and group sequential tests, change-point detection) separated from a reproducible experimental runtime"
 readme = "README.md"
 license = "AGPL-3.0-only OR LicenseRef-Commercial"  # see COMMERCIAL.md
@@ -48,6 +48,9 @@ Paper = "https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.
 
 [project.optional-dependencies]
 fast = ["numpy>=1.22"]  # the backward pass of sequential_analysis.design as array operations
+
+[tool.setuptools.dynamic]
+version = { attr = "sequential_analysis.version.__version__" }  # the one place the version is written
 
 [tool.setuptools.packages.find]
 where = ["src"]
