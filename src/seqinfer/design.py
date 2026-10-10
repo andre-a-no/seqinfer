@@ -41,14 +41,20 @@ kiefer_weiss_plan
 """
 from __future__ import annotations
 
+import json
 import math
+import time
 from dataclasses import dataclass
 from operator import mul
+from typing import Any
 
+from .cache import design_cache_dir, entry_path, read_entry, report, write_entry
+from .canonical import canonical_json
 from .procedures.families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .procedures.plan import PlanTest
 from .procedures.sprt import ACCEPT_H0, REJECT_H0
 from .procedures.two_sprt import kiefer_weiss_point
+from .version import __version__
 
 _TAIL = 1e-17
 _NORMAL_WIDTH = 8.0  # the normal lattice covers theta +/- 8 sigma
@@ -434,6 +440,7 @@ def kiefer_weiss_plan(
     family: Family | None = None,
     theta_star: float | str | None = None,
     step: float | None = None,
+    cache: Any = None,
 ) -> KieferWeissDesign:
     """Optimal plan with at most `horizon` observations; see the module docstring.
 
@@ -454,8 +461,108 @@ def kiefer_weiss_plan(
     in steps, so the best candidate need not satisfy the characterisation
     exactly, and the gain over the first-order theta* is often a fraction
     of a percent.
+
+    Every plan computed is stored in the design cache and returned from it
+    when the same question is asked again, after its error rates have been
+    verified; `cache` selects the directory, or False turns the cache off
+    (see `seqinfer.cache`).  Saving and loading are reported on the logger
+    "seqinfer.cache".
     """
     family = family if family is not None else Bernoulli()
+    directory = design_cache_dir(cache)
+    key = _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) if directory else None
+    if directory is None or key is None:
+        return _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step)
+    path = entry_path(directory, "kiefer_weiss", key)
+    entry = read_entry(path, key)
+    if entry is not None:
+        design = _verified(entry["design"], family, alpha0, alpha1, horizon)
+        if design is not None:
+            report(
+                "loaded",
+                f"design cache: loaded {_describe(key)} from {path} (computed in {entry.get('seconds', 0):.1f} s); "
+                f"error rates verified",
+                path, key,
+            )
+            return design
+        report("ignored", f"design cache: ignored {path} (its plan does not reproduce); computing again", path, key)
+    started = time.perf_counter()
+    design = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step)
+    seconds = time.perf_counter() - started
+    if write_entry(path, key, _design_json(design), seconds, time.time()):
+        report("saved", f"design cache: computed {_describe(key)} in {seconds:.1f} s and saved it to {path}", path, key)
+    return design
+
+
+_ALGORITHM = "1"  # bump when a change of the design algorithm changes its results
+
+
+def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> dict | None:
+    """The question, as canonical JSON can hold it; None (no caching) for arguments it cannot."""
+    key = {
+        "function": "kiefer_weiss_plan",
+        "seqinfer": __version__,
+        "algorithm": _ALGORITHM,
+        "theta0": theta0, "theta1": theta1, "alpha0": alpha0, "alpha1": alpha1, "horizon": horizon,
+        "family": family.spec(), "theta_star": theta_star, "step": step,
+    }
+    try:
+        canonical_json(key)
+    except (TypeError, ValueError):
+        return None
+    normalized: dict = json.loads(json.dumps(key))
+    return normalized
+
+
+def _describe(key: dict) -> str:
+    return (
+        f"kiefer_weiss_plan({key['theta0']}, {key['theta1']}, {key['alpha0']}, {key['alpha1']}, "
+        f"horizon={key['horizon']}, family={key['family']['family']}, theta_star={key['theta_star']!r})"
+    )
+
+
+def _oc_json(oc: OperatingCharacteristic) -> dict:
+    return {"theta": oc.theta, "reject": oc.reject, "accept": oc.accept, "expected_n": oc.expected_n}
+
+
+def _design_json(d: KieferWeissDesign) -> dict:
+    return {
+        "plan": d.plan.config(),
+        "theta_star": d.theta_star, "lambda0": d.lambda0, "lambda1": d.lambda1, "lagrangian": d.lagrangian,
+        "at_theta0": _oc_json(d.at_theta0), "at_theta1": _oc_json(d.at_theta1),
+        "at_theta_star": _oc_json(d.at_theta_star), "exact": d.exact, "step": d.step,
+    }
+
+
+def _verified(data: dict, family: Family, alpha0: float, alpha1: float, horizon: int) -> KieferWeissDesign | None:
+    """The stored design, if its plan reproduces the stored operating characteristic and meets the targets."""
+    try:
+        config = data["plan"]
+        plan = PlanTest(
+            config["continuation"], contract=family.contract(config["input"]),
+            reject_high=config["reject_high"], label=config["label"], input=config["input"],
+        )
+        if json.loads(json.dumps(plan.config())) != config or plan.horizon > horizon:
+            return None
+        step = data["step"]
+        ocs = [operating_characteristic(plan, family, data[k]["theta"], step=step)
+               for k in ("at_theta0", "at_theta1", "at_theta_star")]
+        for oc, k in zip(ocs, ("at_theta0", "at_theta1", "at_theta_star"), strict=True):
+            stored = data[k]
+            for field in ("reject", "accept", "expected_n"):
+                if abs(getattr(oc, field) - stored[field]) > 1e-9 * max(1.0, abs(stored[field])):
+                    return None
+        if ocs[0].reject > alpha0 * (1 + 1e-12) or ocs[1].accept > alpha1 * (1 + 1e-12):
+            return None
+        return KieferWeissDesign(
+            plan, float(data["theta_star"]), float(data["lambda0"]), float(data["lambda1"]), ocs[0], ocs[1], ocs[2],
+            float(data["lagrangian"]), bool(data["exact"]), family, step,
+        )
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return None
+
+
+def _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> KieferWeissDesign:
     if isinstance(theta_star, str) and theta_star != "least-favourable":
         raise ValueError("theta_star must be a number, None or 'least-favourable'")
     family.check(theta0)
@@ -735,7 +842,7 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
     def design(ts: float | None) -> float | None:
         """argmax E[N] - theta* for this candidate (None if it cannot be designed); keeps the candidate."""
         try:
-            d = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, theta_star=ts, step=step)
+            d = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, ts, step)
         except ValueError:
             return None
         value, where = d.maximum_expected_n(grid=12)
@@ -743,7 +850,7 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
         return where - d.theta_star
 
     # the first-order theta*: the search never returns anything worse; its errors propagate
-    first = kiefer_weiss_plan(theta0, theta1, alpha0, alpha1, horizon, family=family, step=step)
+    first = _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, None, step)
     value, _ = first.maximum_expected_n(grid=12)
     candidates.append((value, first))
     a, b = lo + margin, hi - margin

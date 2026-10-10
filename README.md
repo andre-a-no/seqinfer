@@ -87,6 +87,25 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   candidates and takes as many times longer. Targets that no test with `horizon`
   observations can meet (the Neyman–Pearson bound) are reported at once.
 
+**Design cache** (`seqinfer.cache`): every plan `kiefer_weiss_plan`
+computes is stored on disk and returned from there when the same question
+is asked again — the key is every argument, the family, the library version
+and the version of the design algorithm. A stored plan is not trusted
+blindly: its operating characteristic is recomputed and must reproduce the
+stored one and meet the requested error rates, otherwise it is computed
+again. Every save, load and ignored file is reported on the logger
+`seqinfer.cache` (visible by default):
+
+```
+design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/seqinfer/kiefer_weiss-4785….json
+design cache: loaded kiefer_weiss_plan(...) from ~/.cache/seqinfer/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
+```
+
+The directory is `cache=` if given, else `$SEQINFER_CACHE`, else
+`$XDG_CACHE_HOME/seqinfer` or `~/.cache/seqinfer`; `cache=False` or
+`SEQINFER_CACHE=off` turns it off, `clear_design_cache()` empties it. A
+cache that cannot be written is reported and never fails the design.
+
 **Group sequential designs** (`seqinfer.group_sequential`):
 `group_sequential_design(alpha, fractions, spending)` computes efficacy
 boundaries for planned analyses from an alpha-spending function
