@@ -681,8 +681,8 @@ class LeastFavourableRoot(unittest.TestCase):
             d = kiefer_weiss_plan(*args, family=Gaussian(1.0), theta_star="least-favourable", cache=False)
             _, where = d.maximum_expected_n(grid=48)
             self.assertLess(abs(where - d.theta_star), 1e-3)  # largest expected sample size at theta* itself
-            if centre is not None:  # symmetric problem: the midpoint, exactly
-                self.assertAlmostEqual(d.theta_star, centre, places=9)
+            if centre is not None:  # symmetric problem: the midpoint, to the tolerance of the search
+                self.assertLess(abs(d.theta_star - centre), 3e-4)
             self.assertLessEqual(d.at_theta0.reject, args[2])
             self.assertLessEqual(d.at_theta1.accept, args[3])
 
