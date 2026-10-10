@@ -18,6 +18,29 @@ that workflow in this repository ("trusted publishing").
    add yourself as a required reviewer, so that every upload waits for a
    click.
 
+## Rehearsal before a release
+
+A version cannot be uploaded to PyPI twice, so rehearse first:
+
+- **Dry run** — *Actions → release → Run workflow*, `publish_to: none`. Builds
+  the wheel and the source distribution, installs the wheel into clean
+  environments on Python 3.10–3.13, with and without numpy, and runs the test
+  suite and `tools/smoke_test.py` (what a new user does first: the README run,
+  a checkpoint, the precomputed table, a design through the cache). Nothing
+  is published; no setup needed.
+- **TestPyPI** — the same with `publish_to: testpypi`: the package is also
+  uploaded to https://test.pypi.org, installed from there with `pip` and
+  smoke-tested. One-time setup, as for PyPI below but on test.pypi.org (a
+  separate account) with the environment name `testpypi`, plus a GitHub
+  environment `testpypi`.
+
+The smoke test can be run by hand against any installation:
+
+    python tools/smoke_test.py 0.1.0
+
+After the real upload the workflow installs the package from PyPI and runs the
+smoke test again.
+
 ## Each release
 
 1. Update `__version__` in `src/sequential_analysis/version.py` (the only
@@ -38,5 +61,8 @@ version.
 
 Один раз: завести аккаунт на pypi.org (лучше на компанию, с двухфакторной
 аутентификацией), добавить там «pending publisher» с параметрами выше и
-создать на GitHub окружение `pypi`. Каждый выпуск: поднять версию, влить в
-`main`, поставить тег `vX.Y.Z` и отправить его — публикация пройдёт сама.
+создать на GitHub окружение `pypi`. Перед выпуском — репетиция: Actions →
+release → Run workflow, `none` (только сборка и тесты установленного пакета)
+или `testpypi` (ещё и загрузка на test.pypi.org с установкой оттуда). Каждый
+выпуск: поднять версию, влить в `main`, поставить тег `vX.Y.Z` — публикация и
+проверка установки с PyPI пройдут сами.
