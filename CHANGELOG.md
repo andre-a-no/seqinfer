@@ -6,7 +6,7 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-10-10
 
 First public release, dual-licensed: GNU AGPL v3, or a commercial license
 from Novikov Laboratories LLC for closed-source products and services (see
