@@ -567,7 +567,7 @@ def kiefer_weiss_plan(
     return design
 
 
-_ALGORITHM = "2"  # bump when a change of the design algorithm may change its results
+_ALGORITHM = "3"  # bump when a change of the design algorithm may change its results
 
 
 def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> dict | None:
@@ -940,8 +940,12 @@ def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> floa
     """lambda = (theta* - theta0) / (theta1 - theta0) of the least favourable theta* for normal data, from the table.
 
     `rho` = delta sqrt(H) / (z_alpha0 + z_alpha1), delta = |theta1 - theta0| / sigma: how much longer the
-    horizon is than the shortest fixed-sample test.  None outside the table's range.  The value is a
-    starting point for the search, which then verifies Lorden's characterisation.
+    horizon is than the shortest fixed-sample test.  The value is the root of Lorden's characterisation
+    (largest expected sample size at theta* itself), fitted to computed roots within about 3e-4 for
+    alpha0, alpha1 in [0.005, 0.2] and rho in [1.5, 2.5]; it hardly depends on rho there, so larger rho
+    use the value at 2.5.  Below 1.5, where the horizon nearly binds, the value at 1.5 is returned and
+    may be off by 0.015.  None for error rates outside the table.  The search for the least favourable
+    theta* uses it only to bracket its bisection.
     """
     table = _least_favourable_table()
     if table is None:
@@ -950,9 +954,9 @@ def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> floa
     u = [
         (2.0 * (math.log(alpha0) - la) / (lb - la)) - 1.0,
         (2.0 * (math.log(alpha1) - la) / (lb - la)) - 1.0,
-        (2.0 * (rho - ra) / (rb - ra)) - 1.0,
+        (2.0 * (min(max(rho, ra), rb) - ra) / (rb - ra)) - 1.0,
     ]
-    if any(not -1.0 - 1e-9 <= x <= 1.0 + 1e-9 for x in u):
+    if any(not -1.0 - 1e-9 <= x <= 1.0 + 1e-9 for x in u[:2]):
         return None
     total = 0.0
     for (i, j, k), c in zip(table["terms"], table["coefficients"], strict=True):
@@ -978,7 +982,8 @@ def _least_favourable_hint(family, theta0, theta1, alpha0, alpha1, horizon) -> t
     lam = tabulated_least_favourable(alpha0, alpha1, rho)
     if lam is None:
         return None
-    return theta0 + lam * (theta1 - theta0), table["bracket"] * abs(theta1 - theta0)
+    width = table["bracket"] if rho >= table["rho"][0] else table["bracket_below"]
+    return theta0 + lam * (theta1 - theta0), width * abs(theta1 - theta0)
 
 
 def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> KieferWeissDesign:

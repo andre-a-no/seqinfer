@@ -298,6 +298,7 @@ def main() -> None:
     parser.add_argument("--points", type=int, default=16)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--table", type=Path)
+    parser.add_argument("--rho-min", type=float, default=RHO[0])
     args = parser.parse_args()
     if args.stage == "pilot":
         run(pilot_points(), args.files[0], args.workers)
@@ -306,11 +307,27 @@ def main() -> None:
     elif args.stage == "check":
         run(halton_points(args.points), args.files[0], args.workers)
     else:
-        fit(args.files[0], args.files[1] if len(args.files) > 1 else None, args.degrees, args.table)
+        fit(args.files[0], args.files[1] if len(args.files) > 1 else None, args.degrees, args.table, args.rho_min)
 
 
-def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: Path | None) -> None:
-    data = load(design_file)
+def restricted(rows: list[dict], rho_min: float) -> list[dict]:
+    """Points with rho >= rho_min, their third coordinate rescaled to [rho_min, RHO[1]]."""
+    out = []
+    for r in rows:
+        if r["x3"] >= rho_min - 1e-9:
+            u3 = 2.0 * (r["x3"] - rho_min) / (RHO[1] - rho_min) - 1.0
+            out.append({**r, "u": [r["u"][0], r["u"][1], u3]})
+    return out
+
+
+def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: Path | None, rho_min: float) -> None:
+    """Least-squares fit on rho >= rho_min.
+
+    Below about rho = 1.5 (a horizon barely above that of the shortest fixed-sample test) lambda moves by up
+    to 0.012 in a boundary layer that a low-degree polynomial cannot follow; there the table is used with a
+    wider bracket instead (see seqinfer.design).
+    """
+    data = restricted(load(design_file), rho_min)
     rows = [basis(r["u"], degrees) for r in data]
     coef = least_squares(rows, [r["y"] for r in data])
     res = [r["y"] - sum(c * b for c, b in zip(coef, row, strict=True)) for r, row in zip(data, rows, strict=True)]
@@ -319,11 +336,16 @@ def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: P
           f"max |residual| {max(abs(e) for e in res):.2e}")
     worst = max(abs(e) for e in res)
     if check_file is not None:
-        check = load(check_file)
+        check = restricted(load(check_file), rho_min)
         errs = [r["y"] - sum(c * b for c, b in zip(coef, basis(r["u"], degrees), strict=True)) for r in check]
         worst = max(worst, max(abs(e) for e in errs))
         print(f"{len(check)} check points: rms error {math.sqrt(sum(e * e for e in errs) / len(errs)):.2e}, "
               f"max {worst:.2e}")
+    # below rho_min the table is used with rho clamped to rho_min: measure that error too
+    below = [r for r in load(design_file) + (load(check_file) if check_file else []) if r["x3"] < rho_min - 1e-9]
+    worst_below = max((abs(r["y"] - sum(c * b for c, b in zip(coef, basis([r["u"][0], r["u"][1], -1.0], degrees),
+                                                                 strict=True))) for r in below), default=0.05)
+    print(f"{len(below)} points below rho {rho_min}: largest error with rho clamped {worst_below:.2e}")
     if table is not None:
         table.write_text(json.dumps({
             "format": "seqinfer.least-favourable-normal/1",
@@ -331,10 +353,11 @@ def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: P
                            "normal data, minus Lorden's first-order point, as a tensor Legendre series in "
                            "u = (log alpha0, log alpha1, rho) scaled to [-1, 1]^3; see "
                            "tools/least_favourable_table.py",
-            "log_alpha": list(LOG_ALPHA), "rho": list(RHO), "horizon": HORIZON, "degrees": degrees,
+            "log_alpha": list(LOG_ALPHA), "rho": [rho_min, RHO[1]], "horizon": HORIZON, "degrees": degrees,
             "terms": terms(degrees), "coefficients": coef, "nodes": len(data),
             # half-width of the search bracket, in units of |theta1 - theta0|: twice the largest error seen
             "bracket": max(2.0 * worst, 0.004),
+            "bracket_below": max(2.0 * worst_below, 0.004),  # for rho below the table's range
         }, indent=1) + "\n")
         print(f"table written to {table}")
 

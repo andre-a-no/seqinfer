@@ -89,6 +89,17 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
   observations can meet (the Neyman–Pearson bound) are reported at once.
 
+**Least favourable θ\* for normal data** is precomputed:
+`tabulated_least_favourable(alpha0, alpha1, rho)` gives the root of Lorden's
+characterisation for α₀, α₁ ∈ [0.005, 0.2] to about 3·10⁻⁴ of θ₁ − θ₀
+(`rho` is how much longer the horizon is than the shortest fixed-sample
+test; the root hardly depends on it above 1.5). `theta_star="least-favourable"`
+starts its search from it, which makes it two to four times faster; the
+search still verifies the characterisation. The table is computed by
+`tools/least_favourable_table.py` on Gauss–Lobatto–Legendre nodes
+(D-optimal for polynomial regression) and checked on Halton points not
+used in the fit.
+
 **Design cache** (`seqinfer.cache`): every plan `kiefer_weiss_plan`
 computes is stored on disk and returned from there when the same question
 is asked again — the key is every argument, the family, the library version

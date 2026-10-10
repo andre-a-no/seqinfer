@@ -1539,17 +1539,50 @@ attained at $0.3933$; the search returns $\theta^*=0.3925$ with $45.01$,
 attained at $0.3936$. Near the solution the maximum is flat in
 $\theta^*$, and for discrete data it moves in small steps because the
 attainable error probabilities do, so the gain over the first-order
-point is small and the characterisation holds only approximately. For
-normal data, $\theta_0=0$ against $\theta_1=0.5$ with error
-probabilities $0.05$ and $0.2$ and $H=60$, the search returns
-$\theta^*=0.340$ with a maximum expected sample size of $17.13$,
-attained at $0.347$, against $17.15$ for the first-order point
-$\theta^*=0.289$. Each candidate is designed in full, so on the default
-lattice the search took about two hours in the first implementation and
-three minutes now, with the same result: the backward pass is written as
-array operations (numpy, when installed), and the multipliers, once
-Broyden's method has come within $10^{-3}$ of the targets, are adjusted
-by a small joint raise before the slower coordinate search is tried.
+point is small and the characterisation holds only approximately.
+
+For normal data the characterisation itself is well determined: the
+function $g(\theta^*)=\arg\max_\theta E_\theta N-\theta^*$ is smooth and
+decreasing, and on a symmetric problem its root is the midpoint to
+$3\cdot10^{-4}$ of $\theta_1-\theta_0$. The maximum expected sample size
+is not: over a tenth of the interval around the root it changes by about
+$2\cdot10^{-4}$ of its value, the order of the calibration error of the
+multipliers, so that which candidate has the smallest maximum is partly
+decided by rounding. For $\theta_0=0$ against $\theta_1=0.5$ with error
+probabilities $0.05$ and $0.2$ and $H=60$, a bisection over the whole
+interval returns $\theta^*=0.340$ with a maximum of $17.131$, the root of
+the characterisation is at about $0.346$ with $17.140$, and the
+first-order point $0.289$ gives $17.148$: the three plans differ by less
+than a tenth of a percent.
+
+Because the root is well determined, it can be tabulated. In the
+standardised coordinate $\lambda=(\theta^*-\theta_0)/(\theta_1-\theta_0)$
+it depends on $\alpha_0$, $\alpha_1$ and the horizon, which enters
+through $\rho=\delta\sqrt H/(z_{\alpha_0}+z_{\alpha_1})$, the ratio of the
+horizon to the shortest fixed-sample test; exchanging the hypotheses maps
+$\lambda$ to $1-\lambda$, so the correction to the first-order point is
+antisymmetric in $(\alpha_0,\alpha_1)$. A pilot study showed it smooth in
+$\log\alpha_0$, $\log\alpha_1$, nearly constant in $\rho$ above $1.5$
+(and in $\delta$ at fixed $\rho$, to $1.5\cdot10^{-3}$), with a boundary
+layer of up to $0.015$ as $\rho$ approaches $1$. The roots were computed
+on Gauss--Lobatto--Legendre nodes, which are D-optimal for polynomial
+regression~\cite{guest1958}, in tensor product (63 nodes for $\alpha_0,\alpha_1\in[0.005,
+0.2]$, $\rho\in[1.5,2.5]$, only on one side of the diagonal), and fitted
+by an antisymmetric Legendre series of degree $5$ in each $\log\alpha$
+and $1$ in $\rho$; on 11 Halton points not used in the fit the error is
+$1.2\cdot10^{-4}$ rms and at most $3.3\cdot10^{-4}$. The search for the
+least favourable $\theta^*$ starts from a bracket of $\pm0.004$ around
+the tabulated root ($\pm0.03$ below $\rho=1.5$) and falls back to the
+whole interval when the bracket does not contain a sign change. With it,
+the example above takes 81 seconds instead of 171; without numpy and
+before the calibration below, the full search took two hours.
+
+Each candidate is designed in full. The backward pass is written as
+array operations (numpy, when installed), and once Broyden's method has
+come within $10^{-3}$ of the targets the multipliers are adjusted by a
+small joint raise before the slower coordinate search is tried; on
+thirteen designs across the four families both changes leave the plans
+unchanged.
 
 For discrete data there is a further limit. The plans that are optimal
 for some pair of multipliers are non-randomised, and near the smallest
@@ -1790,7 +1823,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$198$ tests in total; the remainder cover transactional updates,
+$212$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under

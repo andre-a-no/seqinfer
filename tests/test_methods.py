@@ -646,6 +646,33 @@ class QuickRaise(unittest.TestCase):
             self.assertEqual(plans[0], plans[1])
 
 
+class LeastFavourableTable(unittest.TestCase):
+    """The shipped table of least favourable theta* for normal data (tools/least_favourable_table.py)."""
+
+    def test_agrees_with_roots_computed_apart_from_the_fit(self):
+        from seqinfer.design import tabulated_least_favourable
+
+        # check points of the table's computation, not used in the fit: (alpha0, alpha1, rho, root of g)
+        for alpha0, alpha1, rho, lam in (
+            (0.07952707287670506, 0.007533150951473342, 1.96, 0.3369765562360354),
+            (0.012574334296829352, 0.058480354764257315, 1.69, 0.60826537584727),
+            (0.006296493419231937, 0.13274657662401138, 2.014, 0.7325124134566132),
+            (0.025111418766114765, 0.10100717376671202, 2.338, 0.6288370551031238),
+        ):
+            self.assertLess(abs(tabulated_least_favourable(alpha0, alpha1, rho) - lam), 5e-4)
+
+    def test_symmetry_and_range(self):
+        from seqinfer.design import tabulated_least_favourable as lf
+
+        for a0, a1, rho in ((0.01, 0.1, 1.8), (0.005, 0.2, 2.5), (0.15, 0.02, 3.0), (0.05, 0.05, 1.6)):
+            # exchanging the hypotheses maps lambda to 1 - lambda; equal error rates give the midpoint
+            self.assertAlmostEqual(lf(a0, a1, rho) + lf(a1, a0, rho), 1.0, places=12)
+        self.assertAlmostEqual(lf(0.03, 0.03, 2.0), 0.5, places=12)
+        self.assertEqual(lf(0.03, 0.1, 9.0), lf(0.03, 0.1, 2.5))  # flat in rho: held beyond the range
+        self.assertIsNone(lf(0.001, 0.1, 2.0))
+        self.assertIsNone(lf(0.05, 0.3, 2.0))
+
+
 class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 
