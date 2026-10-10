@@ -11,9 +11,9 @@ the asynchronous run reproduces the synchronous one exactly.
 import asyncio
 import random
 
-from seqinfer import PositionalPair, Recorder, Run, difference, run_async, run_sync
-from seqinfer.procedures import SPRT, Gaussian
-from seqinfer.sources import as_async, gaussian
+from sequential_analysis import PositionalPair, Recorder, Run, difference, run_async, run_sync
+from sequential_analysis.procedures import SPRT, Gaussian
+from sequential_analysis.sources import as_async, gaussian
 
 
 def make_run():

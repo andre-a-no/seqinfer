@@ -8,9 +8,9 @@ import random
 import statistics
 import unittest
 
-from seqinfer import Run, SplitMix64, equivalent, run_sync, trajectory
-from seqinfer.numerics import logsumexp, neumaier_add
-from seqinfer.procedures import (
+from sequential_analysis import Run, SplitMix64, equivalent, run_sync, trajectory
+from sequential_analysis.numerics import logsumexp, neumaier_add
+from sequential_analysis.procedures import (
     ACCEPT_H0,
     CUSUM,
     REJECT_H0,
@@ -24,7 +24,7 @@ from seqinfer.procedures import (
     TwoSPRT,
     kiefer_weiss_point,
 )
-from seqinfer.sources import gaussian
+from sequential_analysis.sources import gaussian
 
 from .helpers import cases, chain_ema_cusum
 
@@ -274,9 +274,9 @@ class PortableArithmetic(unittest.TestCase):
         import ast
         from pathlib import Path
 
-        import seqinfer
+        import sequential_analysis
 
-        root = Path(seqinfer.__file__).parent
+        root = Path(sequential_analysis.__file__).parent
         files = [*sorted((root / "procedures").glob("*.py")), *(root / n for n in ("numerics.py", "core.py", "run.py"))]
         offenders = []
         for path in files:
@@ -286,7 +286,7 @@ class PortableArithmetic(unittest.TestCase):
         self.assertEqual(offenders, [], "use numerics.ordered_sum (or neumaier_add) for floats")
 
     def test_ordered_sum_is_left_to_right(self):
-        from seqinfer.numerics import ordered_sum
+        from sequential_analysis.numerics import ordered_sum
 
         values = [1e16, 1.0, -1e16, 1.0]
         self.assertEqual(ordered_sum(values), ((1e16 + 1.0) - 1e16) + 1.0)

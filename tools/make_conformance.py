@@ -3,7 +3,7 @@
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Write the conformance vectors in conformance/.
 
-An implementation of seqinfer in any language conforms when, for every
+An implementation of sequential_analysis in any language conforms when, for every
 case, folding its procedure over `inputs` from the default initial state
 (with `seed` for randomized procedures) reproduces `outputs`, `state`,
 `rng` and `history_digest` exactly.  Floats are compared through their
@@ -24,9 +24,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from seqinfer import Run  # noqa: E402
-from seqinfer.canonical import _number, canonical_json  # noqa: E402
-from seqinfer.procedures import (  # noqa: E402
+from sequential_analysis import Run  # noqa: E402
+from sequential_analysis.canonical import _number, canonical_json  # noqa: E402
+from sequential_analysis.procedures import (  # noqa: E402
     CUSUM,
     EMA,
     SPRT,

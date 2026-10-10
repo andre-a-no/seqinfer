@@ -11,10 +11,10 @@ the mixture SPRT assumes normal data and reports a confidence sequence.
 """
 import math
 
-from seqinfer import PositionalPair, Run, difference
-from seqinfer.procedures import BettingMeanTest, NormalMixtureSPRT, SequentialSignTest
-from seqinfer.rng import SplitMix64
-from seqinfer.sources import from_values
+from sequential_analysis import PositionalPair, Run, difference
+from sequential_analysis.procedures import BettingMeanTest, NormalMixtureSPRT, SequentialSignTest
+from sequential_analysis.rng import SplitMix64
+from sequential_analysis.sources import from_values
 
 rng = SplitMix64.for_role(2026, "simulation/experiment")
 

@@ -11,9 +11,9 @@ import math
 import random
 import unittest
 
-from seqinfer import ContractViolation, PositionalPair, Run, difference
-from seqinfer.design import kiefer_weiss_plan, lattice, operating_characteristic
-from seqinfer.procedures import (
+from sequential_analysis import ContractViolation, PositionalPair, Run, difference
+from sequential_analysis.design import kiefer_weiss_plan, lattice, operating_characteristic
+from sequential_analysis.procedures import (
     REJECT_H0,
     SPRT,
     Bernoulli,
@@ -26,7 +26,7 @@ from seqinfer.procedures import (
     SequentialSignTest,
     ShiryaevRoberts,
 )
-from seqinfer.sources import from_values
+from sequential_analysis.sources import from_values
 
 
 def run_length(proc, draw, horizon):
@@ -92,7 +92,11 @@ class Families(unittest.TestCase):
     def test_contracts(self):
         run = Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise")
         for bad in (-1, 1.5):
-            with self.subTest(bad=bad), self.assertRaises(ContractViolation), self.assertLogs("seqinfer", "WARNING"):
+            with (
+                self.subTest(bad=bad),
+                self.assertRaises(ContractViolation),
+                self.assertLogs("sequential_analysis", "WARNING"),
+            ):
                 Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise").step({"x": bad})
         run.step({"x": 3})
         with self.assertRaises(ValueError):
@@ -202,7 +206,7 @@ class BettingTests(unittest.TestCase):
             self.assertAlmostEqual(100.0 * ou.estimate, os_.estimate, places=9)
 
     def test_bounds_are_part_of_the_contract(self):
-        with self.assertLogs("seqinfer", "WARNING"):
+        with self.assertLogs("sequential_analysis", "WARNING"):
             run = Run(BettingMeanTest(0.5))
             run.step({"x": 1.5})
         self.assertEqual(run.counters["invalid_skipped"], 1)
@@ -436,7 +440,7 @@ class NormalDesign(unittest.TestCase):
 
     def test_smaller_expected_sample_size_than_the_2sprt(self):
         """Against Lorden's 2-SPRT with thresholds raised until its errors are the same."""
-        from seqinfer.procedures import TwoSPRT
+        from sequential_analysis.procedures import TwoSPRT
 
         d, gauss = self.design, Gaussian(1.0)
         for a in (x / 20 for x in range(40, 120)):
@@ -454,7 +458,7 @@ class GroupSequential(unittest.TestCase):
     FRACTIONS = (0.2, 0.4, 0.6, 0.8, 1.0)
 
     def test_obrien_fleming_boundaries_match_published_values(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, self.FRACTIONS, "obrien-fleming")
         for got, published in zip(d.bounds, (4.877, 3.357, 2.680, 2.290, 2.031), strict=True):
@@ -464,7 +468,7 @@ class GroupSequential(unittest.TestCase):
             self.assertAlmostEqual(a, b, places=4)
 
     def test_alpha_is_spent_as_planned(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         for spending in ("obrien-fleming", "pocock", ("power", 2.0)):
             d = group_sequential_design(0.025, self.FRACTIONS, spending)
@@ -475,7 +479,7 @@ class GroupSequential(unittest.TestCase):
                 self.assertAlmostEqual(cumulative, spent, places=7, msg=str(spending))
 
     def test_crossing_probabilities_match_simulation(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, self.FRACTIONS, "pocock")
         rnd, reps, drift = random.Random(21), 40_000, 2.5
@@ -492,8 +496,8 @@ class GroupSequential(unittest.TestCase):
             self.assertLess(abs(got / reps - exact), 4 * math.sqrt(exact * (1 - exact) / reps) + 1e-4)
 
     def test_executed_design_has_its_error_rates(self):
-        from seqinfer.group_sequential import group_sequential_design
-        from seqinfer.procedures import GroupSequentialTest
+        from sequential_analysis.group_sequential import group_sequential_design
+        from sequential_analysis.procedures import GroupSequentialTest
 
         d = group_sequential_design(0.025, self.FRACTIONS)
         n_max = d.max_sample_size(effect=0.5, sigma=1.0, power=0.9)
@@ -505,7 +509,7 @@ class GroupSequential(unittest.TestCase):
             self.assertLess(abs(rate - target), 3 * math.sqrt(target * (1 - target) / reps), msg=f"theta={theta}")
 
     def test_looks_only_at_the_planned_analyses(self):
-        from seqinfer.procedures import GroupSequentialTest
+        from sequential_analysis.procedures import GroupSequentialTest
 
         proc = GroupSequentialTest(1.0, analyses=[2, 4], bounds=[3.0, 1.0])
         state, outs = proc.initial_state(), []
@@ -516,8 +520,8 @@ class GroupSequential(unittest.TestCase):
         self.assertEqual(outs[1].decision, REJECT_H0)  # z = 5 sqrt(2) >= 3
 
     def test_invalid_designs_are_refused(self):
-        from seqinfer.group_sequential import group_sequential_design
-        from seqinfer.procedures import GroupSequentialTest
+        from sequential_analysis.group_sequential import group_sequential_design
+        from sequential_analysis.procedures import GroupSequentialTest
 
         for fractions in ((0.5, 0.4, 1.0), (0.5, 0.9)):
             with self.assertRaises(ValueError):
@@ -536,7 +540,7 @@ class ProcedureReviewRegressions(unittest.TestCase):
             SPRT(Gaussian(1.0), 0.0, 1.0, alpha=0.7, beta=0.7)
 
     def test_parameters_must_be_finite(self):
-        from seqinfer.procedures import CUSUM, LocalLevelKalman
+        from sequential_analysis.procedures import CUSUM, LocalLevelKalman
 
         for make in (
             lambda: Gaussian(float("nan")),
@@ -549,18 +553,18 @@ class ProcedureReviewRegressions(unittest.TestCase):
                 make()
 
     def test_t_boundaries_for_large_z(self):
-        from seqinfer.procedures import GroupSequentialTest
+        from sequential_analysis.procedures import GroupSequentialTest
 
         proc = GroupSequentialTest(None, [5, 10], [8.0, 2.0])
         self.assertAlmostEqual(proc.bound_at(0) / 8333.2793582, 1.0, places=9)  # mpmath
-        from seqinfer.distributions import _log_normal_upper, _log_upper_tail
+        from sequential_analysis.distributions import _log_normal_upper, _log_upper_tail
 
         far = GroupSequentialTest(None, [5, 10], [40.0, 2.0]).bound_at(0)  # its tail underflows: done in logs
         self.assertAlmostEqual(_log_upper_tail(far, 4) / _log_normal_upper(40.0), 1.0, places=12)
         GroupSequentialTest(None, [5, 10], [8.5, 2.0])  # used to raise
 
     def test_identical_observations_away_from_theta0_are_evidence_against_it(self):
-        from seqinfer.procedures import GroupSequentialTest, TMixtureSPRT
+        from sequential_analysis.procedures import GroupSequentialTest, TMixtureSPRT
 
         gs = GroupSequentialTest(None, [5, 10], [2.5, 2.0])
         state = gs.initial_state()
@@ -575,7 +579,7 @@ class ProcedureReviewRegressions(unittest.TestCase):
         self.assertEqual((out.lower, out.upper), (1.0, 1.0))
 
     def test_student_t_extremes(self):
-        from seqinfer.distributions import _upper_tail, t_cdf, t_ppf
+        from sequential_analysis.distributions import _upper_tail, t_cdf, t_ppf
 
         # references from mpmath at 50 digits
         self.assertAlmostEqual(t_cdf(1e-8, 5) - 0.5, 3.7960669e-9, delta=1e-15)
@@ -591,7 +595,7 @@ class NumpyBackwardPass(unittest.TestCase):
     """The array version of the backward pass computes the same recursion as the pure-Python one."""
 
     def setUp(self):
-        from seqinfer import design
+        from sequential_analysis import design
 
         if design._np is None:
             self.skipTest("numpy is not installed")
@@ -633,7 +637,7 @@ class NumpyBackwardPass(unittest.TestCase):
 
 class QuickRaise(unittest.TestCase):
     def test_same_plans_as_the_coordinate_search(self):
-        from seqinfer import design
+        from sequential_analysis import design
 
         for args in ((1.0, 0.0, 0.01, 0.1, 30), (0.0, 1.0, 0.001, 0.01, 50)):
             plans = []
@@ -650,7 +654,7 @@ class LeastFavourableTable(unittest.TestCase):
     """The shipped table of least favourable theta* for normal data (tools/least_favourable_table.py)."""
 
     def test_agrees_with_roots_computed_apart_from_the_fit(self):
-        from seqinfer.design import tabulated_least_favourable
+        from sequential_analysis.design import tabulated_least_favourable
 
         # check points of the table's computation, not used in the fit: (alpha0, alpha1, rho, root of g)
         for alpha0, alpha1, rho, lam in (
@@ -662,7 +666,7 @@ class LeastFavourableTable(unittest.TestCase):
             self.assertLess(abs(tabulated_least_favourable(alpha0, alpha1, rho) - lam), 5e-4)
 
     def test_symmetry_and_range(self):
-        from seqinfer.design import tabulated_least_favourable as lf
+        from sequential_analysis.design import tabulated_least_favourable as lf
 
         for a0, a1, rho in ((0.01, 0.1, 1.8), (0.005, 0.2, 2.5), (0.15, 0.02, 3.0), (0.05, 0.05, 1.6)):
             # exchanging the hypotheses maps lambda to 1 - lambda; equal error rates give the midpoint
@@ -691,7 +695,7 @@ class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 
     def test_far_tails_with_huge_df(self):
-        from seqinfer.distributions import _log_upper_tail, t_cdf
+        from sequential_analysis.distributions import _log_upper_tail, t_cdf
 
         # the continued fraction did not converge here; references from mpmath's 2F1 at 50 digits
         for t, df, ref in (
@@ -704,14 +708,14 @@ class ThirdReviewNumerics(unittest.TestCase):
         self.assertEqual(t_cdf(-1e10, 1e15), 0.0)
 
     def test_fisher_terms_do_not_overflow(self):
-        from seqinfer.distributions import _log_normal_upper, _log_upper_tail
+        from sequential_analysis.distributions import _log_normal_upper, _log_upper_tail
 
         t, df = 1.333521432163324e28, 1.7782794100389227e115  # t^11 overflowed: the log tail was +inf
         self.assertAlmostEqual(_log_upper_tail(t, df) / _log_normal_upper(t), 1.0, places=14)
 
     def test_sprt_baseline_quoted_in_the_readme(self):
-        from seqinfer.design import maximum_expected_n
-        from seqinfer.procedures import PlanTest
+        from sequential_analysis.design import maximum_expected_n
+        from sequential_analysis.procedures import PlanTest
 
         # Bernoulli 0.3 vs 0.5: Wald's SPRT with thresholds calibrated to errors 0.05, as a plan on the sum
         up, dn = math.log(5 / 3), math.log(5 / 7)
@@ -735,7 +739,7 @@ class ThirdReviewNumerics(unittest.TestCase):
         self.assertAlmostEqual(maximum_expected_n(sprt(a, b), Bernoulli(), 0.3, 0.5)[0], 50.79, places=2)
 
     def test_continued_fraction_converges(self):
-        from seqinfer.distributions import t_cdf
+        from sequential_analysis.distributions import t_cdf
 
         # |delta - 1| stuck at 2**-53 for tiny df; the iteration limit was too low for large df
         self.assertAlmostEqual((t_cdf(0.01, 1e-10) - 0.5) / 3.800451e-10, 1.0, places=4)
@@ -744,21 +748,21 @@ class ThirdReviewNumerics(unittest.TestCase):
             self.assertEqual(t_cdf(t, df), 1.0)
 
     def test_quantiles_at_extreme_df(self):
-        from seqinfer.distributions import t_isf_log
+        from sequential_analysis.distributions import t_isf_log
 
         # log tails far below -1e100 at df up to the largest float: t is about sqrt(-2 log tail)
         for log_tail, df in ((-1e148, 1e300), (-1e120, 1e250), (-1e150, 1.7e308)):
             self.assertAlmostEqual(t_isf_log(log_tail, df) / math.sqrt(-2.0 * log_tail), 1.0, places=12)
 
     def test_huge_df_asymptotic_has_its_second_term(self):
-        from seqinfer.distributions import _log_upper_tail
+        from sequential_analysis.distributions import _log_upper_tail
 
         # 120-digit quadrature; without the 1/t^2 term the log was off by 6e-7 and stepped up at the switch
         for t, df, ref in ((1536.0027, 2e15, -1179660.4023854834), (2500.0, 1e17, -3125008.742887048)):
             self.assertLess(abs(_log_upper_tail(t, df) - ref), 1e-8)
 
     def test_neyman_pearson_bound_keeps_tiny_errors(self):
-        from seqinfer.design import _check_attainable, _neyman_pearson_error
+        from sequential_analysis.design import _check_attainable, _neyman_pearson_error
 
         # exact values from mpmath; 1 - power used to leave rounding of 1e-13 and refuse feasible targets
         for args, ref in (
@@ -774,8 +778,8 @@ class ThirdReviewNumerics(unittest.TestCase):
         self.assertGreater(_neyman_pearson_error(Gaussian(), 0.0, 1.0, 5e-17, 200), 0.0)
 
     def test_parameters_that_cannot_work_are_refused(self):
-        from seqinfer.group_sequential import group_sequential_design
-        from seqinfer.procedures import TMixtureSPRT
+        from sequential_analysis.group_sequential import group_sequential_design
+        from sequential_analysis.procedures import TMixtureSPRT
 
         with self.assertRaises(ValueError):
             TMixtureSPRT(effect=1e160)  # every step overflowed
@@ -784,7 +788,7 @@ class ThirdReviewNumerics(unittest.TestCase):
         group_sequential_design(0.9, [0.5, 1.0], two_sided=True)
 
     def test_zero_argument(self):
-        from seqinfer.distributions import _log_upper_tail, _upper_tail
+        from sequential_analysis.distributions import _log_upper_tail, _upper_tail
 
         for df in (1e-3, 0.5, 30.0, 1e20):
             self.assertEqual(_upper_tail(0.0, df), 0.5)
@@ -795,7 +799,7 @@ class SecondReviewNumerics(unittest.TestCase):
     """Defects found by the second review and by fuzzing; each test reproduces one."""
 
     def test_student_t_across_the_range(self):
-        from seqinfer.distributions import _upper_tail, t_cdf, t_ppf
+        from sequential_analysis.distributions import _upper_tail, t_cdf, t_ppf
 
         # (t, df, tail) with tails from mpmath at 60 digits
         for t, df, ref in (
@@ -811,7 +815,7 @@ class SecondReviewNumerics(unittest.TestCase):
         self.assertEqual(t_ppf(1e-300, 0.1), -math.inf)  # the quantile is about -1e2990
 
     def test_fisher_expansion_at_large_df(self):
-        from seqinfer.distributions import _fisher_correction, _log_normal_upper, _log_upper_tail
+        from sequential_analysis.distributions import _fisher_correction, _log_normal_upper, _log_upper_tail
 
         # log P(T > t), 120-digit references; the expansion once had wrong second-order coefficients
         for t, df, ref in (
@@ -834,8 +838,8 @@ class SecondReviewNumerics(unittest.TestCase):
         self.assertEqual(_log_normal_upper(1e200), -math.inf)
 
     def test_rescaled_data_fail_loudly_not_wrongly(self):
-        from seqinfer import NumericalError
-        from seqinfer.procedures import GroupSequentialTest, TMixtureSPRT
+        from sequential_analysis import NumericalError
+        from sequential_analysis.procedures import GroupSequentialTest, TMixtureSPRT
 
         tiny = [v * 1e-200 for v in (1, -1, 2, -2, 1, -1, 2, -2, 1, -1.1)]
         huge = [v * 1e160 for v in range(10, 20)]
@@ -847,8 +851,8 @@ class SecondReviewNumerics(unittest.TestCase):
                         state, _ = proc.step(state, {"x": v}, None)
 
     def test_overflow_is_a_numerical_error(self):
-        from seqinfer import NumericalError, Run
-        from seqinfer.procedures import BootstrapParticleFilter, MeanDifference
+        from sequential_analysis import NumericalError, Run
+        from sequential_analysis.procedures import BootstrapParticleFilter, MeanDifference
 
         for make, x, seed in (
             (lambda: NormalMixtureSPRT(1.0, 0.5), {"x": 1e200}, None),
@@ -864,15 +868,15 @@ class SecondReviewNumerics(unittest.TestCase):
     def test_invalid_values_never_reach_a_checkpoint(self):
         import json
 
-        from seqinfer import Difference, Observation, PositionalPair, Run
-        from seqinfer.procedures import EMA
+        from sequential_analysis import Difference, Observation, PositionalPair, Run
+        from sequential_analysis.procedures import EMA
 
         def topo():
             return PositionalPair(["a", "b"]).map(Difference("a", "b"))
 
         for bad in (float("nan"), float("inf"), 2**60):
             run = Run(EMA(0.5), topology=topo())
-            with self.assertLogs("seqinfer", "WARNING"):
+            with self.assertLogs("sequential_analysis", "WARNING"):
                 run.offer(Observation("a", bad, seq=0))
             Run.restore(EMA(0.5), json.loads(json.dumps(run.checkpoint())), topology=topo())
 
@@ -912,7 +916,7 @@ class LeastFavourable(unittest.TestCase):
         self.assertLessEqual(best.at_theta1.accept, 0.1)
 
     def test_maximum_is_found(self):
-        from seqinfer.design import maximum_expected_n
+        from sequential_analysis.design import maximum_expected_n
 
         d = kiefer_weiss_plan(0.2, 0.5, 0.05, 0.1, horizon=60)
         value, where = maximum_expected_n(d.plan, Bernoulli(), 0.2, 0.5)
@@ -947,7 +951,7 @@ class DesignReviewRegressions(unittest.TestCase):
                 self.assertLess(time.perf_counter() - start, 2.0)
 
     def test_neyman_pearson_bound(self):
-        from seqinfer.design import _neyman_pearson_error
+        from sequential_analysis.design import _neyman_pearson_error
 
         # one Bernoulli observation, 0.5 vs 0.7 at level 0.05: reject x = 1 with probability 0.1
         self.assertAlmostEqual(_neyman_pearson_error(Bernoulli(), 0.5, 0.7, 0.05, 1), 0.93, places=14)
@@ -987,7 +991,7 @@ class DesignReviewRegressions(unittest.TestCase):
         self.assertAlmostEqual(operating_characteristic(plan, Poisson(), 800.0).accept, 1.0, places=10)
 
     def test_group_designs_with_an_infinite_boundary(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, (0.5, 1.0), spending=lambda t: 0.0 if t < 1 else 0.025)
         self.assertEqual(d.bounds[0], math.inf)
@@ -995,7 +999,7 @@ class DesignReviewRegressions(unittest.TestCase):
         self.assertGreater(d.power(2.0), 0.025)
 
     def test_power_must_lie_between_alpha_and_one(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, (0.5, 1.0))
         for power in (1.5, 1.0, 0.01):
@@ -1005,7 +1009,7 @@ class DesignReviewRegressions(unittest.TestCase):
             group_sequential_design(0.025, (0.5, 1.0), futility="pocock", power=0.02)
 
     def test_crossing_probabilities_are_never_negative(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, (0.5, 1.0))
         for drift in (20.0, 40.0, 60.0):
@@ -1014,7 +1018,7 @@ class DesignReviewRegressions(unittest.TestCase):
 
 class StudentT(unittest.TestCase):
     def test_distribution_function_against_known_quantiles(self):
-        from seqinfer.distributions import t_cdf, t_ppf
+        from sequential_analysis.distributions import t_cdf, t_ppf
 
         known = ((0.975, 10, 2.228138851986274), (0.975, 1, 12.706204736174698), (0.9, 2, 1.885618083164127))
         for p, df, quantile in known:
@@ -1026,14 +1030,14 @@ class StudentT(unittest.TestCase):
     def test_large_degrees_of_freedom_approach_the_normal(self):
         from statistics import NormalDist
 
-        from seqinfer.distributions import t_cdf
+        from sequential_analysis.distributions import t_cdf
 
         self.assertAlmostEqual(t_cdf(1.96, 1e7), NormalDist().cdf(1.96), places=6)
 
 
 class TMixture(unittest.TestCase):
     def test_bayes_factor_matches_direct_integration(self):
-        from seqinfer.procedures import TMixtureSPRT
+        from sequential_analysis.procedures import TMixtureSPRT
 
         proc = TMixtureSPRT(0.0, effect=0.7)
         xs = [0.9, -0.4, 2.1, 1.3, 0.2, 1.7]
@@ -1055,7 +1059,7 @@ class TMixture(unittest.TestCase):
         self.assertAlmostEqual(out.log_bf, math.log(h1 / h0), places=4)
 
     def test_valid_whatever_the_variance(self):
-        from seqinfer.procedures import TMixtureSPRT
+        from sequential_analysis.procedures import TMixtureSPRT
 
         reps = 800
         rates = [
@@ -1066,7 +1070,7 @@ class TMixture(unittest.TestCase):
         self.assertLessEqual(rates[0], upper_bound(0.05, reps))
 
     def test_power_and_confidence_sequence(self):
-        from seqinfer.procedures import TMixtureSPRT
+        from sequential_analysis.procedures import TMixtureSPRT
 
         self.assertEqual(rejection_rate(TMixtureSPRT(0.0), lambda r: (lambda: r.gauss(2.1, 7.0)), 100, 2000, 26), 1.0)
         proc = TMixtureSPRT(0.0, alpha=0.1, stop_on_reject=False)
@@ -1081,7 +1085,7 @@ class TMixture(unittest.TestCase):
         self.assertLessEqual(misses / reps, upper_bound(0.1, reps))
 
     def test_interval_is_the_inverted_test(self):
-        from seqinfer.procedures import TMixtureSPRT
+        from sequential_analysis.procedures import TMixtureSPRT
 
         proc = TMixtureSPRT(0.0, alpha=0.05, stop_on_reject=False)
         rnd, state = random.Random(28), proc.initial_state()
@@ -1094,8 +1098,8 @@ class TMixture(unittest.TestCase):
 
 class GroupSequentialExtensions(unittest.TestCase):
     def test_estimated_variance_keeps_the_type_one_error_approximately(self):
-        from seqinfer.group_sequential import group_sequential_design
-        from seqinfer.procedures import GroupSequentialTest
+        from sequential_analysis.group_sequential import group_sequential_design
+        from sequential_analysis.procedures import GroupSequentialTest
 
         d = group_sequential_design(0.025, (0.2, 0.4, 0.6, 0.8, 1.0))
         proc = GroupSequentialTest.from_design(d, 100, sigma=None)
@@ -1105,7 +1109,7 @@ class GroupSequentialExtensions(unittest.TestCase):
         self.assertLess(abs(rate - 0.025), 3 * math.sqrt(0.025 * 0.975 / reps) + 0.003)
 
     def test_futility_boundaries(self):
-        from seqinfer.group_sequential import group_sequential_design
+        from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, (1 / 3, 2 / 3, 1.0), futility="obrien-fleming", power=0.9)
         for got, published in zip(d.bounds, (3.7103, 2.5114, 1.9930), strict=True):
@@ -1122,8 +1126,8 @@ class GroupSequentialExtensions(unittest.TestCase):
         self.assertGreater(d.max_sample_size(0.5, 1.0), fixed)  # the price of looking early
 
     def test_futility_executed_on_a_stream(self):
-        from seqinfer.group_sequential import group_sequential_design
-        from seqinfer.procedures import ACCEPT_H0, GroupSequentialTest
+        from sequential_analysis.group_sequential import group_sequential_design
+        from sequential_analysis.procedures import ACCEPT_H0, GroupSequentialTest
 
         d = group_sequential_design(0.025, (1 / 3, 2 / 3, 1.0), futility="obrien-fleming", power=0.9)
         n_max = d.max_sample_size(0.5, 1.0)

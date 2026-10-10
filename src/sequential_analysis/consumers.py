@@ -48,7 +48,7 @@ class JsonlSink:
     """Appends one JSON line per output to a file.
 
     The file stays open between events; `sync` is "flush" or "fsync", see
-    `seqinfer.files`.  Close the sink, or use it as a context manager, when
+    `sequential_analysis.files`.  Close the sink, or use it as a context manager, when
     the run is over.
     """
 

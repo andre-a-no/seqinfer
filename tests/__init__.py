@@ -12,4 +12,4 @@ if _SRC not in sys.path:
 # Designs are computed afresh in tests; the design cache is tested with explicit directories.
 import os  # noqa: E402
 
-os.environ["SEQINFER_CACHE"] = "off"
+os.environ["SEQUENTIAL_ANALYSIS_CACHE"] = "off"

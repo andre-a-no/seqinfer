@@ -6,9 +6,9 @@
 No adapters, no topology, no runtime, no persistence.  `trajectory` is the
 reference fold of the transition function over an ordered history.
 """
-from seqinfer import trajectory
-from seqinfer.procedures import Gaussian, TwoSPRT
-from seqinfer.sources import gaussian
+from sequential_analysis import trajectory
+from sequential_analysis.procedures import Gaussian, TwoSPRT
+from sequential_analysis.sources import gaussian
 
 procedure = TwoSPRT(Gaussian(sigma=1.0), theta0=0.0, theta1=0.5, alpha0=0.05, alpha1=0.05)
 history = [{"x": obs.value} for obs in gaussian("x", mean=0.5, sd=1.0, seed=7, n=200)]

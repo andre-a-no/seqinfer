@@ -11,8 +11,8 @@ the statistical boundary as a declared logical input `u`, paired with the
 measurement it influenced, so the filter's model of the plant stays correct
 and the action is part of the recorded history.
 """
-from seqinfer import Observation, PositionalPair, Recorder, Run, SplitMix64, run_sync
-from seqinfer.procedures import LocalLevelKalman
+from sequential_analysis import Observation, PositionalPair, Recorder, Run, SplitMix64, run_sync
+from sequential_analysis.procedures import LocalLevelKalman
 
 SETPOINT, GAIN, STEPS = 5.0, 0.4, 40
 

@@ -10,8 +10,8 @@ same question again.
 
 Where
     `cache=` names a directory; otherwise the environment variable
-    SEQINFER_CACHE does; otherwise $XDG_CACHE_HOME/seqinfer, or
-    ~/.cache/seqinfer.  ``cache=False``, or SEQINFER_CACHE set to "off",
+    SEQUENTIAL_ANALYSIS_CACHE does; otherwise $XDG_CACHE_HOME/sequential-analysis, or
+    ~/.cache/sequential-analysis.  ``cache=False``, or SEQUENTIAL_ANALYSIS_CACHE set to "off",
     turns the cache off.  Deleting the directory, or `clear_design_cache()`,
     empties it.
 
@@ -31,9 +31,9 @@ Trust
 
 Messages
     Every save, load, ignored file and failed write is reported on the
-    logger "seqinfer.cache" at WARNING level, so it is visible by default,
+    logger "sequential_analysis.cache" at WARNING level, so it is visible by default,
     with a structured ``incident`` record like the run's incidents.
-    ``logging.getLogger("seqinfer.cache").setLevel(logging.ERROR)`` silences
+    ``logging.getLogger("sequential_analysis.cache").setLevel(logging.ERROR)`` silences
     it.  A cache that cannot be written never fails the design.
 """
 from __future__ import annotations
@@ -48,9 +48,9 @@ from typing import Any
 
 from .canonical import canonical_json
 
-logger = logging.getLogger("seqinfer.cache")
+logger = logging.getLogger("sequential_analysis.cache")
 
-FORMAT = "seqinfer.design-cache/1"
+FORMAT = "sequential-analysis.design-cache/1"
 _OFF = ("off", "0", "false", "no", "none")
 
 
@@ -60,13 +60,13 @@ def design_cache_dir(cache: Any = None) -> Path | None:
         return None
     if cache is not None and cache is not True:
         return Path(os.fspath(cache)).expanduser().resolve()
-    env = os.environ.get("SEQINFER_CACHE")
+    env = os.environ.get("SEQUENTIAL_ANALYSIS_CACHE")
     if env is not None:
         if env.strip().lower() in _OFF or not env.strip():
             return None
         return Path(env).expanduser().resolve()
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return Path(base).resolve() / "seqinfer"
+    return Path(base).resolve() / "sequential-analysis"
 
 
 def clear_design_cache(cache: Any = None) -> int:

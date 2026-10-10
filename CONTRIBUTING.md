@@ -1,10 +1,10 @@
 # Contributing
 
-Thank you for your interest in seqinfer.
+Thank you for your interest in sequential-analysis.
 
 ## Contributor License Agreement
 
-seqinfer is offered under the GNU AGPL v3 and under commercial licenses
+sequential-analysis is offered under the GNU AGPL v3 and under commercial licenses
 (see [COMMERCIAL.md](COMMERCIAL.md)). To keep that possible, Novikov
 Laboratories LLC must hold the rights needed to license every part of the
 code under both. We can therefore merge a contribution only after its

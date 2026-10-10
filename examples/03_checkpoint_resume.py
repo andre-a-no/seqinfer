@@ -11,9 +11,9 @@ purpose; delivery drops what the run has already seen.
 import tempfile
 from pathlib import Path
 
-from seqinfer import Delivery, Recorder, Run, load_checkpoint, run_sync, save_checkpoint, trajectory
-from seqinfer.procedures import BootstrapParticleFilter
-from seqinfer.sources import gaussian
+from sequential_analysis import Delivery, Recorder, Run, load_checkpoint, run_sync, save_checkpoint, trajectory
+from sequential_analysis.procedures import BootstrapParticleFilter
+from sequential_analysis.sources import gaussian
 
 
 def procedure():

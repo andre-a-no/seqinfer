@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
-"""seqinfer: sequential statistical inference, separated from experimental runtime.
+"""sequential_analysis: sequential statistical inference, separated from experimental runtime.
 
     Procedure infers; consumers act.
 
 Layer            Module
 ---------------  ------------------------------------------
-adapters         seqinfer.sources
-logical inputs   seqinfer.contracts
-data topology    seqinfer.topology
-runtime          seqinfer.delivery, seqinfer.runtime
-run              seqinfer.run, seqinfer.persistence
-procedure        seqinfer.core, seqinfer.procedures, seqinfer.pipeline
-consumers        seqinfer.consumers
+adapters         sequential_analysis.sources
+logical inputs   sequential_analysis.contracts
+data topology    sequential_analysis.topology
+runtime          sequential_analysis.delivery, sequential_analysis.runtime
+run              sequential_analysis.run, sequential_analysis.persistence
+procedure        sequential_analysis.core, sequential_analysis.procedures, sequential_analysis.pipeline
+consumers        sequential_analysis.consumers
 """
 from .consumers import JsonlSink, OutputEvent, Recorder
 from .contracts import InputContract, validate_input

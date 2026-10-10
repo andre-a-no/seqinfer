@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from seqinfer.cache import clear_design_cache, design_cache_dir
-from seqinfer.design import kiefer_weiss_plan
-from seqinfer.procedures import Gaussian, Poisson
+from sequential_analysis.cache import clear_design_cache, design_cache_dir
+from sequential_analysis.design import kiefer_weiss_plan
+from sequential_analysis.procedures import Gaussian, Poisson
 
 ARGS = (0.3, 0.5, 0.05, 0.05, 80)
 
@@ -24,12 +24,12 @@ class DesignCache(unittest.TestCase):
         self.tmp.cleanup()
 
     def design(self, *args, **kwargs):
-        with self.assertLogs("seqinfer.cache", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis.cache", "WARNING") as logs:
             d = kiefer_weiss_plan(*(args or ARGS), cache=self.dir, **kwargs)
         return d, [r.incident for r in logs.records]
 
     def test_saved_then_loaded_and_identical(self):
-        with self.assertLogs("seqinfer.cache", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis.cache", "WARNING") as logs:
             first = kiefer_weiss_plan(*ARGS, cache=self.dir)
         events = [r.incident for r in logs.records]
         self.assertEqual([e["action"] for e in events], ["saved"])
@@ -80,30 +80,30 @@ class DesignCache(unittest.TestCase):
 
     def test_a_cache_that_cannot_be_written_does_not_fail_the_design(self):
         self.dir.write_text("a file, not a directory")
-        with self.assertLogs("seqinfer.cache", "WARNING") as logs:
+        with self.assertLogs("sequential_analysis.cache", "WARNING") as logs:
             d = kiefer_weiss_plan(*ARGS, cache=self.dir)
         self.assertEqual([r.incident["action"] for r in logs.records], ["not_saved"])
         self.assertLessEqual(d.at_theta0.reject, 0.05)
 
     def test_off_and_directory_selection(self):
-        with self.assertNoLogs("seqinfer.cache", "WARNING"):
+        with self.assertNoLogs("sequential_analysis.cache", "WARNING"):
             kiefer_weiss_plan(*ARGS, cache=False)
-            kiefer_weiss_plan(*ARGS)  # the test suite runs with SEQINFER_CACHE=off
+            kiefer_weiss_plan(*ARGS)  # the test suite runs with SEQUENTIAL_ANALYSIS_CACHE=off
         self.assertIsNone(design_cache_dir())
         self.assertEqual(design_cache_dir(self.dir), self.dir.resolve())
-        saved = os.environ.get("SEQINFER_CACHE")
+        saved = os.environ.get("SEQUENTIAL_ANALYSIS_CACHE")
         try:
-            os.environ["SEQINFER_CACHE"] = str(self.dir)
+            os.environ["SEQUENTIAL_ANALYSIS_CACHE"] = str(self.dir)
             self.assertEqual(design_cache_dir(), self.dir.resolve())
-            del os.environ["SEQINFER_CACHE"]
+            del os.environ["SEQUENTIAL_ANALYSIS_CACHE"]
             os.environ["XDG_CACHE_HOME"] = self.tmp.name
-            self.assertEqual(design_cache_dir(), Path(self.tmp.name).resolve() / "seqinfer")
+            self.assertEqual(design_cache_dir(), Path(self.tmp.name).resolve() / "sequential-analysis")
         finally:
             os.environ.pop("XDG_CACHE_HOME", None)
-            os.environ["SEQINFER_CACHE"] = saved if saved is not None else "off"
+            os.environ["SEQUENTIAL_ANALYSIS_CACHE"] = saved if saved is not None else "off"
 
     def test_invalid_arguments_are_not_cached(self):
-        with self.assertRaises(ValueError), self.assertNoLogs("seqinfer.cache", "WARNING"):
+        with self.assertRaises(ValueError), self.assertNoLogs("sequential_analysis.cache", "WARNING"):
             kiefer_weiss_plan(0.3, 0.3, 0.05, 0.05, 80, cache=self.dir)
         with self.assertRaises(ValueError):
             kiefer_weiss_plan(float("nan"), 0.5, 0.05, 0.05, 80, cache=self.dir)
@@ -119,7 +119,7 @@ class DesignCache(unittest.TestCase):
 
     def test_clear(self):
         self.design()
-        with self.assertLogs("seqinfer.cache", "WARNING"):
+        with self.assertLogs("sequential_analysis.cache", "WARNING"):
             self.assertEqual(clear_design_cache(self.dir), 1)
         self.assertEqual(list(self.dir.glob("*.json")), [])
 

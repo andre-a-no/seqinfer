@@ -32,7 +32,7 @@ const bits = new BigUint64Array(1), f64 = new Float64Array(bits.buffer);
 for (const { bits: b, json } of numbers) { bits[0] = BigInt("0x" + b); check(String(f64[0]) === json, `number ${b}`); }
 
 for (const v of vectors) {
-  let digest = sha256("seqinfer.history/2");
+  let digest = sha256("sequential-analysis.history/2");
   for (const x of v.inputs) digest = sha256(digest + canonical(x));
   check(digest === v.history_digest, `${v.case}: history digest`);
 }

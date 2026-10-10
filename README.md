@@ -1,4 +1,4 @@
-# seqinfer
+# sequential-analysis
 
 Sequential statistical inference, separated from the experimental runtime.
 
@@ -9,7 +9,7 @@ filter, an optimal test from a design code — is a transition function
 
     (S_t, O_t, R_t) = F(S_{t-1}, X_t, R_{t-1})
 
-and nothing else. seqinfer keeps everything around it in separate,
+and nothing else. sequential-analysis keeps everything around it in separate,
 replaceable layers: where the observations come from (adapters), how inputs
 are related (topology: pairing, key joins, time alignment), how they are
 ordered and deduplicated (delivery), how they are acquired (a synchronous
@@ -25,15 +25,19 @@ Python standard library (3.10+).
 ## Installation
 
 ```
-pip install .
+pip install sequential-analysis          # from PyPI, once released
+pip install .                            # from a checkout
+pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
 ```
+
+The package is imported as `sequential_analysis`.
 
 ## A first run
 
 ```python
-from seqinfer import Run, run_sync
-from seqinfer.procedures import Gaussian, TwoSPRT
-from seqinfer.sources import gaussian
+from sequential_analysis import Run, run_sync
+from sequential_analysis.procedures import Gaussian, TwoSPRT
+from sequential_analysis.sources import gaussian
 
 test = TwoSPRT(Gaussian(sigma=1.0), theta0=0.0, theta1=0.5, alpha0=0.05, alpha1=0.05)
 run = Run(test)
@@ -62,7 +66,7 @@ nonparametric monitoring, and a group sequential trial.
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 `Bernoulli`, `Poisson`, `Exponential`.
 
-**Design** (`seqinfer.design`), computed offline before the experiment:
+**Design** (`sequential_analysis.design`), computed offline before the experiment:
 
 - `operating_characteristic(plan, family, theta)` — error probabilities,
   stopping-time distribution and expected sample size of a plan, without
@@ -86,7 +90,7 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   about a second for the Bernoulli example and from seconds to a minute
   for normal data on the default lattice; the least favourable θ* designs
   ten to twenty candidates and takes as many times longer. With `numpy`
-  installed (optional: `pip install seqinfer[fast]`) the backward pass on
+  installed (optional: `pip install sequential-analysis[fast]`) the backward pass on
   wide lattices — normal, exponential, Poisson with larger rates — runs as
   array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
   observations can meet (the Neyman–Pearson bound) are reported at once.
@@ -102,26 +106,26 @@ search still verifies the characterisation. The table is computed by
 (D-optimal for polynomial regression) and checked on Halton points not
 used in the fit.
 
-**Design cache** (`seqinfer.cache`): every plan `kiefer_weiss_plan`
+**Design cache** (`sequential_analysis.cache`): every plan `kiefer_weiss_plan`
 computes is stored on disk and returned from there when the same question
 is asked again — the key is every argument, the family, the library version
 and the version of the design algorithm. A stored plan is not trusted
 blindly: its operating characteristic is recomputed and must reproduce the
 stored one and meet the requested error rates, otherwise it is computed
 again. Every save, load and ignored file is reported on the logger
-`seqinfer.cache` (visible by default):
+`sequential_analysis.cache` (visible by default):
 
 ```
-design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/seqinfer/kiefer_weiss-4785….json
-design cache: loaded kiefer_weiss_plan(...) from ~/.cache/seqinfer/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
+design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/sequential-analysis/kiefer_weiss-4785….json
+design cache: loaded kiefer_weiss_plan(...) from ~/.cache/sequential-analysis/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
 ```
 
-The directory is `cache=` if given, else `$SEQINFER_CACHE`, else
-`$XDG_CACHE_HOME/seqinfer` or `~/.cache/seqinfer`; `cache=False` or
-`SEQINFER_CACHE=off` turns it off, `clear_design_cache()` empties it. A
+The directory is `cache=` if given, else `$SEQUENTIAL_ANALYSIS_CACHE`, else
+`$XDG_CACHE_HOME/sequential-analysis` or `~/.cache/sequential-analysis`; `cache=False` or
+`SEQUENTIAL_ANALYSIS_CACHE=off` turns it off, `clear_design_cache()` empties it. A
 cache that cannot be written is reported and never fails the design.
 
-**Group sequential designs** (`seqinfer.group_sequential`):
+**Group sequential designs** (`sequential_analysis.group_sequential`):
 `group_sequential_design(alpha, fractions, spending)` computes efficacy
 boundaries for planned analyses from an alpha-spending function
 (O'Brien–Fleming and Pocock types, power family, or your own), one- or
@@ -131,7 +135,7 @@ and the maximum sample size for a target power. With
 spending. The O'Brien–Fleming boundaries for five looks reproduce the
 published 4.877, 3.357, 2.680, 2.290, 2.031.
 
-**Inputs**: `seqinfer.sources` binds values, files (`from_csv`, with
+**Inputs**: `sequential_analysis.sources` binds values, files (`from_csv`, with
 explicit conversion), simulators and replayed logs to logical inputs.
 Transformations between topology and procedure, or between the stages of
 a `Chain`, are `Transform` objects (`Difference`, `Field`, or your own)
@@ -151,7 +155,7 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
   damaged or foreign checkpoint is refused with a message naming the
   problem.
 - **Invalid input never stops the run by default.** It is skipped,
-  counted and reported as a warning on the `seqinfer` logger with a
+  counted and reported as a warning on the `sequential_analysis` logger with a
   structured `incident` record. `on_invalid="raise"` or an exception class
   makes it fatal; `max_invalid_streak=N` stops the run after N invalid
   inputs in a row, when the source rather than a message is broken. Contracts are strict: `numpy` scalars, booleans and
@@ -165,7 +169,7 @@ lengths, optimality — is checked by a test (`tests/test_methods.py`).
   RFC 8785 canonical JSON. `conformance/` holds language-independent test
   vectors; `node conformance/check.mjs` reproduces them in JavaScript.
 
-What seqinfer does **not** do: it does not keep observations beyond the
+What sequential-analysis does **not** do: it does not keep observations beyond the
 last checkpoint. After a restore they must come again from the sources; a
 source that cannot replay them has to be buffered by the application.
 
@@ -183,7 +187,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-seqinfer is dual-licensed. It is free software under the
+sequential-analysis is dual-licensed. It is free software under the
 [GNU AGPL v3](LICENSE). Use in proprietary software or in services whose
 source is not published requires a commercial license from
 Novikov Laboratories LLC — see [COMMERCIAL.md](COMMERCIAL.md).

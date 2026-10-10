@@ -11,7 +11,7 @@ planned analyses n_1 < ... < n_K.  At analysis k it computes
 and stops for efficacy (rejects H0) if Z_k >= c_k, or |Z_k| >= c_k for
 a two-sided design.  With futility boundaries f_k it stops and accepts H0
 if Z_k <= f_k.  If no boundary is crossed by n_K, H0 is accepted (not
-rejected).  The boundaries come from `seqinfer.group_sequential`.
+rejected).  The boundaries come from `sequential_analysis.group_sequential`.
 
 With `sigma=None` the variance is estimated at each analysis and Z_k is
 replaced by the t statistic, compared with the boundary of the same

@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from seqinfer import (
+from sequential_analysis import (
     Delivery,
     Independent,
     KeyJoin,
@@ -31,8 +31,8 @@ from seqinfer import (
     save_checkpoint,
     trajectory,
 )
-from seqinfer.procedures import SPRT, Gaussian, LocalLevelKalman, TwoSPRT
-from seqinfer.sources import ObservationLog, as_async, from_values, gaussian, replay, skip_to
+from sequential_analysis.procedures import SPRT, Gaussian, LocalLevelKalman, TwoSPRT
+from sequential_analysis.sources import ObservationLog, as_async, from_values, gaussian, replay, skip_to
 
 from .helpers import cases, fixed_clock, reference, summary
 
@@ -210,7 +210,7 @@ class ConsumerNonInterference(unittest.TestCase):
                     seed=seed,
                     clock=fixed_clock,
                 )
-                with self.assertLogs("seqinfer", "WARNING"):
+                with self.assertLogs("sequential_analysis", "WARNING"):
                     run_sync(run, observations, stop_on_terminal=False)
                 self.assertEqual(summary(run, rec), full_run(case))
                 self.assertIs(run.status, RunStatus.RUNNING)

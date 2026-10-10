@@ -1,4 +1,4 @@
-# Computed roots behind `src/seqinfer/data/least_favourable_normal.json`
+# Computed roots behind `src/sequential_analysis/data/least_favourable_normal.json`
 
 Each line is one root of Lorden's characterisation for normal data, computed
 by `tools/least_favourable_table.py` (fields: the point `u` in [-1, 1]^3, the
@@ -16,4 +16,4 @@ Reproduce the table:
 
     python tools/least_favourable_table.py fit tools/least_favourable/design.jsonl \
         tools/least_favourable/check.jsonl --degrees 5 5 1 --rho-min 1.5 \
-        --table src/seqinfer/data/least_favourable_normal.json
+        --table src/sequential_analysis/data/least_favourable_normal.json

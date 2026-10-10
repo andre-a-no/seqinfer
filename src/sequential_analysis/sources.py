@@ -25,7 +25,7 @@ from .errors import IncompatibleCheckpoint
 from .files import AppendFile
 from .rng import SplitMix64
 
-_LOG_GENESIS = hashlib.sha256(b"seqinfer.log/2").hexdigest()
+_LOG_GENESIS = hashlib.sha256(b"sequential-analysis.log/2").hexdigest()
 
 
 def from_values(
@@ -159,7 +159,7 @@ class ObservationLog:
     position and the source positions in a checkpoint describe the same
     cut.  Invalid values are logged as they were, and a replay skips them
     as the run did; an observation delivery cannot handle at all (see
-    `seqinfer.core.envelope_problem`) is never delivered, so never logged.
+    `sequential_analysis.core.envelope_problem`) is never delivered, so never logged.
     With a path, lines are appended as JSON; without one, the log lives in
     memory.
 
@@ -172,11 +172,11 @@ class ObservationLog:
 
     The file stays open between records; `sync` chooses between "flush"
     (survives a crash of the process) and "fsync" (survives a power
-    failure), see `seqinfer.files`.  Whatever the mode, the log is forced
+    failure), see `sequential_analysis.files`.  Whatever the mode, the log is forced
     to the disk whenever a checkpoint records its position.  Close the
     log, or use it as a context manager, when the run is over.
 
-    seqinfer does not keep observations beyond the last checkpoint.  After a
+    sequential_analysis does not keep observations beyond the last checkpoint.  After a
     restore, the run receives them again from its sources (see `skip_to`).
     A source that cannot deliver past observations again -- a live
     instrument without a buffer, a stream without retention -- has to be

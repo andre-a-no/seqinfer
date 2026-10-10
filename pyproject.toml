@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "seqinfer"
+name = "sequential-analysis"
 version = "0.1.0"
 description = "Reference implementation of an architecture that separates sequential statistical inference from experimental runtime"
 readme = "README.md"
@@ -25,13 +25,13 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-fast = ["numpy>=1.22"]  # the backward pass of seqinfer.design as array operations
+fast = ["numpy>=1.22"]  # the backward pass of sequential_analysis.design as array operations
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-seqinfer = ["data/*.json"]  # precomputed tables (tools/least_favourable_table.py)
+sequential_analysis = ["data/*.json"]  # precomputed tables (tools/least_favourable_table.py)
 
 [tool.ruff]
 line-length = 120
@@ -49,7 +49,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.10"
-files = ["src/seqinfer"]
+files = ["src/sequential_analysis"]
 check_untyped_defs = true
 no_implicit_optional = true
 strict_equality = true

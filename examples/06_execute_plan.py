@@ -14,9 +14,9 @@ import json
 import tempfile
 from pathlib import Path
 
-from seqinfer import Recorder, Run, run_sync
-from seqinfer.procedures import Gaussian, PlanTest, TwoSPRT
-from seqinfer.sources import gaussian
+from sequential_analysis import Recorder, Run, run_sync
+from sequential_analysis.procedures import Gaussian, PlanTest, TwoSPRT
+from sequential_analysis.sources import gaussian
 
 design = TwoSPRT(Gaussian(1.0), theta0=0.0, theta1=0.5, alpha0=0.05, alpha1=0.05)
 

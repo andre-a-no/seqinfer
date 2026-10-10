@@ -1,5 +1,5 @@
 {
- "format": "seqinfer.least-favourable-normal/1",
+ "format": "sequential-analysis.least-favourable-normal/1",
  "description": "lambda = (theta* - theta0) / (theta1 - theta0) of the least favourable theta* for normal data, minus Lorden's first-order point, as a tensor Legendre series in u = (log alpha0, log alpha1, rho) scaled to [-1, 1]^3; see tools/least_favourable_table.py",
  "log_alpha": [
   -5.298317366548036,

@@ -34,13 +34,13 @@ from .topology import Independent, InvalidInput, Topology
 from .version import __version__
 
 #: Version 2: RFC 8785 canonical JSON in digests; 64-bit values (seed, random state) as strings.
-CHECKPOINT_FORMAT = "seqinfer.checkpoint/2"
-_GENESIS = hashlib.sha256(b"seqinfer.history/2").hexdigest()
+CHECKPOINT_FORMAT = "sequential-analysis.checkpoint/2"
+_GENESIS = hashlib.sha256(b"sequential-analysis.history/2").hexdigest()
 #: Default of `Run.restore(log=...)`: reopen the log recorded in the checkpoint.
 FROM_CHECKPOINT: Any = object()
 
 #: Incidents (skipped inputs, failing consumers) are reported here as warnings.
-logger = logging.getLogger("seqinfer")
+logger = logging.getLogger("sequential_analysis")
 
 
 def _policy_spec(on_invalid: Any) -> str:
@@ -224,7 +224,7 @@ class Run:
             "initialized_from": initialized_from,
             "on_invalid": policy,
             "max_invalid_streak": max_invalid_streak,
-            "seqinfer": __version__,
+            "sequential_analysis": __version__,
             "numerics": {
                 "float": "IEEE 754 binary64",
                 "summation": "Neumaier",

@@ -6,7 +6,7 @@
 Executing a plan is a Sequential Procedure (`PlanTest`).  Computing one is
 a design problem, solved here offline, before the experiment.  Both
 functions work on the running sum S_n, which is sufficient for the
-one-parameter exponential families in `seqinfer.procedures`.
+one-parameter exponential families in `sequential_analysis.procedures`.
 
 The sum is carried on a lattice.  For Bernoulli and Poisson data the
 lattice is the integers and every result is exact up to floating point
@@ -541,8 +541,8 @@ def kiefer_weiss_plan(
     Every plan computed is stored in the design cache and returned from it
     when the same question is asked again, after its error rates have been
     verified; `cache` selects the directory, or False turns the cache off
-    (see `seqinfer.cache`).  Saving and loading are reported on the logger
-    "seqinfer.cache".
+    (see `sequential_analysis.cache`).  Saving and loading are reported on the logger
+    "sequential_analysis.cache".
     """
     family = family if family is not None else Bernoulli()
     directory = design_cache_dir(cache)
@@ -577,7 +577,7 @@ def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step
     """The question, as canonical JSON can hold it; None (no caching) for arguments it cannot."""
     key = {
         "function": "kiefer_weiss_plan",
-        "seqinfer": __version__,
+        "sequential_analysis": __version__,
         "algorithm": _ALGORITHM,
         "theta0": theta0, "theta1": theta1, "alpha0": alpha0, "alpha1": alpha1, "horizon": horizon,
         "family": family.spec(), "theta_star": theta_star, "step": step,
@@ -924,7 +924,7 @@ def _least_favourable_table() -> dict | None:
         try:
             from importlib.resources import files
 
-            _TABLE = json.loads(files("seqinfer").joinpath("data/least_favourable_normal.json").read_text())
+            _TABLE = json.loads(files("sequential_analysis").joinpath("data/least_favourable_normal.json").read_text())
         except (OSError, ValueError, ModuleNotFoundError):
             _TABLE = None
     return _TABLE if isinstance(_TABLE, dict) else None

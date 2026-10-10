@@ -49,8 +49,8 @@ from statistics import NormalDist
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from seqinfer.design import _kiefer_weiss
-from seqinfer.procedures import Gaussian
+from sequential_analysis.design import _kiefer_weiss
+from sequential_analysis.procedures import Gaussian
 
 LOG_ALPHA = (math.log(0.005), math.log(0.2))
 RHO = (1.15, 2.5)
@@ -325,7 +325,7 @@ def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: P
 
     Below about rho = 1.5 (a horizon barely above that of the shortest fixed-sample test) lambda moves by up
     to 0.012 in a boundary layer that a low-degree polynomial cannot follow; there the table is used with a
-    wider bracket instead (see seqinfer.design).
+    wider bracket instead (see sequential_analysis.design).
     """
     data = restricted(load(design_file), rho_min)
     rows = [basis(r["u"], degrees) for r in data]
@@ -348,7 +348,7 @@ def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: P
     print(f"{len(below)} points below rho {rho_min}: largest error with rho clamped {worst_below:.2e}")
     if table is not None:
         table.write_text(json.dumps({
-            "format": "seqinfer.least-favourable-normal/1",
+            "format": "sequential-analysis.least-favourable-normal/1",
             "description": "lambda = (theta* - theta0) / (theta1 - theta0) of the least favourable theta* for "
                            "normal data, minus Lorden's first-order point, as a tensor Legendre series in "
                            "u = (log alpha0, log alpha1, rho) scaled to [-1, 1]^3; see "
