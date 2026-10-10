@@ -117,6 +117,10 @@ class DesignCache(unittest.TestCase):
         self.assertFalse(again.exact)
         self.assertEqual(again.step, 0.25)
 
+    def test_a_family_given_by_name_is_a_clear_error(self):
+        with self.assertRaisesRegex(TypeError, "family must be Bernoulli"):
+            kiefer_weiss_plan(*ARGS, family="bernoulli", cache=self.dir)
+
     def test_clear(self):
         self.design()
         with self.assertLogs("sequential_analysis.cache", "WARNING"):

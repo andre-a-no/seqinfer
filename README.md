@@ -90,7 +90,7 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   about a second for the Bernoulli example and from seconds to a minute
   for normal data on the default lattice; the least favourable θ* designs
   ten to twenty candidates and takes as many times longer. With `numpy`
-  installed (optional: `pip install sequential-analysis[fast]`) the backward pass on
+  installed (optional: `pip install "sequential-analysis[fast]"`) the backward pass on
   wide lattices — normal, exponential, Poisson with larger rates — runs as
   array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
   observations can meet (the Neyman–Pearson bound) are reported at once.

@@ -545,6 +545,11 @@ def kiefer_weiss_plan(
     "sequential_analysis.cache".
     """
     family = family if family is not None else Bernoulli()
+    if not isinstance(family, (Bernoulli, Poisson, Gaussian, Exponential)):
+        raise TypeError(
+            f"family must be Bernoulli(), Poisson(), Gaussian(sigma) or Exponential() from "
+            f"sequential_analysis.procedures, got {family!r}"
+        )
     directory = design_cache_dir(cache)
     key = _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) if directory else None
     if directory is None or key is None:

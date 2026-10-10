@@ -26,7 +26,7 @@ from .errors import (
     LifecycleError,
     NumericalError,
     OrderingError,
-    SeqInferError,
+    SequentialAnalysisError,
 )
 from .numerics import equivalent
 from .persistence import load_checkpoint, save_checkpoint
@@ -60,7 +60,7 @@ __all__ = [
     "Recorder",
     "Run",
     "RunStatus",
-    "SeqInferError",
+    "SequentialAnalysisError",
     "SplitMix64",
     "TimeAlign",
     "Transform",
