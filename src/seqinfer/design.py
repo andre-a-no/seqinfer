@@ -911,6 +911,76 @@ def _grid_search(feasible):
     return None
 
 
+_TABLE: dict | bool | None = False  # not loaded yet
+
+
+def _least_favourable_table() -> dict | None:
+    """The precomputed table of least favourable theta* for normal data (tools/least_favourable_table.py)."""
+    global _TABLE
+    if _TABLE is False:
+        try:
+            from importlib.resources import files
+
+            _TABLE = json.loads(files("seqinfer").joinpath("data/least_favourable_normal.json").read_text())
+        except (OSError, ValueError, ModuleNotFoundError):
+            _TABLE = None
+    return _TABLE if isinstance(_TABLE, dict) else None
+
+
+def _legendre(n: int, x: float) -> float:
+    p0, p1 = 1.0, x
+    if n == 0:
+        return 1.0
+    for k in range(2, n + 1):
+        p0, p1 = p1, ((2 * k - 1) * x * p1 - (k - 1) * p0) / k
+    return p1
+
+
+def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> float | None:
+    """lambda = (theta* - theta0) / (theta1 - theta0) of the least favourable theta* for normal data, from the table.
+
+    `rho` = delta sqrt(H) / (z_alpha0 + z_alpha1), delta = |theta1 - theta0| / sigma: how much longer the
+    horizon is than the shortest fixed-sample test.  None outside the table's range.  The value is a
+    starting point for the search, which then verifies Lorden's characterisation.
+    """
+    table = _least_favourable_table()
+    if table is None:
+        return None
+    (la, lb), (ra, rb) = table["log_alpha"], table["rho"]
+    u = [
+        (2.0 * (math.log(alpha0) - la) / (lb - la)) - 1.0,
+        (2.0 * (math.log(alpha1) - la) / (lb - la)) - 1.0,
+        (2.0 * (rho - ra) / (rb - ra)) - 1.0,
+    ]
+    if any(not -1.0 - 1e-9 <= x <= 1.0 + 1e-9 for x in u):
+        return None
+    total = 0.0
+    for (i, j, k), c in zip(table["terms"], table["coefficients"], strict=True):
+        # antisymmetric in (alpha0, alpha1): exchanging the hypotheses maps lambda to 1 - lambda
+        total += c * (_legendre(i, u[0]) * _legendre(j, u[1]) - _legendre(j, u[0]) * _legendre(i, u[1])) * _legendre(
+            k, u[2]
+        )
+    a0, a1 = math.log(1.0 / alpha0), math.log(1.0 / alpha1)
+    return math.sqrt(a0) / (math.sqrt(a0) + math.sqrt(a1)) + total
+
+
+def _least_favourable_hint(family, theta0, theta1, alpha0, alpha1, horizon) -> tuple[float, float] | None:
+    """(theta*, half-width of a bracket) from the table, for normal data within its range; else None."""
+    if not isinstance(family, Gaussian):
+        return None
+    table = _least_favourable_table()
+    if table is None:
+        return None
+    from statistics import NormalDist
+
+    z = NormalDist().inv_cdf(1.0 - alpha0) + NormalDist().inv_cdf(1.0 - alpha1)
+    rho = abs(theta1 - theta0) / family.sigma * math.sqrt(horizon) / z
+    lam = tabulated_least_favourable(alpha0, alpha1, rho)
+    if lam is None:
+        return None
+    return theta0 + lam * (theta1 - theta0), table["bracket"] * abs(theta1 - theta0)
+
+
 def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> KieferWeissDesign:
     lo, hi = min(theta0, theta1), max(theta0, theta1)
     margin = 0.02 * (hi - lo)
@@ -931,7 +1001,20 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
     value, _ = first.maximum_expected_n(grid=12)
     candidates.append((value, first))
     a, b = lo + margin, hi - margin
-    ga, gb = design(a), design(b)
+    ga = gb = None
+    hint = _least_favourable_hint(family, theta0, theta1, alpha0, alpha1, horizon)
+    if hint is not None:
+        # a bracket around the tabulated theta*; the full interval if it does not bracket the solution
+        centre, width = hint
+        ha, hb = max(a, centre - width), min(b, centre + width)
+        if ha < hb:
+            ga, gb = design(ha), design(hb)
+            if ga is not None and gb is not None and ga > 0 > gb:
+                a, b = ha, hb
+            else:
+                ga = gb = None
+    if ga is None or gb is None:
+        ga, gb = design(a), design(b)
     if ga is not None and gb is not None and ga > 0 > gb:
         # Lorden: the solution has its largest expected sample size at theta* itself
         while b - a > 2e-3 * (hi - lo):

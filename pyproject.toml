@@ -30,6 +30,9 @@ fast = ["numpy>=1.22"]  # the backward pass of seqinfer.design as array operatio
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+seqinfer = ["data/*.json"]  # precomputed tables (tools/least_favourable_table.py)
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"
