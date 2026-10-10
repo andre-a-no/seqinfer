@@ -7,7 +7,7 @@ name = "sequential-analysis"
 version = "0.1.0"
 description = "Sequential statistical procedures (SPRT, Kiefer-Weiss, anytime-valid and group sequential tests, change-point detection) separated from a reproducible experimental runtime"
 readme = "README.md"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-only OR LicenseRef-Commercial"  # see COMMERCIAL.md
 license-files = ["LICENSE", "COMMERCIAL.md"]
 requires-python = ">=3.10"
 authors = [

@@ -187,10 +187,16 @@ See [CONTRIBUTING.md](https://github.com/andre-a-no/sequential-analysis/blob/mai
 
 ## License
 
-sequential-analysis is dual-licensed. It is free software under the
-[GNU AGPL v3](https://github.com/andre-a-no/sequential-analysis/blob/main/LICENSE). Use in proprietary software or in services whose
-source is not published requires a commercial license from
-Novikov Laboratories LLC — see [COMMERCIAL.md](https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md).
+sequential-analysis is dual-licensed:
+
+- **Free** under the [GNU AGPL v3](https://github.com/andre-a-no/sequential-analysis/blob/main/LICENSE) — for research, teaching
+  and development, for open-source projects under the AGPL (or GPL v3), and
+  for products and services whose complete source code is published under
+  the AGPL.
+- **Commercial license** — for closed-source products and for network
+  services whose source code is not published. Contact Novikov Laboratories
+  LLC; who needs which license is set out in
+  [COMMERCIAL.md](https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md).
 
 Authors: Alexander Stepanov, Andrej Novikov.
 Copyright © 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation).

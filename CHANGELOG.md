@@ -8,7 +8,9 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 
 ## 0.1.0 — unreleased
 
-First public release.
+First public release, dual-licensed: GNU AGPL v3, or a commercial license
+from Novikov Laboratories LLC for closed-source products and services (see
+COMMERCIAL.md).
 
 ### Runtime
 - A sequential procedure is a transition function F(S, X, R) → (S', O, R'); the
