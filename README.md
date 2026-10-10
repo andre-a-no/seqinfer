@@ -19,7 +19,7 @@ unchanged on a file, a live instrument or a simulator, and a resumed run
 is bit-for-bit identical to an uninterrupted one.
 
 The library is the reference implementation of the architecture described
-in [`paper/main.tex`](paper/main.tex) ([PDF](paper/main.pdf)). It has no dependencies beyond the
+in [`paper/main.tex`](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.tex) ([PDF](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.pdf)). It has no dependencies beyond the
 Python standard library (3.10+).
 
 ## Installation
@@ -183,14 +183,14 @@ node conformance/check.mjs
 cd paper && latexmk -pdf main.tex   # the paper; needs TeX Live with biber
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/andre-a-no/sequential-analysis/blob/main/CONTRIBUTING.md).
 
 ## License
 
 sequential-analysis is dual-licensed. It is free software under the
-[GNU AGPL v3](LICENSE). Use in proprietary software or in services whose
+[GNU AGPL v3](https://github.com/andre-a-no/sequential-analysis/blob/main/LICENSE). Use in proprietary software or in services whose
 source is not published requires a commercial license from
-Novikov Laboratories LLC — see [COMMERCIAL.md](COMMERCIAL.md).
+Novikov Laboratories LLC — see [COMMERCIAL.md](https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md).
 
 Authors: Alexander Stepanov, Andrej Novikov.
 Copyright © 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation).

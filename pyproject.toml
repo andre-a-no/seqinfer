@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sequential-analysis"
 version = "0.1.0"
-description = "Reference implementation of an architecture that separates sequential statistical inference from experimental runtime"
+description = "Sequential statistical procedures (SPRT, Kiefer-Weiss, anytime-valid and group sequential tests, change-point detection) separated from a reproducible experimental runtime"
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE", "COMMERCIAL.md"]
@@ -17,12 +17,34 @@ authors = [
 maintainers = [
     { name = "Novikov Laboratories LLC", email = "andrei@hobukob.ru" },
 ]
+keywords = [
+    "sequential analysis", "SPRT", "Kiefer-Weiss", "optional stopping", "anytime-valid inference",
+    "group sequential design", "alpha spending", "change-point detection", "CUSUM", "reproducibility",
+]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Typing :: Typed",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/andre-a-no/sequential-analysis"
+Source = "https://github.com/andre-a-no/sequential-analysis"
+Issues = "https://github.com/andre-a-no/sequential-analysis/issues"
+Changelog = "https://github.com/andre-a-no/sequential-analysis/blob/main/CHANGELOG.md"
+Paper = "https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.pdf"
+"Commercial license" = "https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md"
 
 [project.optional-dependencies]
 fast = ["numpy>=1.22"]  # the backward pass of sequential_analysis.design as array operations
@@ -31,7 +53,7 @@ fast = ["numpy>=1.22"]  # the backward pass of sequential_analysis.design as arr
 where = ["src"]
 
 [tool.setuptools.package-data]
-sequential_analysis = ["data/*.json"]  # precomputed tables (tools/least_favourable_table.py)
+sequential_analysis = ["data/*.json", "py.typed"]  # precomputed tables (tools/least_favourable_table.py); typed
 
 [tool.ruff]
 line-length = 120
