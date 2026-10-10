@@ -74,7 +74,9 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   Bernoulli, Poisson, normal and exponential data. With
   `theta_star="least-favourable"` it solves the Kiefer–Weiss problem
   itself: θ* is placed where the maximum expected sample size is attained
-  (Lorden's characterisation). For response
+  (Lorden's characterisation) — the root of that condition for normal and
+  exponential data, the best candidate of a bisection for discrete data,
+  where the condition holds only approximately. For response
   rates 30% against 50% at error rates 0.05 it lowers the maximum expected
   sample size from 50.8 (Wald's SPRT calibrated to the same errors) to
   45.2, and to 45.0 with the least favourable θ*. For a normal mean 0

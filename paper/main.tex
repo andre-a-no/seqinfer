@@ -1530,10 +1530,10 @@ The modified problem fixes $\theta^*$. The Kiefer--Weiss problem asks
 for the $\theta^*$ at which the resulting test has the smallest maximum
 expected sample size, and by Lorden's characterisation~\cite{lorden1980}
 that is the $\theta^*$ at which the maximum is attained at $\theta^*$
-itself. The implementation generates candidates by bisection on
-$\arg\max_\theta E_\theta N-\theta^*$, designing each in full, and
-returns the candidate, the first-order point included, with the smallest
-maximum expected sample size. For the Bernoulli example the first-order
+itself. For discrete data the implementation generates candidates by
+bisection on $g(\theta^*)=\arg\max_\theta E_\theta N-\theta^*$, designing
+each in full, and returns the candidate, the first-order point included,
+with the smallest maximum expected sample size. For the Bernoulli example the first-order
 $\theta^*=0.3971$ gives a maximum expected sample size of $45.17$,
 attained at $0.3933$; the search returns $\theta^*=0.3925$ with $45.01$,
 attained at $0.3936$. Near the solution the maximum is flat in
@@ -1547,13 +1547,18 @@ decreasing, and on a symmetric problem its root is the midpoint to
 $3\cdot10^{-4}$ of $\theta_1-\theta_0$. The maximum expected sample size
 is not: over a tenth of the interval around the root it changes by about
 $2\cdot10^{-4}$ of its value, the order of the calibration error of the
-multipliers, so that which candidate has the smallest maximum is partly
-decided by rounding. For $\theta_0=0$ against $\theta_1=0.5$ with error
-probabilities $0.05$ and $0.2$ and $H=60$, a bisection over the whole
-interval returns $\theta^*=0.340$ with a maximum of $17.131$, the root of
-the characterisation is at about $0.346$ with $17.140$, and the
-first-order point $0.289$ gives $17.148$: the three plans differ by less
-than a tenth of a percent.
+multipliers, so that which candidate has the smallest maximum would be
+partly decided by rounding, and would change with the candidates a search
+happens to visit. For $\theta_0=0$ against $\theta_1=0.5$ with error
+probabilities $0.05$ and $0.2$ and $H=60$, the candidate with the smallest
+maximum among those of a bisection over the whole interval is
+$\theta^*=0.340$ with $17.131$, the root of the characterisation is
+$0.3462$ with $17.140$, and the first-order point $0.289$ gives $17.148$:
+the three plans differ by less than a tenth of a percent. For data on a
+lattice (normal, exponential) the implementation therefore returns the
+root of the characterisation, found by the Illinois variant of regula
+falsi to $2\cdot10^{-4}$ of $\theta_1-\theta_0$; it is reproducible, and a
+symmetric problem gets the midpoint exactly.
 
 Because the root is well determined, it can be tabulated. In the
 standardised coordinate $\lambda=(\theta^*-\theta_0)/(\theta_1-\theta_0)$
@@ -1573,9 +1578,10 @@ and $1$ in $\rho$; on 11 Halton points not used in the fit the error is
 $1.2\cdot10^{-4}$ rms and at most $3.3\cdot10^{-4}$. The search for the
 least favourable $\theta^*$ starts from a bracket of $\pm0.004$ around
 the tabulated root ($\pm0.03$ below $\rho=1.5$) and falls back to the
-whole interval when the bracket does not contain a sign change. With it,
-the example above takes 81 seconds instead of 171; without numpy and
-before the calibration below, the full search took two hours.
+whole interval when the bracket does not contain a sign change. The
+example above takes 83 seconds; the bisection over the whole interval
+with the earlier implementation, without numpy and without the
+calibration below, took two hours.
 
 Each candidate is designed in full. The backward pass is written as
 array operations (numpy, when installed), and once Broyden's method has
@@ -1823,7 +1829,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$212$ tests in total; the remainder cover transactional updates,
+$213$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under

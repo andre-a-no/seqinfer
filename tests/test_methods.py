@@ -673,6 +673,20 @@ class LeastFavourableTable(unittest.TestCase):
         self.assertIsNone(lf(0.05, 0.3, 2.0))
 
 
+class LeastFavourableRoot(unittest.TestCase):
+    """For lattice data the least favourable theta* is the root of Lorden's characterisation."""
+
+    def test_root_of_the_characterisation(self):
+        for args, centre in (((0.0, 1.0, 0.05, 0.05, 30), 0.5), ((1.0, 0.0, 0.01, 0.1, 30), None)):
+            d = kiefer_weiss_plan(*args, family=Gaussian(1.0), theta_star="least-favourable", cache=False)
+            _, where = d.maximum_expected_n(grid=48)
+            self.assertLess(abs(where - d.theta_star), 1e-3)  # largest expected sample size at theta* itself
+            if centre is not None:  # symmetric problem: the midpoint, exactly
+                self.assertAlmostEqual(d.theta_star, centre, places=9)
+            self.assertLessEqual(d.at_theta0.reject, args[2])
+            self.assertLessEqual(d.at_theta1.accept, args[3])
+
+
 class ThirdReviewNumerics(unittest.TestCase):
     """Defects found by the third review; each test reproduces one."""
 
