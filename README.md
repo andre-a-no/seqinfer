@@ -185,6 +185,13 @@ cd paper && latexmk -pdf main.tex   # the paper; needs TeX Live with biber
 
 See [CONTRIBUTING.md](https://github.com/andre-a-no/sequential-analysis/blob/main/CONTRIBUTING.md).
 
+## Citing
+
+If you use sequential-analysis in research, please cite it: the
+repository's [CITATION.cff](https://github.com/andre-a-no/sequential-analysis/blob/main/CITATION.cff)
+gives the details, and GitHub's *Cite this repository* button turns them
+into BibTeX or APA. Releases are archived on Zenodo with a DOI.
+
 ## License
 
 sequential-analysis is dual-licensed:

@@ -44,8 +44,10 @@ smoke test again.
 ## Each release
 
 1. Update `__version__` in `src/sequential_analysis/version.py` (the only
-   place it is written; `pyproject.toml` reads it from there) and move the
-   "unreleased" section of `CHANGELOG.md` under the version and date.
+   place it is written; `pyproject.toml` reads it from there), move the
+   "unreleased" section of `CHANGELOG.md` under the version and date, and
+   set `version` and `date-released` in `CITATION.cff` (Zenodo archives
+   every GitHub release with a DOI and takes its metadata from that file).
 2. Merge to `main` with CI green.
 3. Tag and push:
 

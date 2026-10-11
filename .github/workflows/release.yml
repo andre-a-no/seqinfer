@@ -38,6 +38,9 @@ jobs:
           fi
       - name: the changelog has a dated section for this version
         run: grep -q "^## ${{ steps.version.outputs.version }} — [0-9]" CHANGELOG.md
+      - name: CITATION.cff names this version (Zenodo takes the metadata from it)
+        run: |
+          grep -q "^version: ${{ steps.version.outputs.version }}$" CITATION.cff
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*

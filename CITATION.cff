@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: >-
+  If you use sequential-analysis in your research, please cite it as below.
+title: "sequential-analysis: sequential statistical inference separated from the experimental runtime"
+type: software
+authors:
+  - given-names: Alexander
+    family-names: Stepanov
+    affiliation: Sobolev Institute of Mathematics
+  - given-names: Andrej
+    family-names: Novikov
+    affiliation: Novikov Laboratories LLC
+version: 0.1.0
+date-released: "2026-10-10"
+license: AGPL-3.0-only
+repository-code: "https://github.com/andre-a-no/sequential-analysis"
+url: "https://pypi.org/project/sequential-analysis/"
+abstract: >-
+  Sequential statistical procedures (SPRT, Lorden's 2-SPRT, optimal
+  Kiefer-Weiss designs, anytime-valid and group sequential tests,
+  change-point detection, filtering) written as state-transition functions
+  F(S, X, R) -> (S', O, R'), separated from a reproducible runtime with
+  checkpoints, replay and conformance vectors. Dual-licensed: GNU AGPL v3,
+  or a commercial license from Novikov Laboratories LLC (see COMMERCIAL.md).
+keywords:
+  - sequential analysis
+  - SPRT
+  - Kiefer-Weiss problem
+  - anytime-valid inference
+  - group sequential design
+  - change-point detection
+  - reproducibility
