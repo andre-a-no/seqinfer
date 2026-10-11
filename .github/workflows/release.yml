@@ -1,50 +1,148 @@
 name: release
 
-# Publishes to PyPI when a version tag (v0.1.0, ...) is pushed. Uses PyPI trusted
-# publishing: no token is stored anywhere; PyPI checks that the upload comes from
-# this workflow in this repository (see RELEASING.md for the one-time setup).
+# A version tag (v0.1.0, ...) publishes to PyPI. Run by hand (Actions -> release ->
+# Run workflow) it is a rehearsal: "none" builds and tests the release without
+# publishing anything, "testpypi" also uploads it to test.pypi.org and installs it
+# from there. Uploads use trusted publishing: no token is stored anywhere (see
+# RELEASING.md). After every upload the package is installed from the index and
+# smoke-tested (tools/smoke_test.py).
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish_to:
+        description: "Rehearsal: build and test only (none), or also upload to TestPyPI"
+        type: choice
+        options: [none, testpypi]
+        default: none
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: the tag names the version of the package (version.py)
+      - id: version
+        name: the version of the package (version.py), and the tag that names it
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/sequential_analysis/version.py)
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+          fi
+      - name: the changelog has a dated section for this version
+        run: grep -q "^## ${{ steps.version.outputs.version }} — [0-9]" CHANGELOG.md
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
-      - name: tests against the installed wheel
-        run: |
-          python -m venv /tmp/venv
-          /tmp/venv/bin/pip install dist/*.whl numpy
-          mkdir /tmp/outside && cp -r tests conformance tools /tmp/outside/
-          cd /tmp/outside && /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
-  publish:
+  test:
+    # the built wheel, installed into a clean environment, on every supported Python
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        numpy: [with, without]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: install the wheel
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          if [ "${{ matrix.numpy }}" = with ]; then /tmp/venv/bin/pip install numpy; fi
+      - name: test suite and smoke test from outside the checkout
+        run: |
+          mkdir /tmp/outside && cp -r tests conformance tools /tmp/outside/
+          cd /tmp/outside
+          /tmp/venv/bin/python tools/smoke_test.py "${{ needs.build.outputs.version }}"
+          /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
+
+  testpypi:
+    needs: [build, test]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_to == 'testpypi'
+    runs-on: ubuntu-latest
     environment:
-      name: pypi
-      url: https://pypi.org/project/sequential-analysis/
+      name: testpypi
+      url: https://test.pypi.org/project/sequential-analysis/
     permissions:
-      id-token: write  # trusted publishing
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true  # a rehearsal may be repeated; an index never takes a version twice
+
+  from-testpypi:
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install from TestPyPI (dependencies from PyPI) and smoke-test
+        run: |
+          python -m venv /tmp/venv
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            /tmp/venv/bin/pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "sequential-analysis[fast]==${{ needs.build.outputs.version }}" && break
+            sleep 30
+          done
+          cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"
+
+  pypi:
+    needs: [build, test]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sequential-analysis/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  from-pypi:
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install from PyPI and smoke-test
+        run: |
+          python -m venv /tmp/venv
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            /tmp/venv/bin/pip install --no-cache-dir "sequential-analysis[fast]==${{ needs.build.outputs.version }}" && break
+            sleep 30
+          done
+          cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"
