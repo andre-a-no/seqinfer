@@ -17,6 +17,7 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,fit,calc}
 
+\usepackage{xurl}
 \usepackage[hidelinks]{hyperref}
 \usepackage[nameinlink,noabbrev,capitalise]{cleveref}
 
@@ -1755,7 +1756,8 @@ same contracts, and implementations in different languages need not
 have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
-standard library and comprises about $5\,600$ lines, with one module per
+standard library (numpy, when installed, accelerates the design of
+optimal plans) and comprises about $6\,200$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1829,7 +1831,7 @@ non-interference are checked for fifteen combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$213$ tests in total; the remainder cover transactional updates,
+$219$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
@@ -1931,6 +1933,17 @@ sequential scientific procedure should remain independent of the
 mechanisms that acquire observations, execute computation, persist
 state, and act on outputs. That independence is what makes sequential
 experiments reproducible, composable, and long-lived.
+
+\section*{Code availability}
+
+The reference implementation is released as the Python package
+\texttt{sequential-analysis}, version~0.1.0, available from the Python
+Package Index (\url{https://pypi.org/project/sequential-analysis/}) and
+at \url{https://github.com/andre-a-no/sequential-analysis}, together with
+the conformance vectors, the JavaScript check and the scripts that
+produce \cref{tab:oc} and the table of least favourable parameters. It
+is distributed under the GNU Affero General Public License, version~3,
+or under a commercial license from Novikov Laboratories LLC.
 
 % ============================================================
 \printbibliography
