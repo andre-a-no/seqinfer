@@ -316,8 +316,10 @@ class Run:
         An observation the topology cannot use (unknown input, missing key
         or event time) and a statistical input that violates the
         procedure's contract are invalid inputs, handled by `on_invalid`.
-        Delivery errors (OrderingError under the strict policy) are not:
-        that policy was chosen to stop the run.
+        Ordering errors are not: OrderingError from delivery (the strict
+        policy) or from the topology (an input observed twice for one key,
+        event time going backwards) stops the run, as those policies were
+        chosen to.
         """
         self._enter()
         self._busy = True

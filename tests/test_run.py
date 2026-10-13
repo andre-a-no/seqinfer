@@ -1157,5 +1157,59 @@ class FourthReviewRegressions(unittest.TestCase):
         self.assertFalse(_MATH_DOMAIN.search("invalid literal for int() with base 10: 'x'"))
 
 
+
+class FourthReviewRuntime(unittest.TestCase):
+    """Line-by-line review after 0.1.0: sources, delivery, runtimes, chains."""
+
+    def test_skip_to_filters_by_the_position_at_the_checkpoint(self):
+        stream = [Observation("x", float(i), seq=s) for i, s in enumerate([0, 1, 2, 2, 3])]
+        straight = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(straight, stream)
+        run = Run(EMA(0.5), delivery=Delivery("arrival", dedup=False))
+        run_sync(run, stream[:1])
+        resumed = Run.restore(EMA(0.5), run.checkpoint(), delivery=Delivery("arrival", dedup=False))
+        run_sync(resumed, skip_to(stream, resumed.delivery))
+        self.assertEqual((resumed.t, resumed.history_digest), (straight.t, straight.history_digest))
+
+    def test_dropped_observations_leave_no_gap(self):
+        async def burst(n):
+            for i in range(n):
+                yield Observation("x", 0.5, seq=i)
+                if i % 5 == 0:
+                    await asyncio.sleep(0)
+
+        run = Run(EMA(0.5))
+        asyncio.run(run_async(run, [burst(500)], maxsize=2, overflow="drop"))
+        self.assertGreater(run.counters["dropped_by_runtime"], 0)
+        self.assertEqual(run.t + run.counters["dropped_by_runtime"], 500)
+        self.assertEqual(run.delivery.state()["next"], {"x": 500})
+        self.assertEqual(run.delivery.state()["ahead"], {})
+        resumed = Run.restore(EMA(0.5), run.checkpoint())
+        self.assertEqual(list(skip_to([Observation("x", 0.5, seq=i) for i in range(500)], resumed.delivery)), [])
+
+    def test_maxsize_must_bound_the_queue(self):
+        for maxsize in (0, -1, 2.0):
+            with self.subTest(maxsize=maxsize), self.assertRaises(ValueError):
+                asyncio.run(run_async(Run(EMA(0.5)), [as_async(from_values("x", [1.0]))], maxsize=maxsize))
+
+    def test_an_in_memory_log_with_unrecordable_values_restores(self):
+        log = ObservationLog()
+        run = Run(FragileSum(), log=log)
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run_sync(run, [Observation("x", 1.0, seq=0), Observation("x", float("nan"), seq=1),
+                           Observation("x", (1.0,), seq=2), Observation("x", 2.0, seq=3)])
+        checkpoint = run.checkpoint()
+        restored = Run.restore(FragileSum(), checkpoint, log=log)
+        self.assertEqual(restored.t, 2)
+
+    def test_a_failing_link_is_an_invalid_input(self):
+        chain = Chain(EMA(0.5), EMA(0.5), lambda out: {"x": out.nope}, link_name="broken")
+        run = Run(chain)
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run.step({"x": 1.0})
+        self.assertIs(run.status, RunStatus.RUNNING)
+        self.assertEqual((run.t, run.counters["invalid_skipped"]), (0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

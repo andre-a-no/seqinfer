@@ -19,6 +19,9 @@ strict    reject gaps with OrderingError; late duplicates are dropped when
 sequence number that has not yet been delivered.  Observations held back
 by the `sequence` policy are deliberately not persisted; after a restore
 they are fetched again from the source, starting at its position.
+
+The `duplicates` counter is informational: after a restore, duplicates
+that `skip_to` filters before they reach delivery are not counted again.
 """
 from __future__ import annotations
 
@@ -54,6 +57,28 @@ class Delivery:
         if obs.seq < self._next.get(obs.source, self.start):
             return True
         return obs.seq in self._ahead.get(obs.source, ())
+
+    def skip(self, obs: Observation) -> None:
+        """Pass over an observation that will never be delivered (dropped by the runtime).
+
+        Under the arrival policy its sequence number counts as consumed, so
+        that later ones are not held up behind the gap and a restored run
+        does not receive it after all.
+        """
+        if self.policy != "arrival":
+            raise OrderingError(f"policy {self.policy!r} cannot pass over sequence numbers")
+        if obs.seq is None or self.delivered(obs):
+            return
+        src, nxt = obs.source, self._next.get(obs.source, self.start)
+        ahead = self._ahead.setdefault(src, set())
+        if obs.seq == nxt:
+            nxt += 1
+            while nxt in ahead:
+                ahead.discard(nxt)
+                nxt += 1
+            self._next[src] = nxt
+        else:
+            ahead.add(obs.seq)
 
     def positions(self) -> dict[str, int]:
         return dict(self._next)

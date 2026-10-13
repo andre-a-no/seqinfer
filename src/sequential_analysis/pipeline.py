@@ -27,9 +27,9 @@ class Chain(Procedure):
     returns None when there is nothing to pass on for this step.  The chain
     is terminal as soon as either stage is.
 
-    If `link` produces an input that violates the contract of `second`,
-    the step raises ContractViolation and neither stage advances: the run
-    handles the whole input X_t by its `on_invalid` policy.
+    If `link` fails, or produces an input that violates the contract of
+    `second`, the step raises ContractViolation and neither stage advances:
+    the run handles the whole input X_t by its `on_invalid` policy.
     """
 
     def __init__(
@@ -60,7 +60,12 @@ class Chain(Procedure):
         s1, s2 = state
         s1, o1 = self.first.step(s1, x, rng)
         o2 = None
-        x2 = self.link(o1)
+        try:
+            x2 = self.link(o1)
+        except Exception as error:  # as a failing transform in a topology: this input is invalid
+            raise ContractViolation(
+                f"link {self.link_name!r} failed on the output of {self.first.name}: {type(error).__name__}: {error}"
+            ) from error
         if x2 is not None and not self.second.is_terminal(s2):
             try:
                 validate_input(self.second, x2)
