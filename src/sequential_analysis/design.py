@@ -10,7 +10,7 @@ one-parameter exponential families in `sequential_analysis.procedures`.
 
 The sum is carried on a lattice.  For Bernoulli and Poisson data the
 lattice is the integers and every result is exact up to floating point
-(the Poisson distribution is cut where its tail is below 1e-16).  For
+(the Poisson distribution leaves out terms below 1e-17).  For
 normal data the observation is replaced by its discretisation on a
 lattice of step h (default sigma/16), and exponential data by the
 midpoints of cells of width h (default a eighth of the mean at theta*);
@@ -41,6 +41,7 @@ kiefer_weiss_plan
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
@@ -88,6 +89,15 @@ class Lattice:
     shift: float = 0.0
 
 
+#: Most points one observation may take on the lattice (memory, and time per step).
+_MAX_LATTICE = 1e6
+
+
+def _check_step(h: float) -> None:
+    if type(h) not in (int, float) or not (math.isfinite(h) and h > 0):
+        raise ValueError(f"the lattice step must be a positive finite number, got {h!r}")
+
+
 def lattice(family: Family, theta: float, step: float | None = None) -> Lattice:
     """The distribution of one observation on the lattice used by the design."""
     family.check(theta)
@@ -110,8 +120,11 @@ def lattice(family: Family, theta: float, step: float | None = None) -> Lattice:
     if isinstance(family, Gaussian):
         sigma = family.sigma
         h = step if step is not None else sigma / 16.0
-        if not h > 0:
-            raise ValueError("the lattice step must be positive")
+        _check_step(h)
+        if h > _NORMAL_WIDTH * sigma:
+            raise ValueError(f"lattice step {h!r} is too coarse for sigma = {sigma!r}")
+        if 2 * _NORMAL_WIDTH * sigma / h > _MAX_LATTICE:
+            raise ValueError(f"lattice step {h!r} is too fine: over {_MAX_LATTICE:.0e} points per observation")
         lo = math.floor((theta - _NORMAL_WIDTH * sigma) / h)
         hi = math.ceil((theta + _NORMAL_WIDTH * sigma) / h)
         raw = [math.exp(-0.5 * ((j * h - theta) / sigma) ** 2) for j in range(lo, hi + 1)]
@@ -120,8 +133,11 @@ def lattice(family: Family, theta: float, step: float | None = None) -> Lattice:
     if isinstance(family, Exponential):
         # Midpoints of cells of width h: the lattice mean is 1/theta up to O(h^2).
         h = step if step is not None else 1.0 / (8.0 * theta)
-        if not h > 0:
-            raise ValueError("the lattice step must be positive")
+        _check_step(h)
+        if theta * h > _EXPONENTIAL_TAIL:
+            raise ValueError(f"lattice step {h!r} is too coarse for a mean of {1 / theta!r}")
+        if _EXPONENTIAL_TAIL / (theta * h) > _MAX_LATTICE:
+            raise ValueError(f"lattice step {h!r} is too fine: over {_MAX_LATTICE:.0e} points per observation")
         count = math.ceil(_EXPONENTIAL_TAIL / (theta * h)) + 1
         raw = [math.exp(-theta * (j + 0.5) * h) for j in range(count)]
         total = sum(raw)
@@ -570,6 +586,11 @@ def kiefer_weiss_plan(
                                       ((theta0, "theta0"), (theta1, "theta1"), (alpha0, "alpha0"), (alpha1, "alpha1")))
     horizon = _integer(horizon, "horizon")
     step = None if step is None else _real(step, "step")
+    if step is not None:
+        if isinstance(family, (Bernoulli, Poisson)):
+            raise ValueError("step is the lattice step for normal and exponential data; "
+                             "Bernoulli and Poisson data need none")
+        _check_step(step)
     if theta_star is not None and not isinstance(theta_star, str):
         theta_star = _real(theta_star, "theta_star")
     family.check(theta0)
@@ -616,6 +637,10 @@ def _cache_key(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step
         "theta0": theta0, "theta1": theta1, "alpha0": alpha0, "alpha1": alpha1, "horizon": horizon,
         "family": family.spec(), "theta_star": theta_star, "step": step,
     }
+    if theta_star == "least-favourable" and isinstance(family, Gaussian):
+        # the search starts from the precomputed table: another table may find another root
+        table = _least_favourable_table()
+        key["table"] = None if table is None else hashlib.sha256(canonical_json(table).encode()).hexdigest()[:16]
     try:
         canonical_json(key)
     except (TypeError, ValueError):
@@ -685,9 +710,11 @@ def _verified(
             return None
         exact = lattice(family, stored_star, step).exact
         lattice_step = None if exact else lattice(family, stored_star, step).step
-        if data["step"] != lattice_step or bool(data["exact"]) != exact:
+        if data["step"] != lattice_step or data["exact"] is not exact:
             return None
         config = data["plan"]
+        if type(config["reject_high"]) is not bool or type(config["label"]) is not str:
+            return None
         plan = PlanTest(
             config["continuation"], contract=family.contract(config["input"]),
             reject_high=config["reject_high"], label=config["label"], input=config["input"],
@@ -701,14 +728,24 @@ def _verified(
             for field in ("reject", "accept", "expected_n"):
                 if abs(getattr(oc, field) - stored[field]) > 1e-9 * max(1.0, abs(stored[field])):
                     return None
-        if ocs[0].reject > alpha0 * (1 + 1e-12) or ocs[1].accept > alpha1 * (1 + 1e-12):
+        if ocs[0].reject > alpha0 * (1 + _ERROR_SLACK) or ocs[1].accept > alpha1 * (1 + _ERROR_SLACK):
+            return None
+        lambda0, lambda1, lagrangian = (float(data[k]) for k in ("lambda0", "lambda1", "lagrangian"))
+        if not (0 < lambda0 < math.inf and 0 < lambda1 < math.inf):
+            return None
+        # the multipliers belong to this plan: the Lagrangian is E*[N] + lambda0 alpha0 + lambda1 alpha1
+        value = ocs[2].expected_n + lambda0 * ocs[0].reject + lambda1 * ocs[1].accept
+        if not abs(value - lagrangian) <= 1e-9 * max(1.0, abs(lagrangian)):
             return None
         return KieferWeissDesign(
-            plan, stored_star, float(data["lambda0"]), float(data["lambda1"]), ocs[0], ocs[1], ocs[2],
-            float(data["lagrangian"]), exact, family, step,
+            plan, stored_star, lambda0, lambda1, ocs[0], ocs[1], ocs[2], lagrangian, exact, family, step,
         )
     except (KeyError, TypeError, ValueError, ArithmeticError):
         return None
+
+
+#: Relative excess of an error rate over its target that counts as rounding, in design and in the cache alike.
+_ERROR_SLACK = 1e-9
 
 
 def _kiefer_weiss(theta0, theta1, alpha0, alpha1, horizon, family, theta_star, step) -> KieferWeissDesign:
@@ -842,7 +879,7 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
         scale = max(1.0, abs(d0) / 2.0, abs(d1) / 2.0)  # damp long steps
         d0, d1 = d0 / scale, d1 / scale
         new_u = (u[0] + d0, u[1] + d1)
-        if max(abs(x) for x in new_u) > 200:
+        if not all(math.isfinite(x) and abs(x) <= 200 for x in new_u):
             raise ValueError(f"no plan with at most {horizon} observations meets the error rates; increase the horizon")
         new_f = residual(*new_u)
         df = (new_f[0] - f[0], new_f[1] - f[1])
@@ -869,12 +906,17 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
         u = _joint_raise(u, feasible, limit=1e-2) or u
     if not feasible(u):
         u = _coordinate_search(u, residual, feasible) or _joint_raise(u, feasible) or _grid_search(feasible)
+    if u is None and not problem.lat.exact:
+        raise ValueError(
+            f"no plan with at most {horizon} observations meets the error rates on a lattice of step "
+            f"{problem.lat.step:g}; give a finer lattice step, or increase the horizon"
+        )
     if u is None:
         raise ValueError(
             f"no plan with at most {horizon} observations meets the error rates; increase the horizon.  "
-            f"(For discrete data near the smallest feasible horizon a fixed-sample test may still meet them: "
-            f"the plans optimal for some multipliers are non-randomised and do not reach every pair of "
-            f"error rates, which would take randomised boundaries.)"
+            f"(Near the smallest feasible horizon a fixed-sample test may still meet them: the plans "
+            f"optimal for some multipliers are non-randomised and do not reach every pair of error rates, "
+            f"which would take randomised boundaries.)"
         )
 
     # Spend any slack: lower each multiplier while both error rates stay within target.
@@ -915,7 +957,7 @@ def _calibrated(family, theta0, theta1, alpha0, alpha1, horizon, theta_star, ste
 
     at0, at1 = oc(theta0), oc(theta1)
     # the forward pass is the definition of the plan's error rates: never return a plan that misses them
-    if at0.reject > alpha0 * (1.0 + 1e-9) or at1.accept > alpha1 * (1.0 + 1e-9):
+    if at0.reject > alpha0 * (1.0 + _ERROR_SLACK) or at1.accept > alpha1 * (1.0 + _ERROR_SLACK):
         raise ValueError(
             f"the plan for at most {horizon} observations misses the error rates on the lattice "
             f"({at0.reject:.4g} and {at1.accept:.4g}); give a finer lattice step"
@@ -933,6 +975,8 @@ def _coordinate_search(u, residual, feasible, rounds: int = 30):
         def ok(x: float) -> bool:
             return bool(residual(*((x, other) if which == 0 else (other, x)))[which] <= 0)
 
+        if not math.isfinite(start):
+            return None
         lo = hi = start
         if ok(hi):
             step = 1e-3
@@ -943,7 +987,7 @@ def _coordinate_search(u, residual, feasible, rounds: int = 30):
             step = 1e-3
             while not ok(hi):
                 lo, hi, step = hi, hi + step, 2 * step
-                if hi > 200:
+                if not hi <= 200:
                     return None
         while hi - lo > 1e-9:
             mid = 0.5 * (lo + hi)
@@ -971,6 +1015,8 @@ def _coordinate_search(u, residual, feasible, rounds: int = 30):
 
 def _joint_raise(u, feasible, limit: float = 200.0):
     """The smallest equal raise of both multipliers (at most `limit`) that meets both targets."""
+    if not all(math.isfinite(x) for x in u):
+        return None
     lo, hi = 0.0, 1e-4
     while not feasible((u[0] + hi, u[1] + hi)):
         lo, hi = hi, 2 * hi
@@ -1028,7 +1074,7 @@ def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> floa
     alpha0, alpha1 in [0.005, 0.2] and rho in [1.5, 2.5]; it hardly depends on rho there, so larger rho
     use the value at 2.5.  Below 1.5, where the horizon nearly binds, the value at 1.5 is returned and
     may be off by 0.015.  None for error rates outside the table.  The search for the least favourable
-    theta* uses it only to bracket its bisection.
+    theta* uses it only to bracket its root finding.
     """
     table = _least_favourable_table()
     if table is None:
@@ -1123,7 +1169,9 @@ def _least_favourable(theta0, theta1, alpha0, alpha1, horizon, family, step) -> 
     if bracketed and not discrete:
         assert ga is not None and gb is not None
         a_, b_, fa, fb, side = a, b, ga, gb, 0
-        while b_ - a_ > 2e-4 * (hi - lo):
+        for _ in range(40):  # each iteration is a full design; it converges in a handful
+            if b_ - a_ <= 2e-4 * (hi - lo):
+                break
             c = b_ - fb * (b_ - a_) / (fb - fa)
             fc = design(c)
             if fc is None:
