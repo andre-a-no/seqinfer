@@ -1000,5 +1000,162 @@ class Guards(unittest.TestCase):
         self.assertEqual(Run(FragileSum()).provenance["sequential_analysis"], sequential_analysis.__version__)
 
 
+class TerminalAfterStep(FragileSum):
+    """is_terminal fails: the step must not be committed half-way."""
+
+    name = "terminal_after_step"
+
+    def is_terminal(self, state):
+        if state.n:
+            raise RuntimeError("is_terminal failed")
+        return False
+
+
+class FourthReviewRegressions(unittest.TestCase):
+    """Line-by-line review after 0.1.0: run, checkpoints, canonical JSON, contracts."""
+
+    def logged_run(self, path):
+        run = Run(FragileSum(), delivery=Delivery("strict"), log=ObservationLog(path), run_id="r", clock=lambda: 0.0)
+        source = list(from_values("x", [0.5] * 10))
+        run_sync(run, source[:5])
+        checkpoint = json.loads(json.dumps(run.checkpoint()))
+        run_sync(run, source[5:])
+        run.log.close()
+        return checkpoint
+
+    def test_a_refused_restore_leaves_the_log_alone(self):
+        tampered = [
+            lambda c: c.__setitem__("t", 2**60),
+            lambda c: c["counters"].__setitem__("invalid_skipped", 2**60),
+            lambda c: c.__setitem__("note", float("nan")),
+            lambda c: c.__setitem__("consumer_errors", [{"error": "\ud800"}]),
+        ]
+        for edit in tampered:
+            with tempfile.TemporaryDirectory() as tmp, self.subTest(edit=edit):
+                path = Path(tmp) / "log.jsonl"
+                checkpoint = self.logged_run(path)
+                edit(checkpoint)
+                lines = path.read_text().splitlines()
+                with self.assertRaises(IncompatibleCheckpoint):
+                    Run.restore(FragileSum(), checkpoint, delivery=Delivery("strict"))
+                self.assertEqual(path.read_text().splitlines(), lines)
+
+    def test_malformed_checkpoints_are_incompatible_checkpoints(self):
+        run = Run(FragileSum(), run_id="r")
+        run.step({"x": 1.0})
+        base = run.checkpoint()
+        edits = {
+            "empty run_id": lambda c: c.__setitem__("run_id", ""),
+            "unknown policy": lambda c: c["provenance"].__setitem__("on_invalid", "ignore"),
+            "unknown counter": lambda c: c["counters"].__setitem__("bogus", 7),
+            "another run": lambda c: c["provenance"].__setitem__("run_id", "other"),
+            "bool for a number": lambda c: c["procedure"]["config"].__setitem__("limit", True),
+        }
+        for label, edit in edits.items():
+            checkpoint = json.loads(json.dumps(base))
+            edit(checkpoint)
+            with self.subTest(label), self.assertRaises(IncompatibleCheckpoint):
+                Run.restore(FragileSum(), checkpoint)
+        randomized = Run(BootstrapParticleFilter(q=1.0, r=1.0, particles=4), seed=1)
+        checkpoint = randomized.checkpoint()
+        checkpoint["provenance"]["seed"] = None
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(BootstrapParticleFilter(q=1.0, r=1.0, particles=4), checkpoint)
+        with self.assertRaises(TypeError):
+            Run.restore(FragileSum(), base, log="x.jsonl")
+
+    def test_a_refused_restore_leaves_topology_and_delivery_alone(self):
+        run = Run(FragileSum(), delivery=Delivery("strict"))
+        run_sync(run, from_values("x", [1.0, 2.0]))
+        checkpoint = run.checkpoint()
+        checkpoint["terminal"] = True
+        delivery = Delivery("strict")
+        with self.assertRaises(IncompatibleCheckpoint):
+            Run.restore(FragileSum(), checkpoint, delivery=delivery)
+        self.assertEqual(delivery.state(), Delivery("strict").state())
+
+    def test_unexpected_failure_in_step_fails_the_run_and_commits_nothing(self):
+        run = Run(TerminalAfterStep())
+        with self.assertRaises(RuntimeError):
+            run.step({"x": 1.0})
+        self.assertIs(run.status, RunStatus.FAILED)
+        self.assertEqual(run.t, 0)
+
+    def test_mixed_key_types_are_an_invalid_input(self):
+        run = Run(FragileSum())
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run.step({1: 1.0, "y": 2.0})
+        self.assertEqual(run.counters["invalid_skipped"], 1)
+        self.assertIs(run.status, RunStatus.RUNNING)
+
+    def test_consumers_cannot_pause_or_close_the_run(self):
+        for action in ("pause", "close"):
+            run = Run(FragileSum())
+            run.consumers.append(lambda event, run=run, action=action: getattr(run, action)())
+            with self.subTest(action), self.assertLogs("sequential_analysis", "WARNING"):
+                run.step({"x": 1.0})
+            self.assertIs(run.status, RunStatus.RUNNING)
+            self.assertIn("re-entrant", run.consumer_errors[0]["error"])
+
+    def test_a_consumer_error_with_undecodable_bytes_still_checkpoints(self):
+        def broken(event):
+            raise RuntimeError("bad byte \udcff")
+
+        run = Run(FragileSum(), consumers=[broken])
+        with self.assertLogs("sequential_analysis", "WARNING"):
+            run.step({"x": 1.0})
+        restored = Run.restore(FragileSum(), run.checkpoint())
+        self.assertEqual(restored.consumer_errors, run.consumer_errors)
+
+    def test_initialized_from_must_be_json(self):
+        for value in (object(), {"t": 2**60}, {"note": "\ud800"}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                Run(FragileSum(), initialized_from=value)
+
+    def test_canonical_json_refuses_lone_surrogates_and_formats_float_subclasses(self):
+        from sequential_analysis.canonical import canonical_json
+
+        with self.assertRaises(ValueError):
+            canonical_json("\ud800")
+        with self.assertRaises(ValueError):
+            canonical_json({"\udcff": 1})
+
+        class Loud(float):
+            def __repr__(self):
+                return "Loud!"
+
+        self.assertEqual(canonical_json([Loud(2.5), Loud(1e21)]), "[2.5,1e+21]")
+        if numpy is not None:
+            self.assertEqual(canonical_json(numpy.float64(1.5)), "1.5")
+
+    def test_infinity_is_equivalent_only_to_itself(self):
+        from sequential_analysis.numerics import equivalent
+
+        inf = float("inf")
+        self.assertTrue(equivalent(inf, inf, rel_tol=1e-9))
+        self.assertFalse(equivalent(inf, 1.0, rel_tol=1e-9))
+        self.assertFalse(equivalent(inf, -inf, rel_tol=1e-9))
+
+    def test_input_contract_parameters_are_checked(self):
+        for kwargs in ({"lower": float("nan")}, {"upper": float("inf")}, {"lower": 1.0, "upper": 0.0},
+                       {"shape": (-1,)}, {"shape": (0,)}, {"lower": True}):
+            with self.subTest(kwargs), self.assertRaises(ValueError):
+                InputContract("x", **kwargs)
+
+    def test_only_an_empty_source_defaults_to_the_input_name(self):
+        from sequential_analysis.core import envelope_problem
+
+        self.assertEqual(Observation("x", 1.0).source, "x")
+        self.assertIsNotNone(envelope_problem(Observation("x", 1.0, source=0)))
+
+    def test_math_domain_errors_of_every_python_version_are_numerical_errors(self):
+        from sequential_analysis.core import _MATH_DOMAIN
+
+        for message in ("math domain error", "expected a positive input, got 0.0",
+                        "expected a nonnegative input, got -inf"):
+            self.assertTrue(_MATH_DOMAIN.search(message), message)
+        self.assertFalse(_MATH_DOMAIN.search("invalid literal for int() with base 10: 'x'"))
+
+
 if __name__ == "__main__":
     unittest.main()
