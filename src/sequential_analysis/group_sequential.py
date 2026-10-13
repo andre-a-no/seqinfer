@@ -51,7 +51,7 @@ def spending_function(kind, alpha: float) -> Callable[[float], float]:
         custom: Callable[[float], float] = kind
         return custom
     if kind == "obrien-fleming":
-        z = _N.inv_cdf(1.0 - alpha / 2.0)
+        z = -_N.inv_cdf(alpha / 2.0)  # not inv_cdf(1 - alpha/2): 1 - alpha/2 rounds away a small alpha
         return lambda t: 0.0 if t <= 0 else 2.0 * _upper(z / math.sqrt(t))
     if kind == "pocock":
         return lambda t: alpha * math.log(1.0 + (math.e - 1.0) * t)
@@ -241,7 +241,8 @@ def group_sequential_design(
         raise ValueError("a one-sided alpha must be below 0.5: the efficacy boundary has to be positive")
     spend = spending_function(spending, side)
     cumulative = [spend(t) for t in ts]
-    if abs(cumulative[-1] - side) > 1e-9 or any(b < a for a, b in zip([0.0, *cumulative], cumulative, strict=False)):
+    increasing = all(b >= a for a, b in zip([0.0, *cumulative], cumulative, strict=False))
+    if abs(cumulative[-1] - side) > 1e-9 * side or not increasing:
         raise ValueError("the spending function must increase and spend exactly alpha by t = 1")
     rec = _Recursion(0.0, two_sided, points_per_sd)
     bounds, previous = [], 0.0

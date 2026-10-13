@@ -67,7 +67,7 @@ class GroupSequentialOutput:
 
 class GroupSequentialTest(Procedure):
     name = "group_sequential_test"
-    version = "3"
+    version = "4"  # 4: t boundaries beyond 2e4 degrees of freedom from the more accurate t tail
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class GroupSequentialTest(Procedure):
         if futility is not None:
             if two_sided:
                 raise ValueError("futility boundaries are for one-sided tests")
-            if len(futility) != len(ns) or any(f > b for f, b in zip(futility, bounds, strict=True)):
+            if len(futility) != len(ns) or any(not f <= b for f, b in zip(futility, bounds, strict=True)):
                 raise ValueError("need one futility boundary per analysis, none above its efficacy boundary")
         self.analyses, self.bounds = tuple(ns), tuple(float(b) for b in bounds)
         self.futility = None if futility is None else tuple(float(f) for f in futility)

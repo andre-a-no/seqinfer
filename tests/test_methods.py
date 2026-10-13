@@ -1212,5 +1212,45 @@ class FourthReviewProcedures(unittest.TestCase):
             sprt.step(state, {"x": 1}, None)
 
 
+
+class FourthReviewNumerics(unittest.TestCase):
+    """Line-by-line review after 0.1.0: numerics."""
+
+    def test_t_tail_with_huge_degrees_of_freedom(self):
+        from sequential_analysis.distributions import _log_upper_tail, _upper_tail
+
+        # log P(T > t), mpmath at 50 digits; the continued fraction used to lose 2e-10 here
+        for t, df, ref in ((34.0911, 3.8956e8, -585.5495147722133), (37.0, 3e8, -689.0290214999757)):
+            self.assertAlmostEqual(math.log(_upper_tail(t, df)), ref, delta=1e-11)
+            self.assertAlmostEqual(_log_upper_tail(t, df), ref, delta=1e-11)
+
+    def test_obrien_fleming_spends_exactly_alpha_when_alpha_is_tiny(self):
+        from sequential_analysis.group_sequential import group_sequential_design, spending_function
+
+        for alpha in (1e-12, 1e-15, 1e-17, 1e-30):
+            self.assertAlmostEqual(spending_function("obrien-fleming", alpha)(1.0) / alpha, 1.0, places=12)
+        group_sequential_design(1e-15, [0.5, 1.0])
+        with self.assertRaises(ValueError):  # spends nothing: the tolerance is relative to alpha
+            group_sequential_design(1e-12, [0.5, 1.0], spending=lambda t: 0.0)
+
+    def test_nan_in_the_inverse_tail(self):
+        from sequential_analysis.distributions import t_isf_log
+
+        self.assertTrue(math.isnan(t_isf_log(math.nan, 2.0)))
+
+    def test_critical_t_does_not_overflow(self):
+        from sequential_analysis.procedures import TMixtureSPRT
+
+        extreme = TMixtureSPRT(0.0, 1e100, 1e-300)
+        self.assertEqual([extreme.critical_t(n) for n in (2, 3)], [None, None])
+        self.assertGreater(extreme.critical_t(10), 1e40)
+
+    def test_nan_futility_boundaries_are_refused(self):
+        from sequential_analysis.procedures import GroupSequentialTest
+
+        with self.assertRaises(ValueError):
+            GroupSequentialTest(1.0, [5, 10], [3.0, 2.0], futility=[math.nan, 2.0])
+
+
 if __name__ == "__main__":
     unittest.main()
