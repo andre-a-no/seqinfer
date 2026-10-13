@@ -25,7 +25,7 @@ Python standard library (3.10+).
 ## Installation
 
 ```
-pip install sequential-analysis          # from PyPI, once released
+pip install sequential-analysis          # from PyPI
 pip install .                            # from a checkout
 pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
 ```
@@ -88,8 +88,11 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   against 31.3 for Lorden's 2-SPRT with thresholds calibrated to the same
   errors: the 2-SPRT is already close to optimal there. A design takes
   about a second for the Bernoulli example and from seconds to a minute
-  for normal data on the default lattice; the least favourable θ* designs
-  ten to twenty candidates and takes as many times longer. With `numpy`
+  for normal data on the default lattice. The least favourable θ* takes
+  longer: for discrete data it designs about a dozen candidates and
+  compares their largest expected sample sizes, some thirty times the time
+  of one design; for normal data it finds the root of Lorden's
+  characterisation from the precomputed table below, in a few designs. With `numpy`
   installed (optional: `pip install "sequential-analysis[fast]"`) the backward pass on
   wide lattices — normal, exponential, Poisson with larger rates — runs as
   array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
@@ -116,8 +119,8 @@ again. Every save, load and ignored file is reported on the logger
 `sequential_analysis.cache` (visible by default):
 
 ```
-design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/sequential-analysis/kiefer_weiss-4785….json
-design cache: loaded kiefer_weiss_plan(...) from ~/.cache/sequential-analysis/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
+design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to /home/me/.cache/sequential-analysis/kiefer_weiss-<hash>.json
+design cache: loaded kiefer_weiss_plan(...) from /home/me/.cache/sequential-analysis/kiefer_weiss-<hash>.json (computed in 1.2 s); error rates verified
 ```
 
 The directory is `cache=` if given, else `$SEQUENTIAL_ANALYSIS_CACHE`, else
