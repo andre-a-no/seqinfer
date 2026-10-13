@@ -6,6 +6,27 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## Unreleased
+
+### Added: inference that does not assume normality
+- `QuantileTest` and `QuantileConfidenceSequence` (Howard and Ramdas 2022):
+  anytime-valid inference for any quantile of any distribution, by
+  one-sided beta-binomial mixtures; valid with ties and atoms, where the
+  sign test is not.
+- `KernelTwoSampleTest` (Shekhar and Ramdas 2023): are A and B equally
+  distributed? A kernel witness and online Newton bets; detects any
+  difference of the distributions.
+- `CatoniConfidenceSequence` (Wang and Ramdas 2023): the mean of
+  heavy-tailed data, given a bound on the standard deviation.
+- `AsymptoticConfidenceSequence` (Waudby-Smith et al. 2024): the mean with
+  estimated variance; asymptotic coverage, reported from `start`
+  observations on.
+- `BettingConfidenceSequence` (Waudby-Smith and Ramdas 2024): the mean of
+  bounded data by hedged capital.
+- All six satisfy the conformance invariants (checkpoint, replay, batch,
+  sync/async equivalence); Monte Carlo tests on Cauchy, lognormal, Pareto,
+  zero-inflated and discrete data.
+
 ## 0.1.1 — 2026-10-13
 
 A line-by-line review of the whole package after the first release. No

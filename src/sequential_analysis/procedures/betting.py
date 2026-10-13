@@ -230,3 +230,109 @@ class SequentialSignTest(_Betting):
             )
             return new, self._output(new, self._log_wealth(state.log_up, state.log_down))
         return self._bet(state, 1.0 if v > self.median0 else 0.0, state.ties)
+
+
+@dataclass(frozen=True)
+class BettingCSState:
+    n: int = 0
+    total: float = 0.0  # sum of the scaled observations
+    squares: float = 0.0  # sum of (y_i - predicted mean_i)^2, for the plug-in variance
+    log_up: tuple[float, ...] = ()  # log wealth on "the mean is above m", per grid point
+    log_down: tuple[float, ...] = ()
+    lower: float | None = None  # running intersection, in the units of the data
+    upper: float | None = None
+
+
+@dataclass(frozen=True)
+class BettingCSOutput:
+    n: int
+    mean: float
+    lower: float
+    upper: float
+
+
+class BettingConfidenceSequence(Procedure):
+    """Confidence sequence for the mean of observations bounded in [lower, upper] (Waudby-Smith and Ramdas 2024).
+
+    Exact, for every distribution on [lower, upper] and for dependent data
+    with a constant conditional mean: with probability at least 1 - alpha
+    the interval contains the mean at every n simultaneously.  For each
+    candidate mean m on a grid the hedged capital process
+
+        K_n(m) = (prod (1 + l_i^+ (y_i - m)) + prod (1 - l_i^- (y_i - m))) / 2
+
+    is kept, with the predictable plug-in stakes
+    l_i = sqrt(2 log(2/alpha) / (s2_{i-1} i log(1 + i))), truncated at
+    c/m and c/(1 - m) (c = 1/2); m is excluded once K_n(m) >= 1/alpha.  The
+    interval spans the grid points not excluded, widened by one grid step
+    on each side, and is intersected over time.  These are the tightest
+    known confidence sequences for bounded data; for a conversion rate
+    use lower = 0, upper = 1.
+
+    The state holds two log-wealths per grid point (`grid`, default 1000).
+    """
+
+    name = "betting_confidence_sequence"
+    version = "1"
+
+    def __init__(
+        self, lower: float = 0.0, upper: float = 1.0, alpha: float = 0.05, *, grid: int = 1000, input: str = "x"
+    ):
+        if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
+            raise ValueError("need finite bounds lower < upper")
+        if not 0 < alpha < 1:
+            raise ValueError("alpha must lie in (0, 1)")
+        if type(grid) is not int or grid < 10:
+            raise ValueError("grid must be an int, at least 10")
+        self.lower, self.upper, self.alpha = float(lower), float(upper), float(alpha)
+        self.grid, self.input = grid, input
+        self._points = tuple((j + 0.5) / grid for j in range(grid))  # candidate means of the scaled data
+        self._log_level = math.log(1.0 / self.alpha)
+        self._c = math.log(2.0 / self.alpha)
+
+    def config(self) -> dict:
+        return {"lower": self.lower, "upper": self.upper, "alpha": self.alpha, "grid": self.grid, "input": self.input}
+
+    def inputs(self):
+        return {self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
+
+    def initial_state(self) -> BettingCSState:
+        zeros = (0.0,) * self.grid
+        return BettingCSState(log_up=zeros, log_down=zeros)
+
+    def _scale(self, y: float) -> float:
+        return self.lower + y * (self.upper - self.lower)
+
+    def step(self, state: BettingCSState, x, rng=None):
+        y = (x[self.input] - self.lower) / (self.upper - self.lower)
+        i = state.n + 1
+        mu = (0.5 + state.total) / i  # predictable estimates, shrunk towards 1/2 and 1/4
+        s2 = (0.25 + state.squares) / i
+        stake = math.sqrt(2.0 * self._c / (s2 * i * math.log1p(i)))
+        log_up, log_down, kept = [], [], []
+        for j, m in enumerate(self._points):
+            up = state.log_up[j] + math.log1p(min(stake, _TRUNCATION / m) * (y - m))
+            down = state.log_down[j] + math.log1p(-min(stake, _TRUNCATION / (1.0 - m)) * (y - m))
+            log_up.append(up)
+            log_down.append(down)
+            if _log_add(up, down) - _LOG2 < self._log_level:
+                kept.append(m)
+        step_size = 1.0 / self.grid
+        lo = max(0.0, kept[0] - step_size) if kept else mu
+        hi = min(1.0, kept[-1] + step_size) if kept else mu
+        lo, hi = self._scale(lo), self._scale(hi)
+        if state.lower is not None and state.upper is not None:
+            lo, hi = max(lo, state.lower), min(hi, state.upper)
+        total = state.total + y
+        new = BettingCSState(i, total, state.squares + (y - mu) ** 2, tuple(log_up), tuple(log_down), lo, hi)
+        return new, BettingCSOutput(i, self._scale(total / i), lo, hi)
+
+    def encode_state(self, state: BettingCSState):
+        return {"n": state.n, "total": state.total, "squares": state.squares, "log_up": list(state.log_up),
+                "log_down": list(state.log_down), "lower": state.lower, "upper": state.upper}
+
+    def decode_state(self, data) -> BettingCSState:
+        state = decode_fields(BettingCSState, data)
+        require_state(len(state.log_up) == len(state.log_down) == self.grid, "one wealth per grid point")
+        require_state(state.squares >= 0 and 0 <= state.total <= state.n, "running sums out of range")
+        return state

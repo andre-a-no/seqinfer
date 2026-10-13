@@ -1757,7 +1757,7 @@ have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
 standard library (numpy, when installed, accelerates the design of
-optimal plans) and comprises about $6\,600$ lines, with one module per
+optimal plans) and comprises about $7\,500$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1778,7 +1778,7 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes fourteen procedures. For testing simple
+The implementation includes twenty procedures. For testing simple
 hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
 precomputed sampling plans. For clinical trials: a group sequential
 test with efficacy and non-binding futility boundaries, for known or
@@ -1793,7 +1793,20 @@ mean of bounded observations and a sign test of
 $P(X>m)=P(X<m)$, both valid for every distribution satisfying the null
 hypothesis. The sign test is a test of the median only when the
 distribution has no atom at $m$: with ties at $m$, the median can be
-$m$ while the signs are unbalanced, and the test then rejects. For change-point
+$m$ while the signs are unbalanced, and the test then rejects. Six more
+procedures assume no normality. For any quantile of any distribution, a
+test and a confidence sequence~\cite{howard2022} built on one-sided
+beta-binomial mixtures over the probability $F(q)$; they remain valid with
+atoms and ties, where the sign test does not. A two-sample test of equal
+distributions by betting~\cite{shekhar2024} stakes, by online Newton
+steps~\cite{cutkosky2018}, on a kernel witness learnt from the past pairs,
+an odd function of the swap of the pair, and so detects any difference of
+the distributions. For a mean: a confidence sequence for bounded data by
+hedged capital~\cite{waudbysmith2024}; one that needs only a bound on the
+variance, with Catoni's influence function~\cite{catoni2012,wang2023}; and
+an asymptotic one with estimated variance~\cite{waudbysmith2024asymptotic},
+whose coverage in simulations reaches its nominal level for skewed data
+only after about a thousand observations. For change-point
 detection: CUSUM~\cite{page1954} and the Shiryaev--Roberts
 procedure~\cite{shiryaev1963,roberts1966,pollak1985}. For filtering and
 estimation: a Kalman filter for the local-level model with an optional
@@ -1827,11 +1840,11 @@ trusted, so that a damaged or foreign one is reported as such.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for fifteen combinations of procedure and
+non-interference are checked for twenty-one combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$267$ tests in total; the remainder cover transactional updates,
+$282$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
@@ -1879,7 +1892,7 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers fourteen procedures; optimal
+The reference implementation covers twenty procedures; optimal
 design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the

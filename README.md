@@ -59,12 +59,25 @@ nonparametric monitoring, and a group sequential trial.
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
 | Group sequential trials | `GroupSequentialTest` (planned analyses; efficacy and non-binding futility boundaries; known or estimated variance) |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
-| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (P(X > m) = P(X < m), the median for data without an atom at m; no moment assumptions; paired data via topology) |
+| Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
+| Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
 | Filtering and estimation | `LocalLevelKalman` (with control input), `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 `Bernoulli`, `Poisson`, `Exponential`.
+
+**Which method for data that are not normal?** For a median or another
+quantile — latencies, revenue per user, anything heavy-tailed — use the
+quantile procedures: they assume nothing about the distribution. To ask
+whether two groups differ at all, `KernelTwoSampleTest`. For a mean, the
+data have to be bounded (`BettingConfidenceSequence`, exact) or have a known
+bound on their variance (`CatoniConfidenceSequence`, exact); otherwise
+`AsymptoticConfidenceSequence` is valid only approximately and for long
+runs — no method can guarantee coverage of a mean of arbitrary unbounded
+data. All of them may be monitored after every observation; each
+docstring gives the simulated error rates on skewed, heavy-tailed and
+discrete data.
 
 **Design** (`sequential_analysis.design`), computed offline before the experiment:
 
