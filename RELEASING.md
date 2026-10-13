@@ -37,11 +37,11 @@ A version cannot be uploaded to PyPI twice, so rehearse first:
   separate account) with the environment name `testpypi`, plus a GitHub
   environment `testpypi`. TestPyPI, too, takes each version only once: a
   second rehearsal of the same version installs the first upload, so give
-  every TestPyPI rehearsal its own version (`0.1.1rc1`, `0.1.1rc2`, …).
+  every TestPyPI rehearsal its own version (`0.3.0rc1`, `0.3.0rc2`, …).
 
 The smoke test can be run by hand against any installation:
 
-    python tools/smoke_test.py 0.1.1
+    python tools/smoke_test.py 0.2.0
 
 After the real upload the workflow installs the package from PyPI and runs the
 smoke test again.

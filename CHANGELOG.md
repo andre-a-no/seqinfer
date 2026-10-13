@@ -6,7 +6,13 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
-## Unreleased
+## 0.2.0 — 2026-10-13
+
+Methods that do not assume normal data, and the fixes of a line-by-line
+review of the whole package after 0.1.0 (no 0.1.1 was published). No
+format changes; the Kalman filter, the t-mixture SPRT and the group
+sequential test have new versions (2, 3 and 4), so their checkpoints from
+0.1.0 are refused rather than continued with different arithmetic.
 
 ### Added: inference that does not assume normality
 - `QuantileTest` and `QuantileConfidenceSequence` (Howard and Ramdas 2022):
@@ -26,13 +32,6 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 - All six satisfy the conformance invariants (checkpoint, replay, batch,
   sync/async equivalence); Monte Carlo tests on Cauchy, lognormal, Pareto,
   zero-inflated and discrete data.
-
-## 0.1.1 — 2026-10-13
-
-A line-by-line review of the whole package after the first release. No
-format changes; the Kalman filter, the t-mixture SPRT and the group
-sequential test have new versions (2, 3 and 4), so their checkpoints from
-0.1.0 are refused rather than continued with different arithmetic.
 
 ### Fixed
 - **Checkpoints.** A refused restore no longer cuts back the observation
