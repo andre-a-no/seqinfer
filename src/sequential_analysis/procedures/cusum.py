@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import require_finite
 from .families import Family
 
@@ -58,6 +58,7 @@ class CUSUM(Procedure):
         return CusumState()
 
     def step(self, state: CusumState, x, rng=None):
+        refuse_terminal(self, state)
         inc = self.family.llr(x[self.input], self.theta1, self.theta0)
         w = max(0.0, require_finite(state.w + inc, "CUSUM statistic"))
         n = state.n + 1
@@ -68,4 +69,11 @@ class CUSUM(Procedure):
         return state.alarm_at is not None
 
     def decode_state(self, data) -> CusumState:
-        return CusumState(**data)
+        state = decode_fields(CusumState, data)
+        require_state(state.w >= 0, "negative statistic")
+        require_state(state.alarm_at in (None, state.n), "alarm before the last observation")
+        if state.n:
+            require_state((state.alarm_at is not None) == (state.w >= self.threshold), "alarm does not match statistic")
+        else:
+            require_state(state == CusumState(), "no observations, but a statistic or alarm")
+        return state

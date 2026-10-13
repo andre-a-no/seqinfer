@@ -11,9 +11,10 @@ import math
 import random
 import unittest
 
-from sequential_analysis import ContractViolation, PositionalPair, Run, difference
+from sequential_analysis import ContractViolation, LifecycleError, PositionalPair, Run, difference
 from sequential_analysis.design import kiefer_weiss_plan, lattice, operating_characteristic
 from sequential_analysis.procedures import (
+    ACCEPT_H0,
     REJECT_H0,
     SPRT,
     Bernoulli,
@@ -511,13 +512,20 @@ class GroupSequential(unittest.TestCase):
     def test_looks_only_at_the_planned_analyses(self):
         from sequential_analysis.procedures import GroupSequentialTest
 
-        proc = GroupSequentialTest(1.0, analyses=[2, 4], bounds=[3.0, 1.0])
+        proc = GroupSequentialTest(1.0, analyses=[2, 4], bounds=[30.0, 1.0])
         state, outs = proc.initial_state(), []
         for v in (5.0, 5.0, -5.0, -5.0):
             state, out = proc.step(state, {"x": v}, None)
             outs.append(out)
         self.assertEqual([o.analysis for o in outs], [None, 1, None, 2])
-        self.assertEqual(outs[1].decision, REJECT_H0)  # z = 5 sqrt(2) >= 3
+        self.assertEqual([o.decision for o in outs], [None, None, None, ACCEPT_H0])
+        proc = GroupSequentialTest(1.0, analyses=[2, 4], bounds=[3.0, 1.0])
+        state = proc.initial_state()
+        for v in (5.0, 5.0):
+            state, out = proc.step(state, {"x": v}, None)
+        self.assertEqual(out.decision, REJECT_H0)  # z = 5 sqrt(2) >= 3
+        with self.assertRaises(LifecycleError):  # a stopped test takes no more observations
+            proc.step(state, {"x": -5.0}, None)
 
     def test_invalid_designs_are_refused(self):
         from sequential_analysis.group_sequential import group_sequential_design
@@ -1150,6 +1158,58 @@ class GroupSequentialExtensions(unittest.TestCase):
         self.assertEqual((out.analysis, out.decision), (1, ACCEPT_H0))  # stopped for futility
         with self.assertRaises(ValueError):
             group_sequential_design(0.025, (0.5, 1.0), futility="pocock")  # needs the power
+
+
+
+class FourthReviewProcedures(unittest.TestCase):
+    """Line-by-line review after 0.1.0: procedures."""
+
+    def test_kalman_variance_survives_a_vague_prior(self):
+        from sequential_analysis.procedures import LocalLevelKalman
+
+        for p0 in (1e8, 1e16, 1e17, 1e300):
+            kf = LocalLevelKalman(q=0.0, r=1.0, p0=p0)
+            state, out = kf.step(kf.initial_state(), {"y": 3.0}, None)
+            self.assertAlmostEqual(out.var, 1.0, places=6)
+            state, out = kf.step(state, {"y": -100.0}, None)
+            self.assertLess(out.mean, 0.0)  # the second observation still counts
+
+    def test_decoded_states_are_checked(self):
+        from sequential_analysis.procedures import (
+            EMA,
+            BootstrapParticleFilter,
+            LocalLevelKalman,
+            MeanDifference,
+            ShiryaevRoberts,
+        )
+
+        sprt = SPRT(Bernoulli(), 0.3, 0.5)
+        bad = [
+            (sprt, {"n": 2.5, "llr": 0.0, "comp": 0.0, "decision": None}),
+            (sprt, {"n": 1, "llr": 0.1, "comp": 0.0, "decision": "maybe"}),
+            (sprt, {"n": 5, "llr": 99.0, "comp": 0.0, "decision": None}),
+            (sprt, {"n": 1, "llr": "0.1", "comp": 0.0, "decision": None}),
+            (sprt, {"n": -5, "llr": 0.0, "comp": 0.0, "decision": None}),
+            (sprt, {"n": 1, "llr": 0.0, "comp": 0.0}),
+            (LocalLevelKalman(1.0, 1.0), {"n": 1, "mean": 0.0, "var": -3.0}),
+            (BootstrapParticleFilter(1.0, 1.0, particles=8), {"n": 1, "particles": [0.0, 1.0]}),
+            (MeanDifference(), {"n_a": 2, "mean_a": 0.0, "ss_a": -5.0, "n_b": 0, "mean_b": 0.0, "ss_b": 0.0}),
+            (ShiryaevRoberts(Bernoulli(), 0.3, 0.5, 20.0), {"n": 3, "log_r": None, "alarm_at": None}),
+            (EMA(0.5), {"n": 0, "value": 7.0}),
+        ]
+        for proc, data in bad:
+            with self.subTest(proc=proc.name, data=data), self.assertRaises((ValueError, TypeError)):
+                proc.decode_state(data)
+        state = sprt.decode_state({"n": 2.0, "llr": 0.0, "comp": 0.0, "decision": None})
+        self.assertIs(type(state.n), int)  # 2.0 and 2 are the same JSON number
+
+    def test_a_stopped_test_takes_no_more_observations(self):
+        sprt = SPRT(Bernoulli(), 0.3, 0.5)
+        state = sprt.initial_state()
+        while not sprt.is_terminal(state):
+            state, _ = sprt.step(state, {"x": 0}, None)
+        with self.assertRaises(LifecycleError):
+            sprt.step(state, {"x": 1}, None)
 
 
 if __name__ == "__main__":

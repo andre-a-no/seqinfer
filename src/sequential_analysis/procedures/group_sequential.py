@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..distributions import _log_normal_upper, t_isf_log
 from ..errors import NumericalError
 from ..numerics import require_finite
@@ -146,6 +146,7 @@ class GroupSequentialTest(Procedure):
         return self._bounds[k]
 
     def step(self, state: GroupSequentialState, x, rng=None):
+        refuse_terminal(self, state)
         v = x[self.input]
         n = state.n + 1
         delta = v - state.mean
@@ -177,4 +178,6 @@ class GroupSequentialTest(Procedure):
         return state.decision is not None
 
     def decode_state(self, data) -> GroupSequentialState:
-        return GroupSequentialState(**data)
+        state = decode_fields(GroupSequentialState, data)
+        require_state(state.m2 >= 0, "negative sum of squares")
+        return state

@@ -33,7 +33,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..errors import NumericalError
 from ..numerics import require_finite
 from .sprt import REJECT_H0
@@ -165,4 +165,6 @@ class TMixtureSPRT(Procedure):
         return self.stop_on_reject and state.decision is not None
 
     def decode_state(self, data) -> TMixtureState:
-        return TMixtureState(**data)
+        state = decode_fields(TMixtureState, data)
+        require_state(state.m2 >= 0, "negative sum of squares")
+        return state

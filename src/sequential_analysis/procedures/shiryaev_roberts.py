@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import require_finite
 from .families import Family
 
@@ -74,6 +74,7 @@ class ShiryaevRoberts(Procedure):
         return ShiryaevRobertsState()
 
     def step(self, state: ShiryaevRobertsState, x, rng=None):
+        refuse_terminal(self, state)
         llr = self.family.llr(x[self.input], self.theta1, self.theta0)
         base = 0.0 if state.log_r is None else _log1p_exp(state.log_r)
         log_r = require_finite(base + llr, "Shiryaev-Roberts statistic")
@@ -85,4 +86,12 @@ class ShiryaevRoberts(Procedure):
         return state.alarm_at is not None
 
     def decode_state(self, data) -> ShiryaevRobertsState:
-        return ShiryaevRobertsState(**data)
+        state = decode_fields(ShiryaevRobertsState, data)
+        require_state(state.alarm_at in (None, state.n), "alarm before the last observation")
+        if state.log_r is None:
+            require_state(state == ShiryaevRobertsState(), "observations, but no statistic")
+        else:
+            require_state(state.n > 0, "a statistic without observations")
+            alarm = state.log_r >= self._log_threshold
+            require_state((state.alarm_at is not None) == alarm, "alarm does not match statistic")
+        return state

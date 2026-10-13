@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 
 
 @dataclass(frozen=True)
@@ -73,4 +73,8 @@ class MeanDifference(Procedure):
         return new, MeanDifferenceOutput(n_a, n_b, diff, se)
 
     def decode_state(self, data) -> MeanDifferenceState:
-        return MeanDifferenceState(**data)
+        state = decode_fields(MeanDifferenceState, data)
+        require_state(state.ss_a >= 0 and state.ss_b >= 0, "negative sum of squares")
+        for n, mean, ss in ((state.n_a, state.mean_a, state.ss_a), (state.n_b, state.mean_b, state.ss_b)):
+            require_state(n > 0 or mean == ss == 0, "statistics without observations")
+        return state

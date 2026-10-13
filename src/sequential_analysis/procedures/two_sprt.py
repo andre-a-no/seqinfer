@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import neumaier_add, require_finite
 from .families import Family, Gaussian
 from .sprt import ACCEPT_H0, REJECT_H0
@@ -120,25 +120,35 @@ class TwoSPRT(Procedure):
         return TwoSPRTState()
 
     def step(self, state: TwoSPRTState, x, rng=None):
+        refuse_terminal(self, state)
         v = x[self.input]
         l0, c0 = neumaier_add(state.l0, state.c0, self.family.llr(v, self.theta_star, self.theta0))
         l1, c1 = neumaier_add(state.l1, state.c1, self.family.llr(v, self.theta_star, self.theta1))
         s0 = require_finite(l0 + c0, "log likelihood ratio against theta0")
         s1 = require_finite(l1 + c1, "log likelihood ratio against theta1")
+        decision = self._decide(s0, s1)
+        n = state.n + 1
+        return TwoSPRTState(n, l0, c0, l1, c1, decision), TwoSPRTOutput(n, s0, s1, decision)
+
+    def _decide(self, s0: float, s1: float) -> str | None:
         excess0, excess1 = s0 - self.a0, s1 - self.a1
-        decision = None
         if excess0 >= 0 or excess1 >= 0:
             # If both boundaries are reached in the same step, decide by the larger
             # excess; an exact tie keeps H0.  Either way the error bounds hold.
-            decision = REJECT_H0 if excess0 > excess1 else ACCEPT_H0
-        n = state.n + 1
-        return TwoSPRTState(n, l0, c0, l1, c1, decision), TwoSPRTOutput(n, s0, s1, decision)
+            return REJECT_H0 if excess0 > excess1 else ACCEPT_H0
+        return None
 
     def is_terminal(self, state: TwoSPRTState) -> bool:
         return state.decision is not None
 
     def decode_state(self, data) -> TwoSPRTState:
-        return TwoSPRTState(**data)
+        state = decode_fields(TwoSPRTState, data)
+        if state.n == 0:
+            require_state(state == TwoSPRTState(), "no observations, but a statistic or decision")
+        else:
+            expected = self._decide(state.l0 + state.c0, state.l1 + state.c1)
+            require_state(state.decision == expected, "decision does not match the statistics")
+        return state
 
     def max_sample_size(self) -> int | None:
         """Largest possible stopping time, where one is known in closed form.

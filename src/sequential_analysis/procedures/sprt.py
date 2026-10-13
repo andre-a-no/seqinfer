@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import neumaier_add, require_finite
 from .families import Family
 
@@ -69,15 +69,25 @@ class SPRT(Procedure):
         return SPRTState()
 
     def step(self, state: SPRTState, x, rng=None):
+        refuse_terminal(self, state)
         inc = self.family.llr(x[self.input], self.theta1, self.theta0)
         total, comp = neumaier_add(state.llr, state.comp, inc)
         value = require_finite(total + comp, "log likelihood ratio")
-        decision = REJECT_H0 if value >= self.upper else ACCEPT_H0 if value <= self.lower else None
+        decision = self._decide(value)
         n = state.n + 1
         return SPRTState(n, total, comp, decision), SPRTOutput(n, value, decision)
+
+    def _decide(self, value: float) -> str | None:
+        return REJECT_H0 if value >= self.upper else ACCEPT_H0 if value <= self.lower else None
 
     def is_terminal(self, state: SPRTState) -> bool:
         return state.decision is not None
 
     def decode_state(self, data) -> SPRTState:
-        return SPRTState(**data)
+        state = decode_fields(SPRTState, data)
+        if state.n == 0:
+            require_state(state == SPRTState(), "no observations, but a statistic or decision")
+        else:
+            expected = self._decide(state.llr + state.comp)
+            require_state(state.decision == expected, "decision does not match the statistic")
+        return state

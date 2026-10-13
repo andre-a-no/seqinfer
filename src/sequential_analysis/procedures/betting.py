@@ -30,7 +30,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..numerics import require_finite
 from .sprt import REJECT_H0
 
@@ -119,7 +119,9 @@ class _Betting(Procedure):
         return self.stop_on_reject and state.decision is not None
 
     def decode_state(self, data) -> BettingState:
-        return BettingState(**data)
+        state = decode_fields(BettingState, data)
+        require_state(state.m2 >= 0, "negative sum of squares")
+        return state
 
 
 class BettingMeanTest(_Betting):

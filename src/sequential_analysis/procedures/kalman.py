@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..numerics import require_finite
 
 
@@ -38,7 +38,7 @@ class KalmanOutput:
 
 class LocalLevelKalman(Procedure):
     name = "local_level_kalman"
-    version = "1"
+    version = "2"  # 2: the posterior variance as p r / s, exact when p >> r
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, control: bool = False):
         if not (0 <= q < math.inf and 0 < r < math.inf and 0 <= p0 < math.inf and math.isfinite(m0)):
@@ -64,9 +64,11 @@ class LocalLevelKalman(Procedure):
         s = p_pred + self.r
         gain = p_pred / s
         mean = require_finite(m_pred + gain * innovation, "filtered mean")
-        var = (1.0 - gain) * p_pred
+        var = p_pred * self.r / s  # = (1 - gain) p_pred, without cancellation when p_pred >> r
         n = state.n + 1
         return KalmanState(n, mean, var), KalmanOutput(n, mean, var, innovation, s)
 
     def decode_state(self, data) -> KalmanState:
-        return KalmanState(**data)
+        state = decode_fields(KalmanState, data)
+        require_state(state.var >= 0, "negative variance")
+        return state
