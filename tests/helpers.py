@@ -3,6 +3,7 @@
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Shared fixtures: procedures, observation histories and trace helpers."""
 import json
+import math
 import random
 
 from sequential_analysis import (
@@ -19,15 +20,21 @@ from sequential_analysis.procedures import (
     CUSUM,
     EMA,
     SPRT,
+    AsymptoticConfidenceSequence,
+    BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
+    CatoniConfidenceSequence,
     Gaussian,
     GroupSequentialTest,
+    KernelTwoSampleTest,
     LocalLevelKalman,
     MeanDifference,
     NormalMixtureSPRT,
     PlanTest,
     Poisson,
+    QuantileConfidenceSequence,
+    QuantileTest,
     SequentialSignTest,
     ShiryaevRoberts,
     TMixtureSPRT,
@@ -197,6 +204,54 @@ def cases():
             Independent,
             Delivery,
             list(from_values("x", [(i * 37) % 5 for i in range(n)])),
+            None,
+        ),
+        (
+            "quantile_confidence_sequence_heavy_tails",
+            lambda: QuantileConfidenceSequence(0.5, tuned_for=50),
+            Independent,
+            Delivery,
+            list(from_values("x", [math.tan(math.pi * ((i * 7919 % 101) / 101.0 - 0.495)) for i in range(n)])),
+            None,
+        ),
+        (
+            "quantile_test_with_ties",
+            lambda: QuantileTest(1.0, p=0.5, alpha=1e-6),
+            Independent,
+            Delivery,
+            list(from_values("x", [float(i * 37 % 3) for i in range(n)])),
+            None,
+        ),
+        (
+            "kernel_two_sample",
+            lambda: KernelTwoSampleTest(alpha=1e-6, burn_in=10),
+            lambda: PositionalPair(("a", "b")),
+            Delivery,
+            unbalanced_pairs(n, lead=5, seed=15),
+            None,
+        ),
+        (
+            "catoni_mean",
+            lambda: CatoniConfidenceSequence(2.0, mean0=0.0),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.4, 2.0, seed=33, n=n)),
+            None,
+        ),
+        (
+            "asymptotic_mean",
+            lambda: AsymptoticConfidenceSequence(start=10, mean0=0.0),
+            Independent,
+            Delivery,
+            list(gaussian("x", 0.4, 2.0, seed=34, n=n)),
+            None,
+        ),
+        (
+            "betting_confidence_sequence",
+            lambda: BettingConfidenceSequence(0.0, 10.0, grid=50),
+            Independent,
+            Delivery,
+            list(from_values("x", [(i * 7919 % 101) / 10.1 for i in range(n)])),
             None,
         ),
     ]

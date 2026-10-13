@@ -11,6 +11,7 @@ MQTT, a database cursor) is a function or generator that yields
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import heapq
 import json
@@ -128,16 +129,19 @@ def skip_to(source: Iterable[Observation], positions: Mapping[str, int] | Delive
     has not seen yet (they start at its ``start`` number) and, under the
     arrival policy, the observations delivered ahead of a gap.  A bare
     mapping of positions only knows the next sequence number per source.
+
+    Observations without a sequence number cannot be recognised and are
+    always passed on.  Under the arrival policy without deduplication, a
+    sequence number delivered before the checkpoint and sent again after
+    it is taken for the replayed original and skipped.
     """
     if isinstance(positions, Delivery):
-        delivery = positions
-        for obs in source:
-            if not delivery.delivered(obs):
-                yield obs
-        return
-    for obs in source:
-        if obs.seq is None or obs.seq >= positions.get(obs.source, 0):
-            yield obs
+        # What had been consumed when skip_to was called, not what the run
+        # consumes while this generator is read: later duplicates must still
+        # reach the run, as they did in the uninterrupted one.
+        snapshot = copy.deepcopy(positions)
+        return (obs for obs in source if not snapshot.delivered(obs))
+    return (obs for obs in source if obs.seq is None or obs.seq >= positions.get(obs.source, 0))
 
 
 async def as_async(
@@ -187,6 +191,7 @@ class ObservationLog:
         self.path = None if path is None else os.path.abspath(os.fspath(path))
         self._file = None if self.path is None else AppendFile(self.path, sync)
         self._items: list[Observation] = []
+        self._memory: list[bytes] = []  # the lines of an in-memory log, as they were chained
         self._position: dict | None = None  # computed lazily for an existing file
 
     def close(self) -> None:
@@ -205,12 +210,11 @@ class ObservationLog:
     def _line(obs: Observation) -> bytes:
         """One JSON line that reads back as exactly what was delivered.
 
-        Floats keep their type and every bit (Python's shortest repr), large
-        integers stay exact, and NaN or infinity are written as such: an
-        invalid value has to come back invalid, so that a replay skips it
-        exactly as the run did.  A value JSON cannot hold at all (a numpy
-        scalar, an arbitrary object) is recorded by its repr, which the
-        contracts reject just as they rejected the original.
+        Floats keep their type and every bit (Python's shortest repr).  A
+        value the history cannot record -- NaN, infinity, an integer beyond
+        2**53, a numpy scalar, an arbitrary object -- is recorded as a marker
+        holding its repr, which the run rejects at the same point on replay,
+        just as it rejected the original.
         """
         record = obs.to_json()
         if recording_problem(obs) is not None:
@@ -232,8 +236,7 @@ class ObservationLog:
 
     def _lines(self) -> Iterator[bytes]:
         if self.path is None:
-            for obs in self._items:
-                yield self._line(obs)
+            yield from self._memory
         elif os.path.exists(self.path):
             with open(self.path, "rb") as f:
                 yield from f
@@ -297,6 +300,7 @@ class ObservationLog:
         count, offset, digest = int(state["count"]), int(state["offset"]), state["digest"]
         if self.path is None:
             del self._items[count:]
+            del self._memory[count:]
         elif os.path.exists(self.path) and os.path.getsize(self.path) > offset:
             self.close()
             with open(self.path, "r+b") as f:
@@ -313,6 +317,7 @@ class ObservationLog:
         if self._file is None:
             # keep what was recorded, not the caller's object, which may change later
             self._items.append(Observation.from_json(json.loads(line)))
+            self._memory.append(line)
         else:
             self._file.write(line)
         position["count"] += 1

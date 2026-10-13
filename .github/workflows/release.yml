@@ -20,12 +20,12 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - id: version
@@ -38,10 +38,16 @@ jobs:
           fi
       - name: the changelog has a dated section for this version
         run: grep -q "^## ${{ steps.version.outputs.version }} — [0-9]" CHANGELOG.md
+      - name: CITATION.cff names this version and the changelog's date (Zenodo takes the metadata from it)
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          date=$(sed -n "s/^## $version — \([0-9-]*\)$/\1/p" CHANGELOG.md)
+          grep -q "^version: $version$" CITATION.cff || { echo "CITATION.cff names another version"; exit 1; }
+          grep -q "^date-released: \"$date\"$" CITATION.cff || { echo "CITATION.cff: date-released is not $date"; exit 1; }
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
@@ -49,18 +55,18 @@ jobs:
   test:
     # the built wheel, installed into a clean environment, on every supported Python
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         numpy: [with, without]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
@@ -79,14 +85,14 @@ jobs:
   testpypi:
     needs: [build, test]
     if: github.event_name == 'workflow_dispatch' && inputs.publish_to == 'testpypi'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: testpypi
       url: https://test.pypi.org/project/sequential-analysis/
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
@@ -97,34 +103,36 @@ jobs:
 
   from-testpypi:
     needs: [build, testpypi]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: install from TestPyPI (dependencies from PyPI) and smoke-test
         run: |
           python -m venv /tmp/venv
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            /tmp/venv/bin/pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
+          installed=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do  # the index may take a minute to serve a new upload
+            if /tmp/venv/bin/pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
               --extra-index-url https://pypi.org/simple/ \
-              "sequential-analysis[fast]==${{ needs.build.outputs.version }}" && break
+              "sequential-analysis[fast]==${{ needs.build.outputs.version }}"; then installed=1; break; fi
             sleep 30
           done
+          test -n "$installed" || { echo "could not install the package from TestPyPI"; exit 1; }
           cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"
 
   pypi:
     needs: [build, test]
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: pypi
       url: https://pypi.org/project/sequential-analysis/
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
@@ -132,17 +140,20 @@ jobs:
 
   from-pypi:
     needs: [build, pypi]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: install from PyPI and smoke-test
         run: |
           python -m venv /tmp/venv
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            /tmp/venv/bin/pip install --no-cache-dir "sequential-analysis[fast]==${{ needs.build.outputs.version }}" && break
+          installed=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do  # the index may take a minute to serve a new upload
+            if /tmp/venv/bin/pip install --no-cache-dir "sequential-analysis[fast]==${{ needs.build.outputs.version }}"
+            then installed=1; break; fi
             sleep 30
           done
+          test -n "$installed" || { echo "could not install the package from PyPI"; exit 1; }
           cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"

@@ -42,6 +42,13 @@ class InputContract:
             raise ValueError(f"unknown kind {self.kind!r}")
         if len(self.shape) > 1:
             raise ValueError("only scalar and vector inputs are supported")
+        if not all(type(d) is int and d >= 1 for d in self.shape):
+            raise ValueError(f"shape must be () or (d,) with a positive int d, got {self.shape!r}")
+        for bound in (self.lower, self.upper):
+            if bound is not None and (type(bound) not in _NUMBER_TYPES or not math.isfinite(bound)):
+                raise ValueError(f"bounds must be finite numbers or None, got {bound!r}")
+        if self.lower is not None and self.upper is not None and self.lower > self.upper:
+            raise ValueError(f"lower bound {self.lower!r} is above upper bound {self.upper!r}")
 
     def spec(self) -> dict:
         return {
@@ -128,7 +135,7 @@ def validate_input(procedure, x: Any) -> None:
         raise ContractViolation("a statistical input must be a non-empty mapping")
     unknown = set(x) - set(contracts)
     if unknown:
-        raise ContractViolation(f"undeclared logical inputs: {sorted(unknown)}")
+        raise ContractViolation(f"undeclared logical inputs: {sorted(map(repr, unknown))}")
     if procedure.joint_inputs and set(x) != set(contracts):
         missing = sorted(set(contracts) - set(x))
         raise ContractViolation(f"joint procedure is missing inputs: {missing}")

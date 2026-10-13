@@ -5,18 +5,26 @@
 
 The normal distribution comes from `statistics.NormalDist`.  The t
 distribution function is computed through the regularized incomplete beta
-function, evaluated by its continued fraction (Lentz's method), which is
-accurate to about 1e-14; the quantile function inverts it by bisection.
+function -- by its hypergeometric series or its continued fraction --
+except where another form is more accurate: the normal distribution when
+the degrees of freedom are so large that the difference is below 1e-17,
+Fisher's expansion for large degrees of freedom and moderate t, and a
+Laplace approximation beyond 1e15 degrees of freedom.  Tails that underflow
+are computed in logarithms.  Against 80-digit references the relative
+error of the tail stays below 1e-10 for degrees of freedom from 0.1 to
+1e200 and |t| up to 1e300 (subnormal tails excepted).  The quantile
+function inverts the tail by bisection.
 """
 from __future__ import annotations
 
 import math
 
 
-def _beta_continued_fraction(a: float, b: float, x: float) -> float:
+def _beta_continued_fraction(a: float, b: float, x: float, y: float) -> float:
     tiny, eps = 1e-300, 2.3e-16  # two units in the last place: |delta - 1| can stick at 2**-53
     qab, qap, qam = a + b, a + 1.0, a - 1.0
-    c, d = 1.0, 1.0 - qab * x / qap
+    # 1 - (a + b) x / (a + 1), written with y = 1 - x: no cancellation when a is huge and x near 1
+    c, d = 1.0, ((a + 1.0) * y + (1.0 - b) * x) / qap
     d = 1.0 / (d if abs(d) > tiny else tiny)
     h = d
     for m in range(1, 20000):
@@ -39,7 +47,39 @@ def _beta_continued_fraction(a: float, b: float, x: float) -> float:
     raise ArithmeticError("incomplete beta continued fraction did not converge")
 
 
-def _beta_factor(a: float, b: float, x: float) -> float:
+def _beta_fraction_near_one(a: float, b: float, x: float, y: float) -> float | None:
+    """The continued fraction of `_beta_continued_fraction`, evaluated from its tail, for b <= 1 and x > 1/2.
+
+    F = 1 / (1 + d1 / (1 + d2 / (1 + ...))) with d_{2m+1} = -(a + m)(a + b + m) x / ((a + 2m)(a + 2m + 1))
+    and d_{2m} = m (b - m) x / ((a + 2m - 1)(a + 2m)).  With a huge and x near 1 the odd d are close to -1,
+    and Lentz's forward recursion loses about log10(a) digits in 1 + d.  Here 1 + d_{2m+1} is formed
+    exactly, as (2am + 3m^2 + a(1 - b) + m(2 - b) + (a + m)(a + b + m) y) / ((a + 2m)(a + 2m + 1)), and
+    added to the tail of the fraction before dividing.  None if it does not settle within 4096 terms.
+    """
+
+    def value(terms: int) -> float:
+        u, e = 1.0, 0.0  # u = the fraction from term k on, e = u - 1 after an even term
+        for k in range(terms, 0, -1):
+            m = k // 2
+            if k % 2:
+                one_plus_d = (2.0 * a * m + 3.0 * m * m + a * (1.0 - b) + m * (2.0 - b)
+                              + (a + m) * (a + b + m) * y) / ((a + 2.0 * m) * (a + 2.0 * m + 1.0))
+                u = (e + one_plus_d) / u
+            else:
+                e = m * (b - m) * x / ((a + 2.0 * m - 1.0) * (a + 2.0 * m)) / u
+                u = 1.0 + e
+        return 1.0 / u
+
+    terms, previous = 32, value(16)
+    while terms <= 4096:
+        current = value(terms)
+        if abs(current - previous) <= 1e-16 * abs(current):
+            return current
+        terms, previous = 2 * terms, current
+    return None
+
+
+def _beta_factor(a: float, b: float, x: float, y: float) -> float:
     """F with I_x(a, b) = x^a (1 - x)^b F / (a B(a, b)); F = 2F1(a + b, 1; a + 1; x).
 
     The continued fraction converges slowly, or not at all, when a is huge and
@@ -55,7 +95,11 @@ def _beta_factor(a: float, b: float, x: float) -> float:
             n += 1.0
             if term <= 1e-17 * total:
                 return total
-    return _beta_continued_fraction(a, b, x)
+    if b <= 1.0 and a > 1e4:  # here x > 1/2: Lentz's recursion cancels, see _beta_fraction_near_one
+        near = _beta_fraction_near_one(a, b, x, y)
+        if near is not None:
+            return near
+    return _beta_continued_fraction(a, b, x, y)
 
 
 _SQRT2 = math.sqrt(2.0)
@@ -99,8 +143,8 @@ def regularized_beta(
     log_x, log_y = logs if logs is not None else (math.log(x), math.log(y))
     log_front = _log_inverse_beta(a, b) + a * log_x + b * log_y
     if x < (a + 1.0) / (a + b + 2.0):
-        return math.exp(log_front) * _beta_factor(a, b, x) / a
-    return 1.0 - math.exp(log_front) * _beta_factor(b, a, y) / b
+        return math.exp(log_front) * _beta_factor(a, b, x, y) / a
+    return 1.0 - math.exp(log_front) * _beta_factor(b, a, y, x) / b
 
 
 def _log_normal_upper(z: float) -> float:
@@ -141,10 +185,10 @@ def _normal_applies(t: float, df: float) -> bool:
 
 
 def _log_huge_df_tail(t: float, df: float) -> float:
-    """log P(T > t) for df > 1e15 beyond the reach of Fisher's expansion (t > 2000).
+    """log P(T > t) for df > 1e15 beyond the reach of Fisher's expansion (t above about 1300).
 
     P(T > t) = f(t) (1 + t^2/df) / t * df/(df + 1) * (1 - (1/t^2 - 1/df)/(1 + 1/df) + O(1/t^4)),
-    f the density: the error of the logarithm is below 1e-12, against a logarithm below -2e6.
+    f the density: the error of the logarithm is below 1e-12, against a logarithm below -8e5.
     """
     s = t / math.sqrt(df)
     log1p_s2 = math.log1p(s * s) if s < 1e150 else 2.0 * math.log(s)
@@ -219,9 +263,9 @@ def _log_upper_tail(t: float, df: float) -> float:
     if tail > _TINY:
         return math.log(tail)
     # deep in the tail x is small, so I_x comes from the direct continued fraction: take its logarithm
-    x, _, (log_x, log_y) = _beta_arguments(t, df)
+    x, y, (log_x, log_y) = _beta_arguments(t, df)
     log_front = _log_inverse_beta(a, 0.5) + a * log_x + 0.5 * log_y
-    return math.log(0.5) + log_front + math.log(_beta_factor(a, 0.5, x)) - math.log(a)
+    return math.log(0.5) + log_front + math.log(_beta_factor(a, 0.5, x, y)) - math.log(a)
 
 
 def _check_df(df: float) -> None:
@@ -245,6 +289,8 @@ def t_cdf(t: float, df: float) -> float:
 def t_isf_log(log_tail: float, df: float) -> float:
     """The t >= 0 with log P(T > t) = log_tail (log_tail <= log 1/2); inf if beyond every float."""
     _check_df(df)
+    if math.isnan(log_tail):
+        return math.nan
     if log_tail >= math.log(0.5):
         return 0.0
     lo, hi = 0.0, 1.0

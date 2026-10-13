@@ -13,13 +13,15 @@ scheduled, where S_t is stored or what happens to O_t.
 from __future__ import annotations
 
 import math
+import re
+import typing
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Generic, TypeVar
 
 from .contracts import InputContract, validate_input
-from .errors import NumericalError
+from .errors import LifecycleError, NumericalError
 from .rng import SplitMix64
 
 S = TypeVar("S")
@@ -49,7 +51,7 @@ class Observation:
     time: float | None = None
 
     def __post_init__(self):
-        if not self.source:
+        if isinstance(self.source, str) and not self.source:  # anything else is reported by envelope_problem
             object.__setattr__(self, "source", self.input)
 
     def to_json(self) -> dict:
@@ -158,6 +160,75 @@ def recording_problem(obs: Observation) -> str | None:
     return None
 
 
+#: Decisions a test procedure can reach.
+DECISIONS = (None, "reject_h0", "accept_h0")
+
+
+def _number(name: str, value: Any) -> float:
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValueError(f"state field {name!r} must be a finite number, got {value!r}")
+    return float(value)
+
+
+def _field(name: str, kind: Any, value: Any) -> Any:
+    args = typing.get_args(kind)
+    if type(None) in args:  # X | None
+        if value is None:
+            return None
+        (kind,) = [a for a in args if a is not type(None)]
+    if kind is int:  # every integer in a state is a count
+        number = _number(name, value)
+        if number != int(number) or number < 0:
+            raise ValueError(f"state field {name!r} must be a non-negative integer, got {value!r}")
+        return int(number)
+    if kind is float:
+        return _number(name, value)
+    if kind is str:
+        if type(value) is not str:
+            raise ValueError(f"state field {name!r} must be a string, got {value!r}")
+        return value
+    if typing.get_origin(kind) is tuple:
+        if type(value) not in (list, tuple):
+            raise ValueError(f"state field {name!r} must be a list, got {value!r}")
+        return tuple(_field(name, typing.get_args(kind)[0], v) for v in value)
+    raise TypeError(f"state field {name!r} has an unsupported type {kind!r}")
+
+
+def decode_fields(cls: type[S], data: Any) -> S:
+    """A state dataclass from its JSON form, with the type of every field checked.
+
+    Integers are counts (non-negative), floats are finite, a ``decision``
+    is one of DECISIONS, and no field may be missing or extra: a checkpoint
+    is data that may have been edited, and the next step must not be the
+    first to notice.  Raises ValueError (TypeError for a wrong shape).
+    """
+    if not isinstance(data, dict):
+        raise TypeError(f"{cls.__name__} expects a JSON object, got {type(data).__name__}")
+    hints = typing.get_type_hints(cls)
+    names = [f.name for f in fields(cls)]  # type: ignore[arg-type]
+    if set(data) != set(names):
+        raise TypeError(f"{cls.__name__} has fields {names}, got {sorted(data)}")
+    values = {name: _field(name, hints[name], data[name]) for name in names}
+    if "decision" in values and values["decision"] not in DECISIONS:
+        raise ValueError(f"unknown decision {values['decision']!r}")
+    return cls(**values)
+
+
+def require_state(condition: bool, message: str) -> None:
+    """A decoded state must be one the procedure can reach; ValueError otherwise."""
+    if not condition:
+        raise ValueError(f"inconsistent state: {message}")
+
+
+def refuse_terminal(procedure: Any, state: Any) -> None:
+    """A stopped procedure takes no further observations.
+
+    `Run` never offers them; this guards loops that call `step` directly.
+    """
+    if procedure.is_terminal(state):
+        raise LifecycleError(f"{procedure.name} has stopped; a terminal state takes no further observations")
+
+
 class Procedure(ABC, Generic[S, O]):
     """Semantic contract of a Sequential Procedure.
 
@@ -228,6 +299,11 @@ def _finite(obj: Any) -> bool:
     return True
 
 
+#: A domain error of the math module: "math domain error" before Python 3.14,
+#: then messages such as "expected a positive input, got 0.0".
+_MATH_DOMAIN = re.compile(r"^math domain error$|^expected .*, got ")
+
+
 def checked_step(procedure: Procedure, state: Any, x: StatInput, rng: SplitMix64 | None) -> tuple[Any, Any]:
     """procedure.step, with every numerical failure reported as NumericalError.
 
@@ -241,7 +317,7 @@ def checked_step(procedure: Procedure, state: Any, x: StatInput, rng: SplitMix64
     except ArithmeticError as error:  # overflow, division by zero
         raise NumericalError(f"{procedure.name}: {type(error).__name__}: {error}") from error
     except ValueError as error:
-        if "math domain error" not in str(error):
+        if not _MATH_DOMAIN.search(str(error)):
             raise
         raise NumericalError(f"{procedure.name}: {error}") from error
     if not _finite(procedure.encode_state(new_state)):

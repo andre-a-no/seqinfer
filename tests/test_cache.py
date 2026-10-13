@@ -178,5 +178,83 @@ class DesignCache(unittest.TestCase):
         self.assertEqual(list(self.dir.glob("*.json")), [])
 
 
+
+class FourthReviewCache(DesignCache):
+    """Line-by-line review after 0.1.0: the cache."""
+
+    def entry(self):
+        self.design()
+        (path,) = self.dir.glob("*.json")
+        return path, json.loads(path.read_text())
+
+    def test_stored_multipliers_must_belong_to_the_plan(self):
+        edits = [
+            lambda d: d.__setitem__("lagrangian", -1.0),
+            lambda d: d.__setitem__("lambda0", 1e9),
+            lambda d: d["plan"].__setitem__("reject_high", "yes"),
+            lambda d: d.__setitem__("exact", "no"),
+            lambda d: d["plan"].__setitem__("label", 5),
+        ]
+        for edit in edits:
+            path, entry = self.entry()
+            edit(entry["design"])
+            path.write_text(json.dumps(entry))
+            _, events = self.design()
+            with self.subTest(edit=edit):
+                self.assertEqual([e["action"] for e in events], ["ignored", "saved"])
+
+    def test_entries_are_readable_by_others(self):
+        path, _ = self.entry()
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+
+    def test_clear_reports_files_it_cannot_remove(self):
+        self.entry()
+        original = Path.unlink
+
+        def refuse(path, *args, **kwargs):
+            raise PermissionError(1, "Operation not permitted")
+
+        Path.unlink = refuse  # type: ignore[method-assign]
+        try:
+            with self.assertLogs("sequential_analysis.cache", "WARNING") as logs:
+                self.assertEqual(clear_design_cache(self.dir), 0)
+        finally:
+            Path.unlink = original  # type: ignore[method-assign]
+        self.assertEqual([r.incident["action"] for r in logs.records], ["cleared", "not_removed"])
+
+    def test_a_path_named_off_is_a_directory(self):
+        self.assertEqual(design_cache_dir(Path("off")), Path("off").resolve())
+        self.assertIsNone(design_cache_dir("off"))
+
+    def test_a_relative_xdg_cache_home_is_ignored(self):
+        saved = {k: os.environ.get(k) for k in ("XDG_CACHE_HOME", "SEQUENTIAL_ANALYSIS_CACHE")}
+        os.environ.pop("SEQUENTIAL_ANALYSIS_CACHE", None)
+        os.environ["XDG_CACHE_HOME"] = "relative/dir"
+        try:
+            self.assertEqual(design_cache_dir(), Path("~/.cache/sequential-analysis").expanduser().resolve())
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+
+class FourthReviewSteps(unittest.TestCase):
+    def test_lattice_steps_are_checked(self):
+        for step in (float("inf"), float("nan"), 0.0, -1.0, 1e-9, 1e300):
+            with self.subTest(step=step), self.assertRaises(ValueError):
+                kiefer_weiss_plan(0.0, 1.0, 0.05, 0.05, 20, family=Gaussian(), step=step, cache=False)
+
+    def test_discrete_data_take_no_step(self):
+        with self.assertRaises(ValueError):
+            kiefer_weiss_plan(*ARGS, step=0.5, cache=False)
+
+    def test_a_coarse_lattice_asks_for_a_finer_step(self):
+        with self.assertRaises(ValueError) as caught:
+            kiefer_weiss_plan(0.0, 1.0, 0.05, 0.05, 20, family=Gaussian(), step=3.0, cache=False)
+        self.assertIn("finer lattice step", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,8 +62,8 @@ def design_cache_dir(cache: Any = None) -> Path | None:
         if not isinstance(cache, (str, os.PathLike)):
             raise TypeError(f"cache must be a directory, True, False or None, got {cache!r}")
         text = os.fspath(cache)
-        if isinstance(text, str) and text.strip().lower() in _OFF:
-            return None  # as for SEQUENTIAL_ANALYSIS_CACHE
+        if isinstance(cache, str) and cache.strip().lower() in _OFF:
+            return None  # as for SEQUENTIAL_ANALYSIS_CACHE; a Path is always a directory
         if not str(text).strip():
             raise ValueError("cache must name a directory; use False to turn the cache off")
         return Path(text).expanduser().resolve()
@@ -72,7 +72,9 @@ def design_cache_dir(cache: Any = None) -> Path | None:
         if env.strip().lower() in _OFF or not env.strip():
             return None
         return Path(env).expanduser().resolve()
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    base = os.environ.get("XDG_CACHE_HOME", "")
+    if not os.path.isabs(base):  # the XDG specification: a relative path is invalid and ignored
+        base = os.path.join(os.path.expanduser("~"), ".cache")
     return Path(base).resolve() / "sequential-analysis"
 
 
@@ -81,12 +83,21 @@ def clear_design_cache(cache: Any = None) -> int:
     directory = design_cache_dir(cache)
     if directory is None or not directory.is_dir():
         return 0
-    removed = 0
+    removed, failed = 0, []
     for path in directory.glob("kiefer_weiss-*.json"):  # only the cache's own entries
         if path.is_file() and not path.is_symlink():
-            path.unlink()
+            try:
+                path.unlink()
+            except FileNotFoundError:  # removed meanwhile by someone else
+                continue
+            except OSError as error:
+                failed.append(f"{path.name} ({error.strerror or error})")
+                continue
             removed += 1
     report("cleared", f"design cache: removed {removed} stored design(s) from {directory}", directory)
+    if failed:
+        report("not_removed", f"design cache: could not remove {len(failed)} file(s): {', '.join(failed)}",
+               directory, files=failed)
     return removed
 
 
@@ -132,10 +143,14 @@ def write_entry(path: Path, key: dict, design: dict, seconds: float, created_at:
             json.dump(entry, f, sort_keys=True)
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)  # mkstemp makes it private; a shared cache directory must be readable
         os.replace(tmp, path)
     except (OSError, TypeError, ValueError) as error:
-        if tmp is not None and os.path.exists(tmp):
-            os.unlink(tmp)
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
         report("not_saved", f"design cache: could not save to {path} ({error}); the design is not cached", path, key)
         return False
     return True

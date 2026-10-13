@@ -31,7 +31,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields
 from ..numerics import neumaier_add, require_finite
 from .sprt import REJECT_H0
 
@@ -122,4 +122,4 @@ class NormalMixtureSPRT(Procedure):
         return self.stop_on_reject and state.decision is not None
 
     def decode_state(self, data) -> MixtureState:
-        return MixtureState(**data)
+        return decode_fields(MixtureState, data)

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..distributions import _log_normal_upper, t_isf_log
 from ..errors import NumericalError
 from ..numerics import require_finite
@@ -67,7 +67,7 @@ class GroupSequentialOutput:
 
 class GroupSequentialTest(Procedure):
     name = "group_sequential_test"
-    version = "3"
+    version = "4"  # 4: t boundaries beyond 2e4 degrees of freedom from the more accurate t tail
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class GroupSequentialTest(Procedure):
         if futility is not None:
             if two_sided:
                 raise ValueError("futility boundaries are for one-sided tests")
-            if len(futility) != len(ns) or any(f > b for f, b in zip(futility, bounds, strict=True)):
+            if len(futility) != len(ns) or any(not f <= b for f, b in zip(futility, bounds, strict=True)):
                 raise ValueError("need one futility boundary per analysis, none above its efficacy boundary")
         self.analyses, self.bounds = tuple(ns), tuple(float(b) for b in bounds)
         self.futility = None if futility is None else tuple(float(f) for f in futility)
@@ -146,6 +146,7 @@ class GroupSequentialTest(Procedure):
         return self._bounds[k]
 
     def step(self, state: GroupSequentialState, x, rng=None):
+        refuse_terminal(self, state)
         v = x[self.input]
         n = state.n + 1
         delta = v - state.mean
@@ -177,4 +178,6 @@ class GroupSequentialTest(Procedure):
         return state.decision is not None
 
     def decode_state(self, data) -> GroupSequentialState:
-        return GroupSequentialState(**data)
+        state = decode_fields(GroupSequentialState, data)
+        require_state(state.m2 >= 0, "negative sum of squares")
+        return state

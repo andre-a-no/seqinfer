@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..numerics import require_finite
 
 
@@ -21,7 +21,7 @@ class EMAState:
 class EMAOutput:
     n: int
     value: float
-    residual: float  # observation minus the average before this step
+    residual: float  # observation minus the average before this step; 0.0 at the first, which has none
 
 
 class EMA(Procedure):
@@ -50,4 +50,6 @@ class EMA(Procedure):
         return EMAState(state.n + 1, value), EMAOutput(state.n + 1, value, v - state.value)
 
     def decode_state(self, data) -> EMAState:
-        return EMAState(**data)
+        state = decode_fields(EMAState, data)
+        require_state(state.n > 0 or state.value == 0, "an average without observations")
+        return state

@@ -30,7 +30,8 @@ def _number(x: float) -> str:
     if x == 0:
         return "0"  # also -0
     sign = "-" if x < 0 else ""
-    mantissa, _, exponent = repr(abs(x)).partition("e")
+    # float.__repr__, not repr: a subclass such as numpy.float64 has its own
+    mantissa, _, exponent = float.__repr__(abs(float(x))).partition("e")
     whole, _, fraction = mantissa.partition(".")
     digits = whole + fraction
     point = len(whole) + (int(exponent) if exponent else 0)
@@ -50,6 +51,14 @@ def _number(x: float) -> str:
     return sign + body
 
 
+def _string(s: str) -> str:
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError(f"canonical JSON has no representation for {s!r}: lone surrogates are not text") from None
+    return json.dumps(s, ensure_ascii=False)
+
+
 def _encode(obj: Any, out: list[str]) -> None:
     if obj is None:
         out.append("null")
@@ -62,9 +71,9 @@ def _encode(obj: Any, out: list[str]) -> None:
             raise ValueError(f"integer {obj} is beyond 2**53, where binary64 no longer holds every integer")
         out.append(_number(float(obj)))
     elif isinstance(obj, float):
-        out.append(_number(obj))
+        out.append(_number(float(obj)))
     elif isinstance(obj, str):
-        out.append(json.dumps(obj, ensure_ascii=False))
+        out.append(_string(obj))
     elif isinstance(obj, (list, tuple)):
         out.append("[")
         for i, item in enumerate(obj):
@@ -80,7 +89,7 @@ def _encode(obj: Any, out: list[str]) -> None:
         for i, key in enumerate(sorted(obj, key=lambda k: k.encode("utf-16-be"))):
             if i:
                 out.append(",")
-            out.append(json.dumps(key, ensure_ascii=False))
+            out.append(_string(key))
             out.append(":")
             _encode(obj[key], out)
         out.append("}")

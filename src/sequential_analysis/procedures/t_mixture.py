@@ -33,7 +33,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..errors import NumericalError
 from ..numerics import require_finite
 from .sprt import REJECT_H0
@@ -70,7 +70,7 @@ class TMixtureOutput:
 
 class TMixtureSPRT(Procedure):
     name = "t_mixture_sprt"
-    version = "2"
+    version = "3"  # 3: the critical t in logarithms (no overflow, no cancellation in k - 1)
 
     def __init__(
         self,
@@ -115,11 +115,11 @@ class TMixtureSPRT(Procedure):
 
     def critical_t(self, n: int) -> float | None:
         """|t| at which B_n reaches 1/alpha, or None if it cannot at this n."""
-        nu, r = n - 1, 1.0 + n * self.effect**2
-        k = math.exp(2.0 * (self._log_level + 0.5 * math.log(r)) / (nu + 1))
-        if k >= r:
+        nu, log_r = n - 1, math.log1p(n * self.effect**2)
+        log_k = 2.0 * (self._log_level + 0.5 * log_r) / (nu + 1)  # in logs: k itself may overflow
+        if log_k >= log_r:
             return None
-        return math.sqrt(nu * (k - 1.0) / (1.0 - k / r))
+        return math.sqrt(nu * math.expm1(log_k) / -math.expm1(log_k - log_r))
 
     def step(self, state: TMixtureState, x, rng=None):
         v = x[self.input]
@@ -165,4 +165,6 @@ class TMixtureSPRT(Procedure):
         return self.stop_on_reject and state.decision is not None
 
     def decode_state(self, data) -> TMixtureState:
-        return TMixtureState(**data)
+        state = decode_fields(TMixtureState, data)
+        require_state(state.m2 >= 0, "negative sum of squares")
+        return state

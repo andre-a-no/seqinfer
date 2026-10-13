@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterable, Iterable, Sequence
 
-from .core import Observation
+from .core import Observation, envelope_problem
 from .run import Run, RunStatus
 
 _END = object()
@@ -57,9 +57,13 @@ async def run_async(
     `overflow="drop"` discards observations when the queue is full; that
     changes the observation history, so drops are counted on the run
     (``counters["dropped_by_runtime"]``) and recorded in its checkpoint.
+    A dropped sequence number counts as consumed: later observations are
+    not held up behind it, and a restored run does not receive it.
     """
     if overflow not in ("block", "drop"):
         raise ValueError("overflow must be 'block' or 'drop'")
+    if type(maxsize) is not int or maxsize < 1:
+        raise ValueError(f"maxsize must be a positive int (a bounded queue), got {maxsize!r}")
     if overflow == "drop" and run.delivery.policy != "arrival":
         raise ValueError(
             f"overflow='drop' cannot be combined with delivery policy {run.delivery.policy!r}: "
@@ -80,6 +84,8 @@ async def run_async(
                     queue.put_nowait(obs)
                 except asyncio.QueueFull:
                     run.counters["dropped_by_runtime"] += 1
+                    if envelope_problem(obs) is None:
+                        run.delivery.skip(obs)  # its sequence number is spent: no gap, no redelivery
 
     async def feed() -> None:
         tasks = [asyncio.ensure_future(pump(p)) for p in producers]

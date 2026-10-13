@@ -62,10 +62,12 @@ def require_finite(value: float, what: str) -> float:
 def equivalent(a: Any, b: Any, abs_tol: float = 0.0, rel_tol: float = 0.0) -> bool:
     """Structural equivalence under a numerical contract.
 
-    Floats are compared within the given tolerances; everything else
-    (counts, decisions, labels, structure) must match exactly.  With both
-    tolerances at zero this is bitwise equality of the encoded values,
-    except that NaN is considered equal to NaN.
+    Numbers are compared within the given tolerances when either of them
+    is a float; everything else (integer counts, decisions, labels,
+    structure) must match exactly.  With both tolerances at zero, numbers
+    must be equal as numbers -- as they are in canonical JSON, 0.0 equals
+    -0.0 and 3 equals 3.0 -- except that NaN is considered equal to NaN.
+    An infinity equals only itself, whatever the tolerances.
     """
     if isinstance(a, bool) or isinstance(b, bool):
         return a is b
@@ -76,6 +78,8 @@ def equivalent(a: Any, b: Any, abs_tol: float = 0.0, rel_tol: float = 0.0) -> bo
             return math.isnan(a) and math.isnan(b)
         if a == b:
             return True
+        if math.isinf(a) or math.isinf(b):
+            return False
         return abs(a - b) <= max(abs_tol, rel_tol * max(abs(a), abs(b)))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(equivalent(a[k], b[k], abs_tol, rel_tol) for k in a)

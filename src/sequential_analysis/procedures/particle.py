@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, require_state
 from ..numerics import logsumexp, ordered_sum, require_finite
 
 
@@ -78,4 +78,7 @@ class BootstrapParticleFilter(Procedure):
         return {"n": state.n, "particles": list(state.particles)}
 
     def decode_state(self, data) -> ParticleState:
-        return ParticleState(data["n"], tuple(data["particles"]))
+        state = decode_fields(ParticleState, data)
+        expected = self.size if state.n else 0
+        require_state(len(state.particles) == expected, f"{len(state.particles)} particles, expected {expected}")
+        return state

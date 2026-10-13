@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..contracts import InputContract
-from ..core import Procedure
+from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import neumaier_add, require_finite
 from .sprt import ACCEPT_H0, REJECT_H0
 
@@ -107,20 +107,31 @@ class PlanTest(Procedure):
         return PlanState()
 
     def step(self, state: PlanState, x, rng=None):
+        refuse_terminal(self, state)
         total, comp = neumaier_add(state.total, state.comp, x[self.input])
         s = require_finite(total + comp, "running sum")
         n = state.n + 1
+        decision = self._decide(n, s)
+        return PlanState(n, total, comp, decision), PlanOutput(n, s, decision)
+
+    def _decide(self, n: int, s: float) -> str | None:
         lower, upper = self.plan[n - 1]
         low, high = (ACCEPT_H0, REJECT_H0) if self.reject_high else (REJECT_H0, ACCEPT_H0)
-        decision = None
         if lower is not None and s <= lower:
-            decision = low
-        elif upper is not None and s >= upper:
-            decision = high
-        return PlanState(n, total, comp, decision), PlanOutput(n, s, decision)
+            return low
+        if upper is not None and s >= upper:
+            return high
+        return None
 
     def is_terminal(self, state: PlanState) -> bool:
         return state.decision is not None
 
     def decode_state(self, data) -> PlanState:
-        return PlanState(**data)
+        state = decode_fields(PlanState, data)
+        require_state(state.n <= self.horizon, f"{state.n} steps in a plan of {self.horizon}")
+        if state.n == 0:
+            require_state(state == PlanState(), "no observations, but a statistic or decision")
+        else:
+            require_state(state.decision == self._decide(state.n, state.total + state.comp),
+                          "decision does not match the running sum")
+        return state

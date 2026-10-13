@@ -25,7 +25,7 @@ Python standard library (3.10+).
 ## Installation
 
 ```
-pip install sequential-analysis          # from PyPI, once released
+pip install sequential-analysis          # from PyPI
 pip install .                            # from a checkout
 pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
 ```
@@ -59,12 +59,25 @@ nonparametric monitoring, and a group sequential trial.
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
 | Group sequential trials | `GroupSequentialTest` (planned analyses; efficacy and non-binding futility boundaries; known or estimated variance) |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
-| Nonparametric, anytime-valid | `BettingMeanTest` (mean of bounded data, any distribution), `SequentialSignTest` (P(X > m) = P(X < m), the median for data without an atom at m; no moment assumptions; paired data via topology) |
+| Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
+| Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
 | Filtering and estimation | `LocalLevelKalman` (with control input), `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 `Bernoulli`, `Poisson`, `Exponential`.
+
+**Which method for data that are not normal?** For a median or another
+quantile — latencies, revenue per user, anything heavy-tailed — use the
+quantile procedures: they assume nothing about the distribution. To ask
+whether two groups differ at all, `KernelTwoSampleTest`. For a mean, the
+data have to be bounded (`BettingConfidenceSequence`, exact) or have a known
+bound on their variance (`CatoniConfidenceSequence`, exact); otherwise
+`AsymptoticConfidenceSequence` is valid only approximately and for long
+runs — no method can guarantee coverage of a mean of arbitrary unbounded
+data. All of them may be monitored after every observation; each
+docstring gives the simulated error rates on skewed, heavy-tailed and
+discrete data.
 
 **Design** (`sequential_analysis.design`), computed offline before the experiment:
 
@@ -88,8 +101,11 @@ Likelihood-ratio procedures take a family: `Gaussian` (known variance),
   against 31.3 for Lorden's 2-SPRT with thresholds calibrated to the same
   errors: the 2-SPRT is already close to optimal there. A design takes
   about a second for the Bernoulli example and from seconds to a minute
-  for normal data on the default lattice; the least favourable θ* designs
-  ten to twenty candidates and takes as many times longer. With `numpy`
+  for normal data on the default lattice. The least favourable θ* takes
+  longer: for discrete data it designs about a dozen candidates and
+  compares their largest expected sample sizes, some thirty times the time
+  of one design; for normal data it finds the root of Lorden's
+  characterisation from the precomputed table below, in a few designs. With `numpy`
   installed (optional: `pip install "sequential-analysis[fast]"`) the backward pass on
   wide lattices — normal, exponential, Poisson with larger rates — runs as
   array operations, about ten times faster, with the same plans. Targets that no test with `horizon`
@@ -116,8 +132,8 @@ again. Every save, load and ignored file is reported on the logger
 `sequential_analysis.cache` (visible by default):
 
 ```
-design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to ~/.cache/sequential-analysis/kiefer_weiss-4785….json
-design cache: loaded kiefer_weiss_plan(...) from ~/.cache/sequential-analysis/kiefer_weiss-4785….json (computed in 1.2 s); error rates verified
+design cache: computed kiefer_weiss_plan(0.3, 0.5, 0.05, 0.05, horizon=150, family=bernoulli, theta_star=None) in 1.2 s and saved it to /home/me/.cache/sequential-analysis/kiefer_weiss-<hash>.json
+design cache: loaded kiefer_weiss_plan(...) from /home/me/.cache/sequential-analysis/kiefer_weiss-<hash>.json (computed in 1.2 s); error rates verified
 ```
 
 The directory is `cache=` if given, else `$SEQUENTIAL_ANALYSIS_CACHE`, else
@@ -184,6 +200,13 @@ cd paper && latexmk -pdf main.tex   # the paper; needs TeX Live with biber
 ```
 
 See [CONTRIBUTING.md](https://github.com/andre-a-no/sequential-analysis/blob/main/CONTRIBUTING.md).
+
+## Citing
+
+If you use sequential-analysis in research, please cite it: the
+repository's [CITATION.cff](https://github.com/andre-a-no/sequential-analysis/blob/main/CITATION.cff)
+gives the details, and GitHub's *Cite this repository* button turns them
+into BibTeX or APA. Releases are archived on Zenodo with a DOI.
 
 ## License
 

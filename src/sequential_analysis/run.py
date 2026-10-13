@@ -73,6 +73,8 @@ _HEX64 = frozenset("0123456789abcdef")
 _DECIMAL = re.compile(r"-?[0-9]+")
 
 #: Required top-level fields of a checkpoint and their JSON types.
+_COUNTERS = frozenset({"invalid_skipped", "invalid_streak", "after_terminal", "dropped_by_runtime"})
+
 _FIELDS: dict[str, tuple[type, ...]] = {
     "format": (str,),
     "run_id": (str,),
@@ -112,6 +114,8 @@ def validate_checkpoint(checkpoint: Any) -> None:
         raise bad("missing field 'state'")
     if checkpoint["t"] < 0:
         raise bad("negative step count")
+    if not checkpoint["run_id"]:
+        raise bad("empty run_id")
     rng = checkpoint["rng"]
     if rng is not None and (len(rng) != 16 or not set(rng) <= _HEX64):
         raise bad("random state is not 16 hexadecimal digits")
@@ -127,6 +131,10 @@ def validate_checkpoint(checkpoint: Any) -> None:
             raise bad(f"provenance lacks {name!r}")
     if not isinstance(prov["on_invalid"], str) or not isinstance(prov["events"], list):
         raise bad("provenance fields have the wrong type")
+    if prov["on_invalid"] not in ("skip", "raise") and not prov["on_invalid"].startswith("raise:"):
+        raise bad(f"unknown on_invalid policy {prov['on_invalid']!r}")
+    if prov.get("run_id", checkpoint["run_id"]) != checkpoint["run_id"]:
+        raise bad("provenance names another run")
     if prov["seed"] is not None and not (isinstance(prov["seed"], str) and _DECIMAL.fullmatch(prov["seed"])):
         raise bad("seed is not a decimal string")
     streak = prov.get("max_invalid_streak")
@@ -147,9 +155,16 @@ def validate_checkpoint(checkpoint: Any) -> None:
             raise bad("log sync must be 'flush' or 'fsync'")
     if not all(type(v) is int and v >= 0 for v in checkpoint["counters"].values()):
         raise bad("counters must be non-negative integers")
+    unknown = set(checkpoint["counters"]) - _COUNTERS
+    if unknown:
+        raise bad(f"unknown counters {sorted(unknown)}")
     errors = checkpoint.get("consumer_errors", [])
     if not isinstance(errors, list) or not all(isinstance(e, dict) for e in errors):
         raise bad("consumer_errors must be a list of objects")
+    try:  # what checkpoint_id hashes: integers within 2**53, finite numbers, Unicode text
+        canonical_json(checkpoint)
+    except (TypeError, ValueError) as error:
+        raise bad(f"not canonical JSON ({error})") from None
 
 
 def _utf8(text: str) -> bool:
@@ -162,6 +177,14 @@ def _utf8(text: str) -> bool:
 
 def _normalize(obj: Any) -> Any:
     return json.loads(json.dumps(obj))
+
+
+def _same(a: Any, b: Any) -> bool:
+    """Equal as JSON values: unlike ==, true is not 1 (but 1 is 1.0, as in canonical JSON)."""
+    try:
+        return canonical_json(a) == canonical_json(b)
+    except (TypeError, ValueError):
+        return False
 
 
 class Run:
@@ -189,6 +212,10 @@ class Run:
                             f"wrap a path as ObservationLog(path)")
         if run_id is not None and not (type(run_id) is str and run_id and _utf8(run_id)):
             raise ValueError("run_id must be a non-empty str")
+        try:
+            canonical_json(_normalize(initialized_from))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"initialized_from must be a JSON value: {error}") from None
         if isinstance(log, ObservationLog) and not log.is_empty():
             raise ValueError(
                 f"log {log.path or '(in memory)'} already holds records; a new run needs an empty log. "
@@ -247,6 +274,8 @@ class Run:
         self.status = RunStatus.RUNNING
 
     def pause(self) -> None:
+        if self._busy:
+            raise LifecycleError("re-entrant call: consumers must act on sources, not on the run")
         if self.status is not RunStatus.RUNNING:
             raise LifecycleError(f"cannot pause a run that is {self.status.value}")
         self.status = RunStatus.PAUSED
@@ -254,6 +283,8 @@ class Run:
 
     def close(self) -> None:
         """End the run and close its observation log.  The final state stays available for checkpointing."""
+        if self._busy:
+            raise LifecycleError("re-entrant call: consumers must act on sources, not on the run")
         if self.status in (RunStatus.COMPLETED, RunStatus.FAILED):
             raise LifecycleError(f"run is already {self.status.value}")
         self.status = RunStatus.COMPLETED
@@ -285,8 +316,10 @@ class Run:
         An observation the topology cannot use (unknown input, missing key
         or event time) and a statistical input that violates the
         procedure's contract are invalid inputs, handled by `on_invalid`.
-        Delivery errors (OrderingError under the strict policy) are not:
-        that policy was chosen to stop the run.
+        Ordering errors are not: OrderingError from delivery (the strict
+        policy) or from the topology (an input observed twice for one key,
+        event time going backwards) stops the run, as those policies were
+        chosen to.
         """
         self._enter()
         self._busy = True
@@ -344,11 +377,16 @@ class Run:
         self._enter()
         self._busy = True
         try:
-            if not isinstance(x, Mapping):
-                violation = ContractViolation(f"a statistical input must be a mapping, got {type(x).__name__}")
-                self._invalid(violation, "contract")
-                return None
-            return self._apply(dict(x))
+            try:
+                if not isinstance(x, Mapping):
+                    violation = ContractViolation(f"a statistical input must be a mapping, got {type(x).__name__}")
+                    self._invalid(violation, "contract")
+                    return None
+                return self._apply(dict(x))
+            except Exception as error:
+                if self.status is not RunStatus.FAILED:
+                    self._fail(error)
+                raise
         finally:
             self._busy = False
 
@@ -414,6 +452,7 @@ class Run:
         try:
             new_state, output = checked_step(self.procedure, self.state, x, rng)
             digest = hashlib.sha256((self.history_digest + _canonical(x)).encode()).hexdigest()
+            terminal = bool(self.procedure.is_terminal(new_state))
         except ContractViolation as violation:
             # Raised by step for a data-dependent violation (e.g. a later stage of
             # a Chain).  Nothing was committed, so the input can be skipped whole.
@@ -429,13 +468,14 @@ class Run:
         self.t += 1
         self.counters["invalid_streak"] = 0
         self.history_digest = digest
-        self.terminal = self.procedure.is_terminal(new_state)
+        self.terminal = terminal
         event = OutputEvent(self.run_id, self.t, output, self.terminal)
         for consumer in self.consumers:
             try:
                 consumer(event)
             except Exception as error:  # observer failures never become inference failures
-                record = {"t": self.t, "consumer": type(consumer).__name__, "error": f"{type(error).__name__}: {error}"}
+                text = f"{type(error).__name__}: {error}".encode("utf-8", "backslashreplace").decode("utf-8")
+                record = {"t": self.t, "consumer": type(consumer).__name__, "error": text}
                 self.consumer_errors.append(record)
                 logger.warning(
                     "run %s: consumer %s failed at t=%d: %s", self.run_id, record["consumer"], self.t, record["error"],
@@ -451,8 +491,8 @@ class Run:
             raise LifecycleError("a failed run cannot be checkpointed; restore an earlier checkpoint")
         if self._busy:
             raise LifecycleError("checkpoints are taken between transitions")
-        checkpoint: dict[str, Any] = _normalize(
-            {
+        try:
+            checkpoint: dict[str, Any] = _normalize({
                 "format": CHECKPOINT_FORMAT,
                 "run_id": self.run_id,
                 "t": self.t,
@@ -464,15 +504,13 @@ class Run:
                 "delivery": {"spec": self.delivery.spec(), "state": self.delivery.state()},
                 "history_digest": self.history_digest,
                 "log": self.log.state() if self.log is not None else None,
-                "counters": self.counters,
+                "counters": dict(self.counters),
                 "consumer_errors": self.consumer_errors,
                 "provenance": self.provenance,
-            }
-        )
-        try:
+            })
             canonical_json(checkpoint)
         except (TypeError, ValueError) as error:  # would make the checkpoint unrestorable
-            raise NumericalError(f"the run's state cannot be checkpointed: {error}") from error
+            raise NumericalError(f"the run cannot be checkpointed: {error}") from error
         return checkpoint
 
     @classmethod
@@ -512,6 +550,9 @@ class Run:
         passed again as ``on_invalid``.
         """
         validate_checkpoint(checkpoint)
+        cid = checkpoint_id(checkpoint)  # validated: hashing cannot fail now
+        if log is not FROM_CHECKPOINT and log is not None and not isinstance(log, ObservationLog):
+            raise TypeError(f"log must be an ObservationLog or None, got {type(log).__qualname__}")
         topology = topology if topology is not None else Independent()
         delivery = delivery if delivery is not None else Delivery()
         for label, mine, theirs in (
@@ -519,23 +560,8 @@ class Run:
             ("topology", topology.spec(), checkpoint["topology"]["spec"]),
             ("delivery", delivery.spec(), checkpoint["delivery"]["spec"]),
         ):
-            if _normalize(mine) != theirs:
+            if not _same(_normalize(mine), theirs):
                 raise IncompatibleCheckpoint(f"{label} mismatch: checkpoint has {theirs}, got {_normalize(mine)}")
-        log_state = checkpoint.get("log")
-        if log is FROM_CHECKPOINT:
-            if log_state is None:
-                log = None
-            elif log_state["path"] is None:
-                raise IncompatibleCheckpoint(
-                    "the checkpointed run had an in-memory observation log; pass that ObservationLog "
-                    "as log=..., or log=None to continue without one"
-                )
-            else:
-                log = ObservationLog(log_state["path"], sync=log_state.get("sync") or "flush")
-        if log is not None and log_state is None and not (isinstance(log, ObservationLog) and log.is_empty()):
-            raise IncompatibleCheckpoint(
-                "the checkpointed run had no observation log; a log attached now must be empty"
-            )
         prov = checkpoint["provenance"]
         recorded = prov["on_invalid"]
         if on_invalid is None:
@@ -548,38 +574,71 @@ class Run:
             raise IncompatibleCheckpoint(
                 f"on_invalid mismatch: checkpoint has {recorded!r}, got {_policy_spec(on_invalid)!r}"
             )
-        if log is not None and log_state is not None:
-            log.verify(log_state)  # before anything is changed: refuse a foreign log up front
-        run = cls(
-            procedure,
-            topology=topology,
-            delivery=delivery,
-            consumers=consumers,
-            seed=None if prov["seed"] is None else int(prov["seed"]),
-            run_id=checkpoint["run_id"],
-            initial_state=_decoded(procedure, checkpoint["state"]),
-            on_invalid=on_invalid,
-            max_invalid_streak=prov.get("max_invalid_streak"),
-            clock=clock,
-        )
-        try:
-            topology.restore(checkpoint["topology"]["state"])
-            delivery.restore(checkpoint["delivery"]["state"])
-        except (KeyError, TypeError, ValueError, AttributeError) as error:
-            raise IncompatibleCheckpoint(f"malformed checkpoint: buffers cannot be restored ({error!r})") from error
-        for part, restored in (("topology", topology.state()), ("delivery", delivery.state())):
-            if _normalize(restored) != checkpoint[part]["state"]:  # extra, missing or retyped entries
-                raise IncompatibleCheckpoint(f"malformed checkpoint: {part} state does not round-trip")
-        if checkpoint["terminal"] != procedure.is_terminal(run.state):
-            raise IncompatibleCheckpoint(
-                f"malformed checkpoint: terminal is {checkpoint['terminal']}, but the state says "
-                f"{procedure.is_terminal(run.state)}"
-            )
-        if (checkpoint["rng"] is None) == bool(getattr(procedure, "randomized", False)):
+        randomized = bool(getattr(procedure, "randomized", False))
+        if (checkpoint["rng"] is None) == randomized:
             raise IncompatibleCheckpoint(
                 f"malformed checkpoint: {procedure.name} is "
-                f"{'randomized and needs' if procedure.randomized else 'deterministic and has no'} a random state"
+                f"{'randomized and needs' if randomized else 'deterministic and has no'} a random state"
             )
+        if randomized and prov["seed"] is None:
+            raise IncompatibleCheckpoint(f"malformed checkpoint: {procedure.name} is randomized, but has no seed")
+        state = _decoded(procedure, checkpoint["state"])
+        if checkpoint["terminal"] != procedure.is_terminal(state):
+            raise IncompatibleCheckpoint(
+                f"malformed checkpoint: terminal is {checkpoint['terminal']}, but the state says "
+                f"{procedure.is_terminal(state)}"
+            )
+        log_state = checkpoint.get("log")
+        opened = None
+        if log is FROM_CHECKPOINT:
+            if log_state is None:
+                log = None
+            elif log_state["path"] is None:
+                raise IncompatibleCheckpoint(
+                    "the checkpointed run had an in-memory observation log; pass that ObservationLog "
+                    "as log=..., or log=None to continue without one"
+                )
+            else:
+                log = opened = ObservationLog(log_state["path"], sync=log_state.get("sync") or "flush")
+        try:
+            if log is not None and log_state is None and not log.is_empty():
+                raise IncompatibleCheckpoint(
+                    "the checkpointed run had no observation log; a log attached now must be empty"
+                )
+            if log is not None and log_state is not None:
+                log.verify(log_state)  # before anything is changed: refuse a foreign log up front
+            run = cls(
+                procedure,
+                topology=topology,
+                delivery=delivery,
+                consumers=consumers,
+                seed=None if prov["seed"] is None else int(prov["seed"]),
+                run_id=checkpoint["run_id"],
+                initial_state=state,
+                on_invalid=on_invalid,
+                max_invalid_streak=prov.get("max_invalid_streak"),
+                clock=clock,
+            )
+            # The caller's topology and delivery are changed only if both restore exactly.
+            before = topology.state(), delivery.state()
+            try:
+                topology.restore(checkpoint["topology"]["state"])
+                delivery.restore(checkpoint["delivery"]["state"])
+                for part, restored in (("topology", topology.state()), ("delivery", delivery.state())):
+                    if not _same(_normalize(restored), checkpoint[part]["state"]):  # extra, missing or retyped
+                        raise IncompatibleCheckpoint(f"malformed checkpoint: {part} state does not round-trip")
+            except (KeyError, TypeError, ValueError, AttributeError, IncompatibleCheckpoint) as error:
+                topology.restore(before[0])
+                delivery.restore(before[1])
+                if isinstance(error, IncompatibleCheckpoint):
+                    raise
+                raise IncompatibleCheckpoint(
+                    f"malformed checkpoint: buffers cannot be restored ({error!r})"
+                ) from error
+        except BaseException:
+            if opened is not None:
+                opened.close()
+            raise
         run.rng_state = None if checkpoint["rng"] is None else int(checkpoint["rng"], 16)
         run.t = checkpoint["t"]
         run.terminal = checkpoint["terminal"]
@@ -590,12 +649,8 @@ class Run:
         discarded = log.restore(log_state) if log is not None and log_state is not None else 0
         run.log = log
         run.status = RunStatus.PAUSED
-        run._event(
-            "restore",
-            checkpoint=checkpoint_id(checkpoint),
-            log=getattr(log, "path", None) if log is not None else None,
-            log_discarded=discarded,
-        )
+        run._event("restore", checkpoint=cid, log=getattr(log, "path", None) if log is not None else None,
+                   log_discarded=discarded)
         return run
 
 
@@ -607,7 +662,7 @@ def _decoded(procedure: Procedure, data: Any) -> Any:
         raise IncompatibleCheckpoint(
             f"malformed checkpoint: {procedure.name} cannot decode its state ({error!r})"
         ) from error
-    if again != data:  # a missing, extra or retyped field would otherwise pass silently
+    if not _same(again, data):  # a missing, extra or retyped field would otherwise pass silently
         raise IncompatibleCheckpoint(f"malformed checkpoint: {procedure.name} state does not round-trip")
     return state
 
