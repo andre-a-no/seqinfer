@@ -6,7 +6,10 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
-## Unreleased
+## 0.3.0 — 2026-10-15
+
+Filters, a numpy backend for the array-heavy procedures, and the speed and
+checkpoint behaviour measured and documented.
 
 ### Added: filters
 - `KalmanFilter`: any linear Gaussian state-space model in matrix form, with
