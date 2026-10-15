@@ -12,6 +12,8 @@ from sequential_analysis.cache import clear_design_cache, design_cache_dir
 from sequential_analysis.design import kiefer_weiss_plan
 from sequential_analysis.procedures import Gaussian, Poisson
 
+from .helpers import no_logs
+
 ARGS = (0.3, 0.5, 0.05, 0.05, 80)
 
 
@@ -86,7 +88,7 @@ class DesignCache(unittest.TestCase):
         self.assertLessEqual(d.at_theta0.reject, 0.05)
 
     def test_off_and_directory_selection(self):
-        with self.assertNoLogs("sequential_analysis.cache", "WARNING"):
+        with no_logs("sequential_analysis.cache", "WARNING"):
             kiefer_weiss_plan(*ARGS, cache=False)
             kiefer_weiss_plan(*ARGS)  # the test suite runs with SEQUENTIAL_ANALYSIS_CACHE=off
         self.assertIsNone(design_cache_dir())
@@ -103,7 +105,7 @@ class DesignCache(unittest.TestCase):
             os.environ["SEQUENTIAL_ANALYSIS_CACHE"] = saved if saved is not None else "off"
 
     def test_invalid_arguments_are_not_cached(self):
-        with self.assertRaises(ValueError), self.assertNoLogs("sequential_analysis.cache", "WARNING"):
+        with self.assertRaises(ValueError), no_logs("sequential_analysis.cache", "WARNING"):
             kiefer_weiss_plan(0.3, 0.3, 0.05, 0.05, 80, cache=self.dir)
         with self.assertRaises(ValueError):
             kiefer_weiss_plan(float("nan"), 0.5, 0.05, 0.05, 80, cache=self.dir)

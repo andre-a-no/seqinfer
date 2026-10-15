@@ -38,7 +38,7 @@ from .helpers import ab_units
 
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "ts" / "dist" / "src" / "cli.js"
-NODE = shutil.which("node")
+NODE = os.environ.get("NODE") or shutil.which("node")
 
 
 def cases():

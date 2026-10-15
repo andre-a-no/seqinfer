@@ -19,6 +19,7 @@ import unittest
 from fractions import Fraction
 
 from sequential_analysis import KeyJoin, Run, run_sync
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.procedures import (
     ABTest,
     MultipleTests,
@@ -63,7 +64,7 @@ class SampleRatioMismatchTests(unittest.TestCase):
         for t in (1, 5, 17, 60):
             counts = [arms[:t].count(k) for k in range(3)]
             exact = Fraction(1)
-            for w, k in zip(weights, counts, strict=True):
+            for w, k in zip_strict(weights, counts):
                 exact *= rising(c * w, k) / w**k
             exact /= rising(c, t)
             tolerance = 1e-12 * max(1.0, abs(math.log(exact)))
@@ -222,7 +223,7 @@ class ABTestTests(unittest.TestCase):
                 ys = [Fraction(p["y"]) for p in past]
                 mx, my = sum(xs) / t, sum(ys) / t
                 sxx = sum((a - mx) ** 2 for a in xs)
-                sxy = sum((a - mx) * (b - my) for a, b in zip(xs, ys, strict=True))
+                sxy = sum((a - mx) * (b - my) for a, b in zip_strict(xs, ys))
                 f = float(my + (sxy / sxx) * (Fraction(u["x"]) - mx)) if sxx else float(my)
             w = 1 / 0.4 if u["arm"] else -1 / 0.6
             scores.append(w * (u["y"] - f))
@@ -316,7 +317,7 @@ class MultipleTestsTests(unittest.TestCase):
         data = TwoProportionTests.data(1500, {0: 0.1, 1: 0.1, 2: 0.25}, 4, arms=(0, 1, 2))
         multi = MultipleTests.versus_control([1, 2], 0, alpha=0.05)
         _state, outs = fold(multi, data)
-        for name, test in zip(multi.names, multi.tests, strict=True):
+        for name, test in zip_strict(multi.names, multi.tests):
             _alone, alone_outs = fold(test, data)
             self.assertEqual(outs[-1].log_e_values[name], alone_outs[-1].log_e_value)
         self.assertEqual(outs[-1].rejected, ("2-vs-0",))

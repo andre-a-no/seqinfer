@@ -72,6 +72,10 @@ TypeScript executor, and a documentation site.
   the numpy version; restoring under another one is reported.
 
 ### Changed
+- Python 3.8 and 3.9 are supported again: the library needs Python 3.8 or
+  later (it needed 3.10), tested in CI on 3.8 with numpy 1.22.0 and on 3.9;
+  the TypeScript executor runs on Node.js 16 or later. Results are the same
+  bits on every version.
 - The four procedures above have a `backend` entry in their
   configuration, so their checkpoints from 0.2.0 are refused.
 

@@ -50,6 +50,7 @@ import math
 from dataclasses import dataclass
 
 from .. import backend as _backend
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import ordered_sum
@@ -158,7 +159,7 @@ class CatoniConfidenceSequence(Procedure):
 
             def score(m: float) -> tuple[float, float]:  # sum psi(r (x - m)), decreasing in m, and its derivative
                 value, slope = 0.0, 0.0
-                for r, x in zip(rates, sample, strict=True):
+                for r, x in zip_strict(rates, sample):
                     y = r * (x - m)
                     if y >= 0.0:
                         value += math.log1p(y + 0.5 * y * y)

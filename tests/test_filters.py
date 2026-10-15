@@ -17,6 +17,7 @@ import math
 import random
 import unittest
 
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.procedures import (
     BayesianChangePoint,
     BetaBernoulliModel,
@@ -72,18 +73,18 @@ class KalmanAgainstExactConditioning(unittest.TestCase):
             m = kf.n_obs
             ys = [[rnd.gauss(0, 2) for _ in range(m)] if m > 1 else rnd.gauss(0, 2) for _ in range(6)]
             us = [rnd.gauss(0, 1) for _ in range(6)]
-            inputs = [{"y": y, "u": u} if spec.get("control") else {"y": y} for y, u in zip(ys, us, strict=True)]
+            inputs = [{"y": y, "u": u} if spec.get("control") else {"y": y} for y, u in zip_strict(ys, us)]
             _, outs = fold(kf, inputs)
             ref = gaussian_filter(_m(spec["transition"]), _m(spec["observation"]), _m(spec["process_noise"]),
                                   _m(spec["observation_noise"]),
                                   spec["initial_mean"], _m(spec["initial_covariance"]), ys,
                                   B=spec.get("control"), us=us)
-            for t, (out, (mean, cov, loglik)) in enumerate(zip(outs, ref, strict=True)):
+            for t, (out, (mean, cov, loglik)) in enumerate(zip_strict(outs, ref)):
                 with self.subTest(label, t=t):
-                    for a, b in zip(out.mean, mean, strict=True):
+                    for a, b in zip_strict(out.mean, mean):
                         self.assertAlmostEqual(a, b, delta=1e-12 * max(1.0, abs(b)))
-                    for row, ref_row in zip(out.covariance, cov, strict=True):
-                        for a, b in zip(row, ref_row, strict=True):
+                    for row, ref_row in zip_strict(out.covariance, cov):
+                        for a, b in zip_strict(row, ref_row):
                             self.assertAlmostEqual(a, b, delta=1e-12 * max(1.0, abs(b)))
                     self.assertAlmostEqual(out.log_likelihood, loglik, delta=1e-11 * abs(loglik))
 
@@ -92,7 +93,7 @@ class KalmanAgainstExactConditioning(unittest.TestCase):
         ys = [rnd.gauss(0, 1) for _ in range(50)]
         _, general = fold(KalmanFilter(1.0, 1.0, 0.3, 2.0, (0.5,), 4.0), [{"y": y} for y in ys])
         _, special = fold(LocalLevelKalman(q=0.3, r=2.0, m0=0.5, p0=4.0), [{"y": y} for y in ys])
-        for g, s in zip(general, special, strict=True):
+        for g, s in zip_strict(general, special):
             self.assertAlmostEqual(g.mean[0], s.mean, delta=1e-12)
             self.assertAlmostEqual(g.covariance[0][0], s.var, delta=1e-12)
 
@@ -110,13 +111,13 @@ class KalmanAgainstExactConditioning(unittest.TestCase):
         state, total, count = kf.initial_state(), 0.0, 0
         chol_q, chol_r = _chol(spec["process_noise"]), _chol(spec["observation_noise"])
         start = _mv(_chol(spec["initial_covariance"]), [rnd.gauss(0, 1) for _ in z])
-        z = [a + b for a, b in zip(z, start, strict=True)]
+        z = [a + b for a, b in zip_strict(z, start)]
         for _ in range(3000):
             u = rnd.gauss(0, 1)
-            z = [a + b + c for a, b, c in zip(_mv(spec["transition"], z), [r[0] * u for r in spec["control"]],
-                                              _mv(chol_q, [rnd.gauss(0, 1), rnd.gauss(0, 1)]), strict=True)]
-            y = [a + b for a, b in zip(_mv(spec["observation"], z), _mv(chol_r, [rnd.gauss(0, 1), rnd.gauss(0, 1)]),
-                                        strict=True)]
+            z = [a + b + c for a, b, c in zip_strict(_mv(spec["transition"], z), [r[0] * u for r in spec["control"]],
+                                              _mv(chol_q, [rnd.gauss(0, 1), rnd.gauss(0, 1)]))]
+            noise = _mv(chol_r, [rnd.gauss(0, 1), rnd.gauss(0, 1)])
+            y = [a + b for a, b in zip_strict(_mv(spec["observation"], z), noise)]
             state, out = kf.step(state, {"y": y, "u": u}, None)
             s, v = out.innovation_covariance, out.innovation
             det = s[0][0] * s[1][1] - s[0][1] * s[1][0]
@@ -149,7 +150,7 @@ class RobustKalman(unittest.TestCase):
         ys = [{"y": rnd.gauss(0, 1)} for _ in range(30)]
         _, robust = fold(self.make(1e12), ys)
         _, plain = fold(KalmanFilter(1.0, 1.0, 0.1, 1.0, (0.0,), 10.0), ys)
-        for a, b in zip(robust, plain, strict=True):
+        for a, b in zip_strict(robust, plain):
             self.assertAlmostEqual(a.mean[0], b.mean[0], delta=1e-9)
 
     def test_weight_solves_the_variational_fixed_point(self):
@@ -199,9 +200,9 @@ class HiddenMarkov(unittest.TestCase):
     def check(self, emission, density, ys):
         _, outs = fold(HiddenMarkovFilter(self.PI, self.A, emission), [{"y": y} for y in ys])
         ref = hmm_filter(self.PI, self.A, density, ys)
-        for t, (out, (probs, loglik)) in enumerate(zip(outs, ref, strict=True)):
+        for t, (out, (probs, loglik)) in enumerate(zip_strict(outs, ref)):
             with self.subTest(type(emission).__name__, t=t):
-                for a, b in zip(out.probabilities, probs, strict=True):
+                for a, b in zip_strict(out.probabilities, probs):
                     self.assertAlmostEqual(a, b, delta=1e-12)
                 self.assertAlmostEqual(out.log_likelihood, loglik, delta=1e-12 * abs(loglik))
                 self.assertEqual(out.most_likely, max(range(3), key=lambda k: (probs[k], -k)))
@@ -331,7 +332,7 @@ class BayesianChangePoints(unittest.TestCase):
         for prune, cap, tolerance, evidence_tolerance in ((1e-12, None, 1e-10, 1e-8), (1e-10, 100, 2e-5, 2e-3),
                                                           (1e-10, 50, 1e-3, 0.05)):
             _, pruned = fold(BayesianChangePoint(NormalGammaModel(), 0.01, prune=prune, max_hypotheses=cap), ys)
-            for a, b in zip(exact, pruned, strict=True):
+            for a, b in zip_strict(exact, pruned):
                 with self.subTest(prune=prune, cap=cap, n=a.n):
                     self.assertAlmostEqual(a.change_probability, b.change_probability, delta=tolerance)
                     self.assertAlmostEqual(a.log_evidence, b.log_evidence, delta=evidence_tolerance)
@@ -368,7 +369,7 @@ class ParticleFilters(unittest.TestCase):
                           lambda z, y: normal_density(y, 0.0, math.exp(z / 2)), ys)
         _, outs = fold(ParticleFilter(StochasticVolatilityModel(mu, phi, sigma), 20000), [{"y": y} for y in ys],
                        SplitMix64.for_role(2, "test"))
-        for out, (mean, loglik) in zip(outs, ref, strict=True):
+        for out, (mean, loglik) in zip_strict(outs, ref):
             self.assertAlmostEqual(out.mean, mean, delta=0.02)
             self.assertAlmostEqual(out.log_likelihood, loglik, delta=0.05)
 
@@ -380,7 +381,7 @@ class ParticleFilters(unittest.TestCase):
                           lambda a, b: normal_density(b, a, math.sqrt(0.05)),
                           lambda z, y: const * (1 + ((y - z) / 0.5) ** 2 / 2.0) ** -1.5, ys)
         _, outs = fold(ParticleFilter(model, 20000), [{"y": y} for y in ys], SplitMix64.for_role(3, "test"))
-        for out, (mean, loglik) in zip(outs, ref, strict=True):
+        for out, (mean, loglik) in zip_strict(outs, ref):
             self.assertAlmostEqual(out.mean, mean, delta=0.02)
             self.assertAlmostEqual(out.log_likelihood, loglik, delta=0.05)
         self.assertLess(abs(outs[3].mean), 0.5)  # the outlier at 8 hardly moves the level
@@ -413,4 +414,4 @@ def _chol(a):
 
 
 def _mv(a, v):
-    return [sum(x * y for x, y in zip(row, v, strict=True)) for row in _m(a)]
+    return [sum(x * y for x, y in zip_strict(row, v)) for row in _m(a)]

@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from operator import mul
 from typing import Any
 
+from ._compat import zip_strict
 from .cache import design_cache_dir, entry_path, read_entry, report, write_entry
 from .canonical import canonical_json
 from .procedures.families import Bernoulli, Exponential, Family, Gaussian, Poisson
@@ -723,7 +724,7 @@ def _verified(
             return None
         step = lattice_step
         ocs = [operating_characteristic(plan, family, theta, step=step) for theta in (theta0, theta1, stored_star)]
-        for oc, k in zip(ocs, ("at_theta0", "at_theta1", "at_theta_star"), strict=True):
+        for oc, k in zip_strict(ocs, ("at_theta0", "at_theta1", "at_theta_star")):
             stored = data[k]
             for field in ("reject", "accept", "expected_n"):
                 if abs(getattr(oc, field) - stored[field]) > 1e-9 * max(1.0, abs(stored[field])):
@@ -1048,9 +1049,10 @@ def _least_favourable_table() -> dict | None:
     global _TABLE
     if _TABLE is False:
         try:
-            from importlib.resources import files
+            import pkgutil  # importlib.resources.files needs Python 3.9
 
-            _TABLE = json.loads(files("sequential_analysis").joinpath("data/least_favourable_normal.json").read_text())
+            data = pkgutil.get_data("sequential_analysis", "data/least_favourable_normal.json")
+            _TABLE = None if data is None else json.loads(data.decode("utf-8"))
         except (OSError, ValueError, ModuleNotFoundError):
             _TABLE = None
     return _TABLE if isinstance(_TABLE, dict) else None
@@ -1088,7 +1090,7 @@ def tabulated_least_favourable(alpha0: float, alpha1: float, rho: float) -> floa
     if any(not -1.0 - 1e-9 <= x <= 1.0 + 1e-9 for x in u[:2]):
         return None
     total = 0.0
-    for (i, j, k), c in zip(table["terms"], table["coefficients"], strict=True):
+    for (i, j, k), c in zip_strict(table["terms"], table["coefficients"]):
         # antisymmetric in (alpha0, alpha1): exchanging the hypotheses maps lambda to 1 - lambda
         total += c * (_legendre(i, u[0]) * _legendre(j, u[1]) - _legendre(j, u[0]) * _legendre(i, u[1])) * _legendre(
             k, u[2]

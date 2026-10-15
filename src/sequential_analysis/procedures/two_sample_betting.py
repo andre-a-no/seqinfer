@@ -42,6 +42,7 @@ import math
 from dataclasses import dataclass
 
 from .. import backend as _backend
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import ordered_sum, require_finite
@@ -134,7 +135,7 @@ class KernelTwoSampleTest(Procedure):
     def witness(z: float, a: tuple[float, ...], b: tuple[float, ...], bandwidth: float) -> float:
         """g(z): mean kernel similarity of z to the A sample minus that to the B sample, in [-1, 1]."""
         c = -0.5 / (bandwidth * bandwidth)
-        terms = (math.exp(c * (z - u) ** 2) - math.exp(c * (z - w) ** 2) for u, w in zip(a, b, strict=True))
+        terms = (math.exp(c * (z - u) ** 2) - math.exp(c * (z - w) ** 2) for u, w in zip_strict(a, b))
         return ordered_sum(terms) / len(a)
 
     def _witnesses(self, za: float, zb: float, state: KernelTwoSampleState, bandwidth: float) -> tuple[float, float]:

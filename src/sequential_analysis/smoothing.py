@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import linalg as la
+from ._compat import zip_strict
 from .errors import NumericalError
 from .procedures.hmm import HiddenMarkovFilter
 from .procedures.state_space import KalmanFilter
@@ -120,7 +121,7 @@ def forward_backward(hmm: HiddenMarkovFilter, inputs: Iterable[Mapping[str, Any]
         prior = hmm.predicted(state)
         e, _ = _scaled_emissions(hmm, prior, y)
         state, out = hmm.step(state, {hmm.input: y})
-        joint = [p * v for p, v in zip(prior, e, strict=True)]
+        joint = [p * v for p, v in zip_strict(prior, e)]
         scales.append(math.fsum(joint))
         emissions.append(e)
         alphas.append(state.probabilities)
@@ -130,7 +131,7 @@ def forward_backward(hmm: HiddenMarkovFilter, inputs: Iterable[Mapping[str, Any]
     for t in range(len(ys) - 2, -1, -1):
         e, c = emissions[t + 1], scales[t + 1]
         beta = [math.fsum(a[j][k] * e[k] * beta[k] for k in range(k_states)) / c for j in range(k_states)]
-        gamma = [p * b for p, b in zip(alphas[t], beta, strict=True)]
+        gamma = [p * b for p, b in zip_strict(alphas[t], beta)]
         total = math.fsum(gamma)
         smoothed.append(tuple(g / total for g in gamma))
     smoothed.reverse()

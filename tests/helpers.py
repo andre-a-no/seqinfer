@@ -2,7 +2,9 @@
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Shared fixtures: procedures, observation histories and trace helpers."""
+import contextlib
 import json
+import logging
 import math
 import random
 
@@ -57,6 +59,25 @@ from sequential_analysis.procedures import (
     TwoSPRT,
 )
 from sequential_analysis.sources import from_values, gaussian, interleave
+
+
+@contextlib.contextmanager
+def no_logs(logger: str, level: str = "WARNING"):
+    """unittest's assertNoLogs, which needs Python 3.10: fail if `logger` emits a record at `level` or above."""
+    records = []
+
+    class Catch(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler, log = Catch(getattr(logging, level)), logging.getLogger(logger)
+    log.addHandler(handler)
+    try:
+        yield
+    finally:
+        log.removeHandler(handler)
+    if records:
+        raise AssertionError(f"unexpected log records: {[r.getMessage() for r in records]}")
 
 
 def fixed_clock():

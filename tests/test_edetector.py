@@ -17,6 +17,7 @@ import math
 import random
 import unittest
 
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.errors import LifecycleError
 from sequential_analysis.procedures import MeanEDetector, QuantileEDetector
 
@@ -74,7 +75,7 @@ class Definition(unittest.TestCase):
         xs = [min(1.0, max(0.0, rnd.gauss(0.5 if i > 50 else 0.3, 0.2))) for i in range(150)]
         _, sr = fold(MeanEDetector(0.3, arl=1e12), xs)
         _, cu = fold(MeanEDetector(0.3, arl=1e12, statistic="cusum"), xs)
-        self.assertTrue(all(c.statistic <= s.statistic * (1 + 1e-12) for c, s in zip(cu, sr, strict=True)))
+        self.assertTrue(all(c.statistic <= s.statistic * (1 + 1e-12) for c, s in zip_strict(cu, sr)))
 
 
 class RunLength(unittest.TestCase):

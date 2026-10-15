@@ -27,6 +27,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..errors import NumericalError
@@ -171,7 +172,7 @@ class HiddenMarkovFilter(Procedure):
         top = max(logs)
         if top == -math.inf:
             raise NumericalError(f"{self.name}: observation {y!r} is impossible in every reachable state")
-        joint = [p * math.exp(e - top) for p, e in zip(prior, logs, strict=True)]
+        joint = [p * math.exp(e - top) for p, e in zip_strict(prior, logs)]
         total = 0.0
         for v in joint:
             total += v

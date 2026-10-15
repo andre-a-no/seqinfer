@@ -12,11 +12,14 @@ optimised beyond that.
 from __future__ import annotations
 
 import math
+import typing
 from collections.abc import Sequence
 from typing import Any
 
-Vector = tuple[float, ...]
-Matrix = tuple[Vector, ...]
+from ._compat import zip_strict
+
+Vector = typing.Tuple[float, ...]  # typing: evaluated at import, also on Python 3.8
+Matrix = typing.Tuple[Vector, ...]
 
 
 def vector(value: Any, size: int | None, name: str) -> Vector:
@@ -50,7 +53,7 @@ def matrix(value: Any, rows: int | None, cols: int | None, name: str) -> Matrix:
 
 def dot(a: Sequence[float], b: Sequence[float]) -> float:
     total = 0.0
-    for x, y in zip(a, b, strict=True):
+    for x, y in zip_strict(a, b):
         total += x * y
     return total
 
@@ -69,19 +72,19 @@ def matvec(a: Matrix, v: Sequence[float]) -> Vector:
 
 
 def add(a: Matrix, b: Matrix) -> Matrix:
-    return tuple(tuple(x + y for x, y in zip(r, s, strict=True)) for r, s in zip(a, b, strict=True))
+    return tuple(tuple(x + y for x, y in zip_strict(r, s)) for r, s in zip_strict(a, b))
 
 
 def sub(a: Matrix, b: Matrix) -> Matrix:
-    return tuple(tuple(x - y for x, y in zip(r, s, strict=True)) for r, s in zip(a, b, strict=True))
+    return tuple(tuple(x - y for x, y in zip_strict(r, s)) for r, s in zip_strict(a, b))
 
 
 def vadd(a: Sequence[float], b: Sequence[float]) -> Vector:
-    return tuple(x + y for x, y in zip(a, b, strict=True))
+    return tuple(x + y for x, y in zip_strict(a, b))
 
 
 def vsub(a: Sequence[float], b: Sequence[float]) -> Vector:
-    return tuple(x - y for x, y in zip(a, b, strict=True))
+    return tuple(x - y for x, y in zip_strict(a, b))
 
 
 def scale(a: Matrix, c: float) -> Matrix:

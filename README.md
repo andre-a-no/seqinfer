@@ -39,7 +39,8 @@ is bit-for-bit identical to an uninterrupted one.
 
 The library is the reference implementation of the architecture described
 in [`paper/main.tex`](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.tex) ([PDF](https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.pdf)). It has no dependencies beyond the
-Python standard library (3.10+).
+Python standard library, and runs on Python 3.8 and later: an old system
+Python is enough (see "Minimum versions" in CONTRIBUTING.md).
 
 ## Installation
 
@@ -250,7 +251,7 @@ holds:
 - **Bit for bit, and where.** With the Python backend a run depends only
   on IEEE 754 arithmetic, sums in a fixed left-to-right order, and the
   `exp`, `log` and similar functions of the platform's C library (through
-  the `math` module) — not on the Python version (3.10 to 3.14 give the
+  the `math` module) — not on the Python version (3.8 to 3.14 give the
   same bits). The mainstream C libraries agree on these functions in all
   but rare cases; the conformance vectors in `conformance/` pin the bits
   down and are checked in CI, in Python and in JavaScript. With the numpy backend a run is reproducible bit for bit

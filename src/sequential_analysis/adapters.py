@@ -36,6 +36,7 @@ import math
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
+from ._compat import zip_strict
 from .core import Observation
 from .delivery import Delivery
 
@@ -113,7 +114,7 @@ def from_dataframe(frame: Any, inputs: Mapping[str, str] | Sequence[str] | str, 
         rows: Iterable[Mapping[str, Any]] = frame.iter_rows(named=True)
     elif hasattr(frame, "itertuples") and hasattr(frame, "columns"):  # pandas
         names = [str(c) for c in frame.columns]
-        rows = (dict(zip(names, r, strict=True)) for r in frame.itertuples(index=False, name=None))
+        rows = (dict(zip_strict(names, r)) for r in frame.itertuples(index=False, name=None))
     else:
         raise TypeError(f"expected a pandas or polars DataFrame, got {type(frame).__qualname__}")
     return _rows_to_observations(rows, columns, seq=seq, key=key, time=time, source=source, start=start,
@@ -144,7 +145,7 @@ def from_sql(connection: Any, query: str, parameters: Sequence[Any] | Mapping[st
                 if not chunk:
                     return
                 for r in chunk:
-                    yield dict(zip(names, r, strict=True))
+                    yield dict(zip_strict(names, r))
 
         yield from _rows_to_observations(rows(), columns, seq=seq, key=key, time=time, source=source,
                                          start=start, missing=missing, where="query", delivery=delivery)

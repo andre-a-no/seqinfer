@@ -304,5 +304,5 @@ class QuantileConfidenceSequence(Procedure):
     def decode_state(self, data) -> QuantileCSState:
         state = decode_fields(QuantileCSState, data)
         require_state(len(state.sample) == state.n, "sample size differs from n")
-        require_state(all(a <= b for a, b in zip(state.sample, state.sample[1:], strict=False)), "sample not sorted")
+        require_state(all(a <= b for a, b in zip(state.sample, state.sample[1:])), "sample not sorted")
         return state

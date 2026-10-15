@@ -12,6 +12,7 @@ import random
 import unittest
 
 from sequential_analysis import ContractViolation, LifecycleError, PositionalPair, Run, difference
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.design import kiefer_weiss_plan, lattice, operating_characteristic
 from sequential_analysis.procedures import (
     ACCEPT_H0,
@@ -93,11 +94,8 @@ class Families(unittest.TestCase):
     def test_contracts(self):
         run = Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise")
         for bad in (-1, 1.5):
-            with (
-                self.subTest(bad=bad),
-                self.assertRaises(ContractViolation),
-                self.assertLogs("sequential_analysis", "WARNING"),
-            ):
+            with self.subTest(bad=bad), self.assertRaises(ContractViolation), \
+                    self.assertLogs("sequential_analysis", "WARNING"):
                 Run(SPRT(Poisson(), 1.0, 2.0), on_invalid="raise").step({"x": bad})
         run.step({"x": 3})
         with self.assertRaises(ValueError):
@@ -235,7 +233,7 @@ class BettingTests(unittest.TestCase):
         treated = [rnd.expovariate(1.0) + 0.8 for _ in range(400)]
         control = [rnd.expovariate(1.0) for _ in range(400)]
         run = Run(SequentialSignTest(0.0), topology=PositionalPair(("t", "c")).map(difference("t", "c"), "t-c"))
-        for a, b in zip(from_values("t", treated), from_values("c", control), strict=True):
+        for a, b in zip_strict(from_values("t", treated), from_values("c", control)):
             run.offer(a)
             run.offer(b)
             if run.terminal:
@@ -372,8 +370,8 @@ class Lattices(unittest.TestCase):
         lat = lattice(Gaussian(2.0), 0.3, step=0.25)
         self.assertFalse(lat.exact)
         values = [(lat.offset + i) * lat.step for i in range(len(lat.weights))]
-        mean = sum(v * w for v, w in zip(values, lat.weights, strict=True))
-        var = sum((v - mean) ** 2 * w for v, w in zip(values, lat.weights, strict=True))
+        mean = sum(v * w for v, w in zip_strict(values, lat.weights))
+        var = sum((v - mean) ** 2 * w for v, w in zip_strict(values, lat.weights))
         self.assertAlmostEqual(mean, 0.3, places=12)
         self.assertAlmostEqual(var, 4.0, places=10)
 
@@ -462,10 +460,10 @@ class GroupSequential(unittest.TestCase):
         from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, self.FRACTIONS, "obrien-fleming")
-        for got, published in zip(d.bounds, (4.877, 3.357, 2.680, 2.290, 2.031), strict=True):
+        for got, published in zip_strict(d.bounds, (4.877, 3.357, 2.680, 2.290, 2.031)):
             self.assertAlmostEqual(got, published, places=3)
         two = group_sequential_design(0.05, self.FRACTIONS, "obrien-fleming", two_sided=True)
-        for a, b in zip(two.bounds, d.bounds, strict=True):
+        for a, b in zip_strict(two.bounds, d.bounds):
             self.assertAlmostEqual(a, b, places=4)
 
     def test_alpha_is_spent_as_planned(self):
@@ -475,7 +473,7 @@ class GroupSequential(unittest.TestCase):
             d = group_sequential_design(0.025, self.FRACTIONS, spending)
             crossing = d.crossing(0.0)
             cumulative = 0.0
-            for p, spent in zip(crossing, d.spent, strict=True):
+            for p, spent in zip_strict(crossing, d.spent):
                 cumulative += p
                 self.assertAlmostEqual(cumulative, spent, places=7, msg=str(spending))
 
@@ -487,13 +485,13 @@ class GroupSequential(unittest.TestCase):
         hits = [0] * 5
         for _ in range(reps):
             b, previous = 0.0, 0.0
-            for k, (t, c) in enumerate(zip(d.fractions, d.bounds, strict=True)):
+            for k, (t, c) in enumerate(zip_strict(d.fractions, d.bounds)):
                 b += rnd.gauss(drift * (t - previous), math.sqrt(t - previous))
                 previous = t
                 if b / math.sqrt(t) >= c:
                     hits[k] += 1
                     break
-        for got, exact in zip(hits, d.crossing(drift), strict=True):
+        for got, exact in zip_strict(hits, d.crossing(drift)):
             self.assertLess(abs(got / reps - exact), 4 * math.sqrt(exact * (1 - exact) / reps) + 1e-4)
 
     def test_executed_design_has_its_error_rates(self):
@@ -1129,12 +1127,12 @@ class GroupSequentialExtensions(unittest.TestCase):
         from sequential_analysis.group_sequential import group_sequential_design
 
         d = group_sequential_design(0.025, (1 / 3, 2 / 3, 1.0), futility="obrien-fleming", power=0.9)
-        for got, published in zip(d.bounds, (3.7103, 2.5114, 1.9930), strict=True):
+        for got, published in zip_strict(d.bounds, (3.7103, 2.5114, 1.9930)):
             self.assertAlmostEqual(got, published, places=3)
         self.assertEqual(d.futility[-1], d.bounds[-1])  # the boundaries meet at the end
         self.assertAlmostEqual(d.power(d.drift), 0.9, places=6)
         cumulative = 0.0
-        for q, spent in zip(d.futility_crossing(d.drift)[:-1], d.beta_spent[:-1], strict=True):
+        for q, spent in zip_strict(d.futility_crossing(d.drift)[:-1], d.beta_spent[:-1]):
             cumulative += q
             self.assertAlmostEqual(cumulative, spent, places=7)
         self.assertAlmostEqual(sum(d.crossing(0.0, binding=False)), 0.025, places=9)  # non-binding

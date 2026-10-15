@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .. import backend as _backend
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..errors import NumericalError
@@ -275,10 +276,10 @@ class ParticleFilter(Procedure):
     def _moments(self, particles, weights) -> tuple[Any, Any]:
         def moments(values) -> tuple[float, float]:
             mean = 0.0
-            for w, v in zip(weights, values, strict=True):
+            for w, v in zip_strict(weights, values):
                 mean += w * v
             var = 0.0
-            for w, v in zip(weights, values, strict=True):
+            for w, v in zip_strict(weights, values):
                 var += w * (v - mean) ** 2
             return mean, var
 
@@ -298,7 +299,7 @@ class ParticleFilter(Procedure):
         else:
             previous, log_w = list(state.particles), list(state.log_weights)
         moved = [self._as_state(self.model.transition(p, rng)) for p in previous]
-        log_w = [w + self.model.log_likelihood(p, y) for w, p in zip(log_w, moved, strict=True)]
+        log_w = [w + self.model.log_likelihood(p, y) for w, p in zip_strict(log_w, moved)]
         increment = logsumexp(log_w)  # log sum_i W_i p(y | z_i): the weights were normalized
         if not math.isfinite(increment):
             raise NumericalError(f"{self.name}: every particle gives the observation zero likelihood")

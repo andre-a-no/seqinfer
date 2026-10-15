@@ -185,7 +185,7 @@ def number_vectors(count=500):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    vectors = [vector(*case) for case in cases()]
+    vectors = [vector(*case) for case in cases()]  # novermin (not PEP 798)
     (OUT / "procedures.json").write_text(canonical_json(vectors) + "\n", encoding="utf-8")
     (OUT / "numbers.json").write_text(canonical_json(number_vectors()) + "\n", encoding="utf-8")
     print(f"wrote {len(vectors)} procedure vectors and the number vectors to {OUT}")

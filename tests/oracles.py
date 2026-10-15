@@ -15,6 +15,8 @@ import itertools
 import math
 from fractions import Fraction
 
+from sequential_analysis._compat import pairwise, zip_strict
+
 # ---------------------------------------------------------------- exact linear algebra over the rationals
 
 def _q(x):
@@ -30,17 +32,17 @@ def mul(a, b):
 
 
 def tr(a):
-    return [list(col) for col in zip(*a, strict=True)]
+    return [list(col) for col in zip_strict(*a)]  # novermin (not PEP 798)
 
 
 def madd(a, b):
-    return [[x + y for x, y in zip(r, s, strict=True)] for r, s in zip(a, b, strict=True)]
+    return [[x + y for x, y in zip_strict(r, s)] for r, s in zip_strict(a, b)]
 
 
 def solve(a, b):
     """x with A x = b (A square, b a matrix), and det A, by Gaussian elimination."""
     n = len(a)
-    m = [row[:] + brow[:] for row, brow in zip(a, b, strict=True)]
+    m = [row[:] + brow[:] for row, brow in zip_strict(a, b)]
     det = Fraction(1)
     for col in range(n):
         pivot = next(r for r in range(col, n) if m[r][col] != 0)
@@ -51,7 +53,7 @@ def solve(a, b):
         for r in range(n):
             if r != col and m[r][col] != 0:
                 f = m[r][col] / m[col][col]
-                m[r] = [x - f * y for x, y in zip(m[r], m[col], strict=True)]
+                m[r] = [x - f * y for x, y in zip_strict(m[r], m[col])]
     x = [[m[i][j] / m[i][i] for j in range(n, len(m[0]))] for i in range(n)]
     return x, det
 
@@ -235,7 +237,7 @@ def changepoint_filter(hazard, segment_log_marginal, ys):
             starts = [0] + [i + 1 for i, f in enumerate(flags) if f]
             log_p = sum(math.log(hazard) if f else math.log1p(-hazard) for f in flags)
             bounds = [*starts, t]
-            for a, b in itertools.pairwise(bounds):
+            for a, b in pairwise(bounds):
                 log_p += segment_log_marginal(ys[a:b])
             p = math.exp(log_p)
             by_length[t - starts[-1]] += p
@@ -259,9 +261,9 @@ def grid_filter(lo, hi, points, initial_density, transition_density, likelihood,
     log_total, out = 0.0, []
     for y in ys:
         predicted = [sum(w[j] * belief[j] * transition_density(grid[j], z) for j in range(points)) for z in grid]
-        joint = [p * likelihood(z, y) for p, z in zip(predicted, grid, strict=True)]
-        c = sum(wi * v for wi, v in zip(w, joint, strict=True))
+        joint = [p * likelihood(z, y) for p, z in zip_strict(predicted, grid)]
+        c = sum(wi * v for wi, v in zip_strict(w, joint))
         belief = [v / c for v in joint]
         log_total += math.log(c)
-        out.append((sum(wi * b * z for wi, b, z in zip(w, belief, grid, strict=True)), log_total))
+        out.append((sum(wi * b * z for wi, b, z in zip_strict(w, belief, grid)), log_total))
     return out

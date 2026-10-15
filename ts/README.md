@@ -20,6 +20,8 @@ specified in SPEC.md:
   restored in Python again ends with the digest of the uninterrupted
   run (`tests/test_typescript.py`).
 
+Runs on Node.js 16 or later (its tests need 18).
+
 ```bash
 npm ci && npm test
 node dist/src/cli.js procedures                    # what this executor implements

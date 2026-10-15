@@ -51,6 +51,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..numerics import require_finite
@@ -109,7 +110,7 @@ class _EDetector(Procedure):
         previous = state.values or (0.0,) * len(self.bets)
         starts_before = state.starts or (1,) * len(self.bets)
         values, starts = [], []
-        for bet, m, start in zip(self.bets, previous, starts_before, strict=True):
+        for bet, m, start in zip_strict(self.bets, previous, starts_before):
             factor = 1.0 + bet * y
             carried = m + 1.0 if self.statistic == "shiryaev-roberts" else max(m, 1.0)
             values.append(require_finite(factor * carried, "e-detector"))

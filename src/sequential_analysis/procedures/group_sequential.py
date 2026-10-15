@@ -29,8 +29,8 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from itertools import pairwise
 
+from .._compat import pairwise, zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, refuse_terminal, require_state
 from ..distributions import _log_normal_upper, t_isf_log
@@ -93,15 +93,15 @@ class GroupSequentialTest(Procedure):
         if futility is not None:
             if two_sided:
                 raise ValueError("futility boundaries are for one-sided tests")
-            if len(futility) != len(ns) or any(not f <= b for f, b in zip(futility, bounds, strict=True)):
+            if len(futility) != len(ns) or any(not f <= b for f, b in zip_strict(futility, bounds)):
                 raise ValueError("need one futility boundary per analysis, none above its efficacy boundary")
         self.analyses, self.bounds = tuple(ns), tuple(float(b) for b in bounds)
         self.futility = None if futility is None else tuple(float(f) for f in futility)
         self.label, self.input = label, input
-        self._bounds = tuple(self._converted(b, n) for b, n in zip(self.bounds, ns, strict=True))
+        self._bounds = tuple(self._converted(b, n) for b, n in zip_strict(self.bounds, ns))
         self._futility = (
             None if self.futility is None
-            else tuple(self._converted(f, n) for f, n in zip(self.futility, ns, strict=True))
+            else tuple(self._converted(f, n) for f, n in zip_strict(self.futility, ns))
         )
 
     @classmethod

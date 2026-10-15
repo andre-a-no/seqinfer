@@ -14,6 +14,7 @@ import random
 import unittest
 
 from sequential_analysis import Recorder, Run, run_sync
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.errors import NumericalError
 from sequential_analysis.procedures import (
     CategoricalEmission,
@@ -39,17 +40,17 @@ class RauchTungStriebel(unittest.TestCase):
             m = kf.n_obs
             ys = [[rnd.gauss(0, 2) for _ in range(m)] if m > 1 else rnd.gauss(0, 2) for _ in range(6)]
             us = [rnd.gauss(0, 1) for _ in range(6)]
-            inputs = [{"y": y, "u": u} if spec.get("control") else {"y": y} for y, u in zip(ys, us, strict=True)]
+            inputs = [{"y": y, "u": u} if spec.get("control") else {"y": y} for y, u in zip_strict(ys, us)]
             result = kalman_smoother(kf, inputs)
             ref = gaussian_smoother(_m(spec["transition"]), _m(spec["observation"]), _m(spec["process_noise"]),
                                     _m(spec["observation_noise"]), spec["initial_mean"],
                                     _m(spec["initial_covariance"]), ys, B=spec.get("control"), us=us)
-            for t, (mean, cov, (rmean, rcov)) in enumerate(zip(result.means, result.covariances, ref, strict=True)):
+            for t, (mean, cov, (rmean, rcov)) in enumerate(zip_strict(result.means, result.covariances, ref)):
                 with self.subTest(label, t=t):
-                    for a, b in zip(mean, rmean, strict=True):
+                    for a, b in zip_strict(mean, rmean):
                         self.assertAlmostEqual(a, b, delta=1e-11 * max(1.0, abs(b)))
-                    for row, rrow in zip(cov, rcov, strict=True):
-                        for a, b in zip(row, rrow, strict=True):
+                    for row, rrow in zip_strict(cov, rcov):
+                        for a, b in zip_strict(row, rrow):
                             self.assertAlmostEqual(a, b, delta=1e-11 * max(1.0, abs(b)))
 
     def test_last_point_equals_the_filter_and_smoothing_never_adds_variance(self):
@@ -58,7 +59,7 @@ class RauchTungStriebel(unittest.TestCase):
         inputs = [{"y": 0.3 * t + rnd.gauss(0, 1)} for t in range(200)]
         result = kalman_smoother(kf, inputs)
         self.assertEqual(result.means[-1], result.filtered_means[-1])
-        for s, f in zip(result.covariances, result.filtered_covariances, strict=True):
+        for s, f in zip_strict(result.covariances, result.filtered_covariances):
             self.assertLessEqual(s[0][0], f[0][0] + 1e-12)
             self.assertLessEqual(s[1][1], f[1][1] + 1e-12)
 
@@ -72,7 +73,7 @@ class RauchTungStriebel(unittest.TestCase):
             zs.append(z)
             inputs.append({"y": z + rnd.gauss(0, math.sqrt(r))})
         result = kalman_smoother(KalmanFilter(1.0, 1.0, q, r, (0.0,), 1.0), inputs)
-        u = [(zt - m[0]) / math.sqrt(p[0][0]) for zt, m, p in zip(zs, result.means, result.covariances, strict=True)]
+        u = [(zt - m[0]) / math.sqrt(p[0][0]) for zt, m, p in zip_strict(zs, result.means, result.covariances)]
         mean = math.fsum(u) / len(u)
         var = math.fsum(v * v for v in u) / len(u)
         self.assertLess(abs(mean), 0.1)  # autocorrelated errors: a loose bound
@@ -122,8 +123,8 @@ class ForwardBackward(unittest.TestCase):
             hmm = HiddenMarkovFilter(self.PI, self.A, emission)
             result = forward_backward(hmm, [{"y": y} for y in ys])
             ref = hmm_smoother(self.PI, self.A, density, ys)
-            for t, (row, rrow) in enumerate(zip(result.probabilities, ref, strict=True)):
-                for a, b in zip(row, rrow, strict=True):
+            for t, (row, rrow) in enumerate(zip_strict(result.probabilities, ref)):
+                for a, b in zip_strict(row, rrow):
                     self.assertAlmostEqual(a, b, delta=1e-12, msg=f"{type(emission).__name__} t={t}")
             self.assertEqual(result.probabilities[-1], result.filtered[-1])
 

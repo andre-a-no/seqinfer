@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from sequential_analysis import IncompatibleCheckpoint, Run, backend
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.procedures import (
     BettingConfidenceSequence,
     CatoniConfidenceSequence,
@@ -16,6 +17,8 @@ from sequential_analysis.procedures import (
     StochasticVolatilityModel,
 )
 from sequential_analysis.rng import SplitMix64
+
+from .helpers import no_logs
 
 HAVE_NUMPY = backend.np is not None
 
@@ -51,7 +54,7 @@ class NumpyAgreesWithPython(unittest.TestCase):
         py_rng, np_rng = rng(), rng()
         _, py = outputs(make("python"), inputs, py_rng)
         _, nu = outputs(make("numpy"), inputs, np_rng)
-        for t, (a, b) in enumerate(zip(py, nu, strict=True)):
+        for t, (a, b) in enumerate(zip_strict(py, nu)):
             self.assertTrue(close(a, b, rel), f"step {t}: {a} != {b}")
         if py_rng is not None:
             self.assertEqual(py_rng.state, np_rng.state)  # the same random numbers were drawn
@@ -101,7 +104,7 @@ class BackendIsPartOfTheIdentity(unittest.TestCase):
             Run.restore(KernelTwoSampleTest(backend="numpy"), checkpoint)
         self.assertEqual(logs.records[0].incident["kind"], "numpy_version")
         same = run.checkpoint()
-        with self.assertNoLogs("sequential_analysis", "WARNING"):
+        with no_logs("sequential_analysis", "WARNING"):
             Run.restore(KernelTwoSampleTest(backend="numpy"), same)
 
     def test_a_model_without_vectorised_methods_runs_in_python(self):

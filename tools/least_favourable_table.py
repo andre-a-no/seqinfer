@@ -49,6 +49,7 @@ from statistics import NormalDist
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.design import _kiefer_weiss
 from sequential_analysis.procedures import Gaussian
 
@@ -271,7 +272,7 @@ def least_squares(rows: list[list[float]], ys: list[float]) -> list[float]:
     """Normal equations solved by Cholesky; the design keeps them well conditioned."""
     m = len(rows[0])
     a = [[sum(r[i] * r[j] for r in rows) for j in range(m)] for i in range(m)]
-    b = [sum(r[i] * y for r, y in zip(rows, ys, strict=True)) for i in range(m)]
+    b = [sum(r[i] * y for r, y in zip_strict(rows, ys)) for i in range(m)]
     lower = [[0.0] * m for _ in range(m)]
     for i in range(m):
         for j in range(i + 1):
@@ -330,21 +331,23 @@ def fit(design_file: Path, check_file: Path | None, degrees: list[int], table: P
     data = restricted(load(design_file), rho_min)
     rows = [basis(r["u"], degrees) for r in data]
     coef = least_squares(rows, [r["y"] for r in data])
-    res = [r["y"] - sum(c * b for c, b in zip(coef, row, strict=True)) for r, row in zip(data, rows, strict=True)]
+    res = [r["y"] - sum(c * b for c, b in zip_strict(coef, row)) for r, row in zip_strict(data, rows)]
     dof = max(1, len(data) - len(coef))
     print(f"{len(data)} nodes, {len(coef)} coefficients; residual sd {math.sqrt(sum(e * e for e in res) / dof):.2e}, "
           f"max |residual| {max(abs(e) for e in res):.2e}")
     worst = max(abs(e) for e in res)
     if check_file is not None:
         check = restricted(load(check_file), rho_min)
-        errs = [r["y"] - sum(c * b for c, b in zip(coef, basis(r["u"], degrees), strict=True)) for r in check]
+        errs = [r["y"] - sum(c * b for c, b in zip_strict(coef, basis(r["u"], degrees))) for r in check]
         worst = max(worst, max(abs(e) for e in errs))
         print(f"{len(check)} check points: rms error {math.sqrt(sum(e * e for e in errs) / len(errs)):.2e}, "
               f"max {worst:.2e}")
     # below rho_min the table is used with rho clamped to rho_min: measure that error too
     below = [r for r in load(design_file) + (load(check_file) if check_file else []) if r["x3"] < rho_min - 1e-9]
-    worst_below = max((abs(r["y"] - sum(c * b for c, b in zip(coef, basis([r["u"][0], r["u"][1], -1.0], degrees),
-                                                                 strict=True))) for r in below), default=0.05)
+    def clamped_error(r):
+        return abs(r["y"] - sum(c * b for c, b in zip_strict(coef, basis([r["u"][0], r["u"][1], -1.0], degrees))))
+
+    worst_below = max((clamped_error(r) for r in below), default=0.05)
     print(f"{len(below)} points below rho {rho_min}: largest error with rho clamped {worst_below:.2e}")
     if table is not None:
         table.write_text(json.dumps({

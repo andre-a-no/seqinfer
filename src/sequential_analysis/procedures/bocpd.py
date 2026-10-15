@@ -46,6 +46,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import logsumexp, neumaier_add, require_finite
@@ -238,7 +239,7 @@ class BayesianChangePoint(Procedure):
             lengths = [1]
             logs = [self._log_h + model.log_predictive(model.empty, y)]
             stats = [model.update(model.empty, y)]
-            for length, lp, st in zip(state.lengths, state.log_probs, state.stats, strict=True):
+            for length, lp, st in zip_strict(state.lengths, state.log_probs, state.stats):
                 lengths.append(length + 1)
                 logs.append(lp + self._log_1mh + model.log_predictive(st, y))
                 stats.append(model.update(st, y))
@@ -251,12 +252,12 @@ class BayesianChangePoint(Procedure):
         change = probs[0] if n > 1 and lengths[0] == 1 else 0.0
         recent = 0.0
         if n > self.alarm_window:
-            for length, p in zip(lengths, probs, strict=True):
+            for length, p in zip_strict(lengths, probs):
                 if length <= self.alarm_window:
                     recent += p
         best = max(range(len(lengths)), key=lambda i: (probs[i], -lengths[i]))
         expected, seg_mean = 0.0, 0.0
-        for length, p, st in zip(lengths, probs, stats, strict=True):
+        for length, p, st in zip_strict(lengths, probs, stats):
             expected += p * length
             seg_mean += p * model.mean(st)
         decision = state.decision
@@ -281,7 +282,7 @@ class BayesianChangePoint(Procedure):
 
     def run_length_distribution(self, state: BOCPDState) -> dict[int, float]:
         """P(L_n = l | y_1..y_n) for the run lengths kept."""
-        return {length: math.exp(lp) for length, lp in zip(state.lengths, state.log_probs, strict=True)}
+        return {length: math.exp(lp) for length, lp in zip_strict(state.lengths, state.log_probs)}
 
     def is_terminal(self, state: BOCPDState) -> bool:
         return state.decision is not None

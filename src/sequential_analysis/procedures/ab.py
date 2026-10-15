@@ -74,6 +74,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import neumaier_add, require_finite
@@ -157,7 +158,7 @@ class SampleRatioMismatch(Procedure):
         """Closed form of log BF_n (the step accumulates it term by term)."""
         c, n = self.concentration, math.fsum(counts)  # integers: exact
         out = math.lgamma(c) - math.lgamma(c + n)
-        for p, k in zip(self.p, counts, strict=True):
+        for p, k in zip_strict(self.p, counts):
             out += math.lgamma(c * p + k) - math.lgamma(c * p) - k * math.log(p)
         return out
 
@@ -303,7 +304,7 @@ class TwoProportionTest(Procedure):
     def decode_state(self, data) -> TwoProportionState:
         state = decode_fields(TwoProportionState, data)
         require_state(len(state.successes) == 2 and len(state.trials) == 2, "two arms")
-        require_state(all(0 <= s <= n for s, n in zip(state.successes, state.trials, strict=True)),
+        require_state(all(0 <= s <= n for s, n in zip_strict(state.successes, state.trials)),
                       "successes out of range")
         return state
 
@@ -532,7 +533,7 @@ class MultipleTests(Procedure):
         self.names = tuple(tests)
         self.tests = tuple(tests[k] for k in self.names)
         contracts: dict[str, InputContract] = {}
-        for name, test in zip(self.names, self.tests, strict=True):
+        for name, test in zip_strict(self.names, self.tests):
             if not isinstance(getattr(test, "e_value_field", None), str):
                 raise ValueError(f"test {name!r} ({type(test).__name__}) does not report an e-process")
             if not getattr(test, "joint_inputs", True):
@@ -554,10 +555,10 @@ class MultipleTests(Procedure):
         return cls({f"{t}-vs-{control}": make(t, control) for t in treatments}, alpha)
 
     def tests_by_name(self) -> dict[str, Procedure]:
-        return dict(zip(self.names, self.tests, strict=True))
+        return dict(zip_strict(self.names, self.tests))
 
     def config(self) -> dict:
-        return {"alpha": self.alpha, "tests": [[k, t.identity()] for k, t in zip(self.names, self.tests, strict=True)]}
+        return {"alpha": self.alpha, "tests": [[k, t.identity()] for k, t in zip_strict(self.names, self.tests)]}
 
     def inputs(self):
         return dict(self._contracts)
@@ -569,7 +570,7 @@ class MultipleTests(Procedure):
         states: list[Any] = []
         logs: list[float] = []
         results: dict[str, Any] = {}
-        rows = zip(self.names, self.tests, self._fields, state.states, state.log_e_values, strict=True)
+        rows = zip_strict(self.names, self.tests, self._fields, state.states, state.log_e_values)
         for name, test, field, s, e in rows:
             if test.is_terminal(s):
                 states.append(s)
@@ -583,13 +584,13 @@ class MultipleTests(Procedure):
             results[name] = encoded
         rejected = tuple(self.names[i] for i in e_bh(logs, self.alpha))
         new = MultipleTestsState(state.n + 1, tuple(states), tuple(logs))
-        return new, MultipleTestsOutput(new.n, dict(zip(self.names, logs, strict=True)), rejected, results)
+        return new, MultipleTestsOutput(new.n, dict(zip_strict(self.names, logs)), rejected, results)
 
     def is_terminal(self, state: MultipleTestsState) -> bool:
-        return all(t.is_terminal(s) for t, s in zip(self.tests, state.states, strict=True))
+        return all(t.is_terminal(s) for t, s in zip_strict(self.tests, state.states))
 
     def encode_state(self, state: MultipleTestsState):
-        return {"n": state.n, "states": [t.encode_state(s) for t, s in zip(self.tests, state.states, strict=True)],
+        return {"n": state.n, "states": [t.encode_state(s) for t, s in zip_strict(self.tests, state.states)],
                 "log_e_values": list(state.log_e_values)}
 
     def encode_output(self, output: MultipleTestsOutput):
@@ -603,5 +604,5 @@ class MultipleTests(Procedure):
         require_state(isinstance(states, list) and len(states) == len(self.tests), "one state per test")
         require_state(isinstance(logs, list) and len(logs) == len(self.tests)
                       and all(type(v) in (int, float) and not math.isnan(v) for v in logs), "log e-values")
-        return MultipleTestsState(n, tuple(t.decode_state(s) for t, s in zip(self.tests, states, strict=True)),
+        return MultipleTestsState(n, tuple(t.decode_state(s) for t, s in zip_strict(self.tests, states)),
                                   tuple(float(v) for v in logs))
