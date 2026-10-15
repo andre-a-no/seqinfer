@@ -56,7 +56,7 @@ jobs:
         run: |
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install dist/*.whl
-          mkdir /tmp/outside && cp -r tests conformance tools /tmp/outside/
+          mkdir /tmp/outside && cp -r tests conformance tools docs mkdocs.yml /tmp/outside/
           cd /tmp/outside && /tmp/venv/bin/python -c "import sequential_analysis, sys; print(sequential_analysis.__file__); assert 'site-packages' in sequential_analysis.__file__"
           cd /tmp/outside && /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
       - name: the sdist runs its own tests
@@ -72,6 +72,34 @@ jobs:
         with:
           node-version: "22"
       - run: node conformance/check.mjs
+
+  typescript:
+    # the TypeScript executor reproduces the vectors, and a run moves Python -> TypeScript -> Python
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: npm ci
+        working-directory: ts
+      - run: npm test
+        working-directory: ts
+      - run: python -m pip install .
+      - run: REQUIRE_TYPESCRIPT=1 python -m unittest tests.test_typescript -v
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install mkdocs==1.6.1 mkdocs-material==9.6.20
+      - run: mkdocs build --strict
 
   benchmark:
     # time per step of every procedure, both backends; reported, not asserted (see PERFORMANCE.md)

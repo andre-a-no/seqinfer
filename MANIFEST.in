@@ -1,5 +1,7 @@
 # The source distribution can run its own test suite and conformance checks.
-include CHANGELOG.md CITATION.cff CLA.md CONTRIBUTING.md COMMERCIAL.md LICENSE PERFORMANCE.md README.md
+include CHANGELOG.md CITATION.cff CLA.md CONTRIBUTING.md COMMERCIAL.md LICENSE PERFORMANCE.md README.md SPEC.md mkdocs.yml
+recursive-include docs *.md
+prune ts
 recursive-include tests *.py
 recursive-include conformance *.json *.mjs
 recursive-include examples *.py
