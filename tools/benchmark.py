@@ -35,6 +35,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     SPRT,
     ABTest,
     AnytimeLinearModel,
+    AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     Bernoulli,
@@ -123,6 +124,10 @@ def regression_unit(rnd):
     return {"x1": x[0], "x2": x[1], "z": z, "y": x[0] - x[1] + 0.2 * z + rnd.gauss(0.0, 1.0)}
 
 
+def survival_record(rnd):
+    return {"arm": rnd.randrange(2), "kind": 1 if rnd.random() < 0.5 else 0}
+
+
 def four_states():
     f = tuple(tuple(1.0 if j in (i, i + 1) else 0.0 for j in range(4)) for i in range(4))
     q = tuple(tuple(0.01 if i == j else 0.0 for j in range(4)) for i in range(4))
@@ -178,6 +183,8 @@ CASES = [
     ("BoundedABTest, grid 1000", lambda b: BoundedABTest(backend=b), bounded_unit, (100,), True),
     ("RateRatioTest, grid 200", lambda b: RateRatioTest(alpha=1e-12), rate_unit, (100,), False),
     ("AnytimeLinearModel, 2 covariates", lambda b: AnytimeLinearModel(["x1", "x2"], ["z"]), regression_unit,
+     (100,), False),
+    ("AnytimeLogRankTest, with confidence sequence", lambda b: AnytimeLogRankTest(alpha=1e-12), survival_record,
      (100,), False),
     ("OnlineFDR (e-LOND)", lambda b: OnlineFDR(), e_value, (100,), False),
     ("MeanDifference", lambda b: MeanDifference(), pair, (100,), False),

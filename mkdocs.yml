@@ -46,6 +46,7 @@ nav:
   - Tutorials:
       - A/B test, monitored continuously: tutorials/ab-test.md
       - Group sequential trial: tutorials/group-sequential.md
+      - Survival trial, monitored after every event: tutorials/survival.md
       - Process monitoring and change detection: tutorials/monitoring.md
       - A programme of experiments: tutorials/experiment-programme.md
   - Guides:

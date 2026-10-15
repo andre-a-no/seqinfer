@@ -11,3 +11,5 @@
 ::: sequential_analysis.procedures.group_sequential
 
 ::: sequential_analysis.group_sequential
+
+::: sequential_analysis.procedures.survival

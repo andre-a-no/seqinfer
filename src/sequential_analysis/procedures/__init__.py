@@ -30,6 +30,7 @@ from .robust_mean import AsymptoticConfidenceSequence, CatoniConfidenceSequence
 from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
 from .state_space import KalmanFilter, RobustKalmanFilter
+from .survival import AnytimeLogRankTest
 from .t_mixture import TMixtureSPRT
 from .two_sample import MeanDifference
 from .two_sample_betting import KernelTwoSampleTest
@@ -43,6 +44,7 @@ __all__ = [
     "SPRT",
     "ABTest",
     "AnytimeLinearModel",
+    "AnytimeLogRankTest",
     "AsymptoticConfidenceSequence",
     "BayesianChangePoint",
     "Bernoulli",

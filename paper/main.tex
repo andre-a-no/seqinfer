@@ -1826,7 +1826,22 @@ means from inverse-propensity scores with a regression on a
 pre-experiment covariate fitted on past units only, in the manner of
 CUPED~\cite{deng2013} but without its in-sample bias, and the e-BH
 procedure~\cite{wang2022ebh} over any set of procedures with an
-e-process, which controls the false discovery rate at the stopping time.
+e-process, which controls the false discovery rate at the stopping time. For bounded metrics, an exact
+confidence sequence for the effect applies hedged-capital
+betting~\cite{waudbysmith2024} to the same inverse-propensity scores;
+for counts with exposure, an exact rate-ratio test conditions each pair
+of units adjacent in time on its total count, which leaves a binomial
+law free of the common rate, so that the rate may drift; for a series of
+experiments decided one by one, e-LOND~\cite{xu2024online} controls the
+false discovery rate under any dependence; and a covariate-adjusted
+effect with several covariates has the anytime-valid $F$ and $t$ tests of
+Lindon et al.~\cite{lindon2022linear}, whose closed form we check against
+numerical integration of the defining mixture. For survival endpoints,
+the anytime-valid log-rank test~\cite{terschure2024} conditions each
+event on the risk sets, which makes it exact for any baseline hazard when
+hazards are proportional on the time scale of the records; we show by
+simulation that staggered entry with hazards that depend on the time
+since entry breaks it.
 For filtering and
 estimation: the Kalman filter~\cite{kalman1960} of any linear Gaussian
 state-space model, with control input and the exact likelihood, and a

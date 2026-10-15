@@ -26,6 +26,7 @@ from sequential_analysis.procedures import (
     SPRT,
     ABTest,
     AnytimeLinearModel,
+    AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     BettingConfidenceSequence,
@@ -435,6 +436,17 @@ def cases():
             Delivery,
             record_stream([{"x": math.sin(i), "z": float(i % 2), "y": 0.5 * math.sin(i) + 0.3 * (i % 2)
                             + math.cos(3.1 * i)} for i in range(n)], ("x", "z", "y")),
+            None,
+        ),
+        (
+            "anytime_logrank_test",
+            lambda: AnytimeLogRankTest(cs_grid=21),
+            lambda: KeyJoin(("arm", "kind")),
+            Delivery,
+            # 40 patients enter, then 40 events and censorings, at most 20 per arm
+            record_stream([{"arm": i % 2, "kind": 0} for i in range(40)]
+                          + [{"arm": (i // 3) % 2 if i < 36 else i % 2, "kind": 1 if i % 4 else 2} for i in range(40)],
+                          ("arm", "kind")),
             None,
         ),
         (

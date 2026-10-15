@@ -29,6 +29,31 @@ TypeScript executor, and a documentation site.
   procedure with an e-process (`e_value_field`); `versus_control` for
   multi-arm experiments.
 
+- `BoundedABTest`: exact confidence sequence and test for an effect on a
+  bounded metric (conversion, share, capped revenue), from
+  inverse-propensity scores and betting; valid at every sample size.
+- `RateRatioTest`: exact test and confidence sequence for a ratio of
+  Poisson rates with exposures, from pairs of units adjacent in time, so
+  that a drifting common rate (seasonality) does not matter.
+- `OnlineFDR`: e-LOND for a programme of experiments decided one by one,
+  FDR <= alpha under any dependence; an open-ended or planned (`horizon`)
+  schedule.
+- `sequential_analysis.planning`: `simulate` gives the power and the
+  distribution of the stopping time of any procedure in a scenario;
+  checked against exact operating characteristics.
+
+### Added: regression and survival
+- `AnytimeLinearModel`: anytime-valid tests and confidence sequences for
+  regression coefficients after Lindon, Ham, Tingley and Bojinov (2022):
+  covariate-adjusted effects with several covariates, exact under
+  Gaussian errors; the closed form is checked against two independent
+  numerical integrations of the mixture.
+- `AnytimeLogRankTest`: anytime-valid log-rank test (ter Schure,
+  Pérez-Ortiz, Ly and Grünwald) with a hazard-ratio confidence sequence;
+  exact for any baseline hazard when hazards are proportional on the time
+  scale of the records (the tutorial and the docstring describe the
+  staggered-entry case where they are not).
+
 ### Added: change detection and smoothing
 - `MeanEDetector`, `QuantileEDetector`: e-detectors (Shin, Ramdas and
   Rinaldo), Shiryaev–Roberts or CUSUM type, average run length at least
