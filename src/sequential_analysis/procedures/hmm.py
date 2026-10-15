@@ -4,7 +4,7 @@
 """Filtering in a hidden Markov model: which regime is the process in now?
 
 A hidden state z_t in {0, ..., K-1} moves by a Markov chain,
-P(z_t = k | z_{t-1} = j) = A[j][k], starting from P(z_1 = k) = initial[k];
+`P(z_t = k | z_{t-1} = j) = A[j][k]`, starting from `P(z_1 = k) = initial[k]`;
 the observation y_t depends only on z_t.  The forward algorithm gives the
 exact filtering distribution
 
@@ -46,7 +46,7 @@ def _distribution(values, size: int | None, name: str) -> tuple[float, ...]:
 
 
 class CategoricalEmission:
-    """y in {0, ..., M-1} with P(y = s | z = k) = probabilities[k][s]."""
+    """y in {0, ..., M-1} with `P(y = s | z = k) = probabilities[k][s]`."""
 
     def __init__(self, probabilities):
         self.p = tuple(_distribution(row, None, "emission row") for row in probabilities)
