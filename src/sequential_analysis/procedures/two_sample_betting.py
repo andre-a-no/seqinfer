@@ -37,6 +37,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .. import backend as _backend
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import ordered_sum, require_finite
@@ -89,6 +90,7 @@ class KernelTwoSampleTest(Procedure):
         bandwidth: float | None = None,
         burn_in: int = 20,
         stop_on_reject: bool = True,
+        backend: str = "auto",
         a: str = "a",
         b: str = "b",
     ):
@@ -104,12 +106,14 @@ class KernelTwoSampleTest(Procedure):
         self.bandwidth = None if bandwidth is None else float(bandwidth)
         self.stop_on_reject, self.a, self.b = stop_on_reject, a, b
         self._log_level = math.log(1.0 / self.alpha)
+        self.backend = _backend.resolve(backend)
 
     def config(self) -> dict:
         return {
             "alpha": self.alpha,
             "bandwidth": self.bandwidth,
             "burn_in": self.burn_in,
+            "backend": self.backend,
             "stop_on_reject": self.stop_on_reject,
             "a": self.a,
             "b": self.b,
@@ -128,6 +132,15 @@ class KernelTwoSampleTest(Procedure):
         terms = (math.exp(c * (z - u) ** 2) - math.exp(c * (z - w) ** 2) for u, w in zip(a, b, strict=True))
         return ordered_sum(terms) / len(a)
 
+    def _witnesses(self, za: float, zb: float, state: KernelTwoSampleState, bandwidth: float) -> tuple[float, float]:
+        if self.backend == "python":
+            return self.witness(za, state.a, state.b, bandwidth), self.witness(zb, state.a, state.b, bandwidth)
+        np = _backend.np
+        a, b, c = np.array(state.a), np.array(state.b), -0.5 / (bandwidth * bandwidth)
+        z = np.array([[za], [zb]])
+        g = (np.exp(c * (z - a) ** 2) - np.exp(c * (z - b) ** 2)).sum(axis=1) / len(state.a)
+        return float(g[0]), float(g[1])
+
     @staticmethod
     def median_heuristic(points: list[float]) -> float:
         distances = sorted(abs(u - w) for i, u in enumerate(points) for w in points[i + 1:])
@@ -140,8 +153,7 @@ class KernelTwoSampleTest(Procedure):
         bandwidth, scale, bet, curvature = state.bandwidth, state.scale, state.bet, state.curvature
         log_wealth, payoff = state.log_wealth, None
         if bandwidth is not None and state.n >= max(1, self.burn_in):
-            ga = self.witness(va, state.a, state.b, bandwidth)
-            gb = self.witness(vb, state.a, state.b, bandwidth)
+            ga, gb = self._witnesses(va, vb, state, bandwidth)
             payoff = 0.0 if scale == 0.0 else max(-1.0, min(1.0, (ga - gb) / (2.0 * scale)))
             log_wealth = require_finite(log_wealth + math.log1p(bet * payoff), "log wealth")
             gradient = payoff / (1.0 + bet * payoff)
@@ -149,8 +161,8 @@ class KernelTwoSampleTest(Procedure):
             bet = max(-_MAX_BET, min(_MAX_BET, bet + _ONS * gradient / curvature))
             scale = max(scale, abs(ga), abs(gb))
         elif bandwidth is not None and state.n >= 1:
-            scale = max(scale, abs(self.witness(va, state.a, state.b, bandwidth)),
-                        abs(self.witness(vb, state.a, state.b, bandwidth)))
+            ga, gb = self._witnesses(va, vb, state, bandwidth)
+            scale = max(scale, abs(ga), abs(gb))
         a, b = (*state.a, float(va)), (*state.b, float(vb))
         if bandwidth is None and n == self.burn_in:
             bandwidth = self.median_heuristic([*a, *b])

@@ -34,6 +34,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from .. import backend as _backend
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..errors import NumericalError
@@ -48,6 +49,9 @@ class StateSpaceModel(ABC):
     name: str = "model"
     version: str = "1"
     dimension: int = 1
+    #: True if the model also implements initial_many, transition_many and log_likelihood_many
+    #: (numpy arrays of particles), which the numpy backend of ParticleFilter needs.
+    vectorized: bool = False
 
     @abstractmethod
     def config(self) -> dict: ...
@@ -63,6 +67,18 @@ class StateSpaceModel(ABC):
     @abstractmethod
     def log_likelihood(self, state, y) -> float:
         """log p(y_t | z_t = state)."""
+
+    def initial_many(self, rng, count: int) -> Any:
+        """`count` draws of z_0 as a numpy array; `rng` is a backend.VectorRandom."""
+        raise NotImplementedError
+
+    def transition_many(self, states, rng) -> Any:
+        """One draw of z_t for each z_{t-1} in the numpy array `states`."""
+        raise NotImplementedError
+
+    def log_likelihood_many(self, states, y) -> Any:
+        """log p(y | z) for each z in the numpy array `states`."""
+        raise NotImplementedError
 
     def contract(self, name: str) -> InputContract:
         return InputContract(name)
@@ -99,6 +115,19 @@ class LinearGaussianModel(StateSpaceModel):
     def log_likelihood(self, state, y) -> float:
         return _normal_log_density(y, state, math.sqrt(self.r))
 
+    vectorized = True
+
+    def initial_many(self, rng, count):
+        return rng.normal(count, self.m0, math.sqrt(self.p0))
+
+    def transition_many(self, states, rng):
+        return rng.normal(len(states), self.phi * states, math.sqrt(self.q))
+
+    def log_likelihood_many(self, states, y):
+        sd = math.sqrt(self.r)
+        z = (y - states) / sd
+        return -0.5 * z * z - math.log(sd) - _LOG_SQRT_2PI
+
 
 class StochasticVolatilityModel(StateSpaceModel):
     """Log-variance h_t = mu + phi (h_{t-1} - mu) + sigma eta_t; return y_t = exp(h_t / 2) eps_t.
@@ -124,6 +153,20 @@ class StochasticVolatilityModel(StateSpaceModel):
 
     def log_likelihood(self, state, y) -> float:
         return _normal_log_density(y, 0.0, math.exp(0.5 * state))
+
+    vectorized = True
+
+    def initial_many(self, rng, count):
+        return rng.normal(count, self.mu, self.sigma / math.sqrt(1.0 - self.phi**2))
+
+    def transition_many(self, states, rng):
+        return rng.normal(len(states), self.mu + self.phi * (states - self.mu), self.sigma)
+
+    def log_likelihood_many(self, states, y):
+        np = _backend.np
+        sd = np.exp(0.5 * states)
+        z = y / sd
+        return -0.5 * z * z - np.log(sd) - _LOG_SQRT_2PI
 
 
 class StudentTLocalLevel(StateSpaceModel):
@@ -151,6 +194,18 @@ class StudentTLocalLevel(StateSpaceModel):
     def log_likelihood(self, state, y) -> float:
         z = (y - state) / self.scale
         return self._const - 0.5 * (self.df + 1.0) * math.log1p(z * z / self.df)
+
+    vectorized = True
+
+    def initial_many(self, rng, count):
+        return rng.normal(count, self.m0, math.sqrt(self.p0))
+
+    def transition_many(self, states, rng):
+        return rng.normal(len(states), states, math.sqrt(self.q))
+
+    def log_likelihood_many(self, states, y):
+        z = (y - states) / self.scale
+        return self._const - 0.5 * (self.df + 1.0) * _backend.np.log1p(z * z / self.df)
 
 
 @dataclass(frozen=True)
@@ -180,7 +235,7 @@ class ParticleFilter(Procedure):
     randomized = True
 
     def __init__(self, model: StateSpaceModel, particles: int = 500, *, resample_threshold: float = 0.5,
-                 input: str = "y"):
+                 backend: str = "auto", input: str = "y"):
         if not isinstance(model, StateSpaceModel):
             raise TypeError("model must be a StateSpaceModel")
         if type(particles) is not int or particles < 2:
@@ -189,10 +244,15 @@ class ParticleFilter(Procedure):
             raise ValueError("resample_threshold must lie in [0, 1] (1 resamples at every step)")
         self.model, self.size, self.threshold, self.input = model, particles, float(resample_threshold), input
         self.vector = model.dimension > 1
+        vectorizable = model.vectorized and not self.vector
+        if backend == "numpy" and not vectorizable:
+            raise ValueError(f'backend="numpy" needs a scalar model with vectorized methods; {model.name} has none')
+        resolved = _backend.resolve(backend)
+        self.backend = resolved if vectorizable else "python"
 
     def config(self) -> dict:
         return {"model": self.model.spec(), "particles": self.size, "resample_threshold": self.threshold,
-                "input": self.input}
+                "backend": self.backend, "input": self.input}
 
     def inputs(self):
         return {self.input: self.model.contract(self.input)}
@@ -224,6 +284,8 @@ class ParticleFilter(Procedure):
         return tuple(m for m, _ in pairs), tuple(v for _, v in pairs)
 
     def step(self, state: ParticleFilterState, x, rng):
+        if self.backend == "numpy":
+            return self._step_numpy(state, x[self.input], rng)
         y = x[self.input]
         n_part = self.size
         if state.n == 0:
@@ -257,6 +319,37 @@ class ParticleFilter(Procedure):
         total, comp = neumaier_add(state.log_likelihood, state.comp, increment)
         n = state.n + 1
         new = ParticleFilterState(n, tuple(moved), tuple(log_w), total, comp)
+        out = ParticleFilterOutput(n, mean, variance, ess, require_finite(total + comp, "log likelihood"), resampled)
+        return new, out
+
+    def _step_numpy(self, state: ParticleFilterState, y, rng):
+        np, draws, n_part = _backend.np, _backend.VectorRandom(rng), self.size
+        if state.n == 0:
+            previous = np.asarray(self.model.initial_many(draws, n_part), dtype=float)
+            log_w = np.full(n_part, -math.log(n_part))
+        else:
+            previous, log_w = np.array(state.particles), np.array(state.log_weights)
+        moved = np.asarray(self.model.transition_many(previous, draws), dtype=float)
+        log_w = log_w + self.model.log_likelihood_many(moved, y)
+        top = log_w.max()
+        if not np.isfinite(top):
+            raise NumericalError(f"{self.name}: every particle gives the observation zero likelihood")
+        increment = float(top + math.log(np.exp(log_w - top).sum()))
+        log_w = log_w - increment
+        weights = np.exp(log_w)
+        ess = float(1.0 / np.dot(weights, weights))
+        mean = float(np.dot(weights, moved))
+        variance = float(np.dot(weights, (moved - mean) ** 2))
+        resampled = ess < self.threshold * n_part
+        if resampled:  # systematic, from the same single uniform as the Python backend
+            u = draws.random(1)[0] / n_part
+            index = np.searchsorted(np.cumsum(weights), u + np.arange(n_part) / n_part, side="left")
+            moved, log_w = moved[np.minimum(index, n_part - 1)], np.full(n_part, -math.log(n_part))
+        if not (np.all(np.isfinite(moved)) and math.isfinite(increment)):
+            raise NumericalError(f"{self.name}: particles or weights are not finite")
+        total, comp = neumaier_add(state.log_likelihood, state.comp, increment)
+        n = state.n + 1
+        new = ParticleFilterState(n, tuple(moved.tolist()), tuple(log_w.tolist()), total, comp)
         out = ParticleFilterOutput(n, mean, variance, ess, require_finite(total + comp, "log likelihood"), resampled)
         return new, out
 

@@ -44,6 +44,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .. import backend as _backend
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import ordered_sum
@@ -95,6 +96,7 @@ class CatoniConfidenceSequence(Procedure):
         *,
         mean0: float | None = None,
         stop_on_reject: bool = False,
+        backend: str = "auto",
         input: str = "x",
     ):
         if not (math.isfinite(sigma) and sigma > 0):
@@ -104,6 +106,7 @@ class CatoniConfidenceSequence(Procedure):
         self.mean0 = None if mean0 is None else float(mean0)
         self.stop_on_reject, self.input = stop_on_reject, input
         self._log_level = math.log(2.0 / self.alpha)
+        self.backend = _backend.resolve(backend)
 
     def config(self) -> dict:
         return {
@@ -111,6 +114,7 @@ class CatoniConfidenceSequence(Procedure):
             "alpha": self.alpha,
             "mean0": self.mean0,
             "stop_on_reject": self.stop_on_reject,
+            "backend": self.backend,
             "input": self.input,
         }
 
@@ -134,17 +138,30 @@ class CatoniConfidenceSequence(Procedure):
         budget = 0.5 * self.sigma**2 * ordered_sum(r * r for r in rates) + self._log_level
         scale = max(max(sample) - min(sample), self.sigma)
 
-        def score(m: float) -> tuple[float, float]:  # sum psi(r (x - m)), decreasing in m, and its derivative
-            value, slope = 0.0, 0.0
-            for r, x in zip(rates, sample, strict=True):
-                y = r * (x - m)
-                if y >= 0.0:
-                    value += math.log1p(y + 0.5 * y * y)
-                    slope -= r * (1.0 + y) / (1.0 + y + 0.5 * y * y)
-                else:
-                    value -= math.log1p(-y + 0.5 * y * y)
-                    slope -= r * (1.0 - y) / (1.0 - y + 0.5 * y * y)
-            return value, slope
+        if self.backend == "numpy":
+            np = _backend.np
+            r_a, x_a = np.array(rates), np.array(sample)
+
+            def score(m: float) -> tuple[float, float]:  # the same, vectorised
+                y = r_a * (x_a - m)
+                pos = y >= 0.0
+                a = np.abs(y)
+                value = np.where(pos, 1.0, -1.0) * np.log1p(a + 0.5 * y * y)
+                slope = -r_a * (1.0 + a) / (1.0 + a + 0.5 * y * y)
+                return float(value.sum()), float(slope.sum())
+        else:
+
+            def score(m: float) -> tuple[float, float]:  # sum psi(r (x - m)), decreasing in m, and its derivative
+                value, slope = 0.0, 0.0
+                for r, x in zip(rates, sample, strict=True):
+                    y = r * (x - m)
+                    if y >= 0.0:
+                        value += math.log1p(y + 0.5 * y * y)
+                        slope -= r * (1.0 + y) / (1.0 + y + 0.5 * y * y)
+                    else:
+                        value -= math.log1p(-y + 0.5 * y * y)
+                        slope -= r * (1.0 - y) / (1.0 - y + 0.5 * y * y)
+                return value, slope
 
         def root(target: float, start: float) -> float:
             lo = hi = start

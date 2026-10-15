@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from enum import Enum
 from typing import Any
 
+from .backend import numpy_version
 from .canonical import canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
@@ -257,6 +258,7 @@ class Run:
                 "summation": "Neumaier",
                 "python": platform.python_version(),
                 "implementation": platform.python_implementation(),
+                "numpy": numpy_version(),  # the numpy backend's last bits may depend on it
             },
             "events": [],
         }
