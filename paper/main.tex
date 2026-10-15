@@ -1757,7 +1757,7 @@ have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
 standard library (numpy, when installed, accelerates the design of
-optimal plans) and comprises about $12\,000$ lines, with one module per
+optimal plans) and comprises about $14\,000$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1778,11 +1778,15 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes thirty-six procedures. For testing simple
+The implementation includes forty-one procedures. For testing simple
 hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
-precomputed sampling plans. For clinical trials: a group sequential
-test with efficacy and non-binding futility boundaries, for known or
-estimated variance. For anytime-valid inference: the mixture SPRT for a
+precomputed sampling plans. For clinical trials: group sequential
+tests with efficacy and non-binding futility boundaries for one mean and
+for two means (known or estimated variance), for two proportions, and
+for the log-rank statistic with late entry, optionally stratified; and a
+monitor that spends alpha at the information actually
+reached~\cite{lan1983}, for any statistic computed elsewhere, so that
+analyses need not happen when planned. For anytime-valid inference: the mixture SPRT for a
 normal mean~\cite{robbins1970,johari2022}, its counterpart for unknown
 variance, whose Bayes factor with a scale-invariant prior on $\sigma$ is
 a test martingale for every $\sigma$~\cite{lai1976,perezortiz2024}, both
@@ -1836,12 +1840,21 @@ experiments decided one by one, e-LOND~\cite{xu2024online} controls the
 false discovery rate under any dependence; and a covariate-adjusted
 effect with several covariates has the anytime-valid $F$ and $t$ tests of
 Lindon et al.~\cite{lindon2022linear}, whose closed form we check against
-numerical integration of the defining mixture. For survival endpoints,
+numerical integration of the defining mixture. Ratio metrics, whose
+analysis unit (a session) differs from the randomised unit (a user), have
+asymptotic confidence sequences~\cite{waudbysmith2024asymptotic} for the
+difference and the relative lift from the delta method on the users'
+totals~\cite{deng2013}; in simulations with sessions correlated within
+users, the naive per-session test rejects a true null in a quarter of the
+runs. For survival endpoints,
 the anytime-valid log-rank test~\cite{terschure2024} conditions each
 event on the risk sets, which makes it exact for any baseline hazard when
 hazards are proportional on the time scale of the records; we show by
 simulation that staggered entry with hazards that depend on the time
-since entry breaks it.
+since entry breaks it (21\% rejections at a nominal 5\%). Stratified, with
+the numbers at risk kept per stratum and a common hazard ratio, it stays
+exact whatever each stratum's baseline hazard; stratification by narrow
+entry cohorts brings the example above to 3.8\%.
 For filtering and
 estimation: the Kalman filter~\cite{kalman1960} of any linear Gaussian
 state-space model, with control input and the exact likelihood, and a
@@ -1870,7 +1883,12 @@ functions~\cite{lan1983,jennison2000} by recursive numerical
 integration~\cite{armitage1969}; the O'Brien--Fleming-type efficacy
 boundaries for three and five analyses reproduce the published values to
 three decimals, and with estimated variance each boundary is converted to
-a $t$ boundary of the same significance level. The $t$ distribution is
+a $t$ boundary of the same significance level. Boundaries, futility
+boundaries, crossing probabilities, expected sample sizes and maximum
+sample sizes agree with rpact~\cite{rpact} for 56 designs and 44 sample
+sizes (boundaries to $2\cdot10^{-7}$), and the log-rank statistic with
+late entry agrees with the score test of R's survival package to
+$10^{-12}$; a CI job regenerates these references with R. The $t$ distribution is
 computed from the standard library alone: the incomplete beta function
 by its continued fraction, in logarithms where the tail underflows, and
 Fisher's expansion to third order when the degrees of freedom are
@@ -1888,7 +1906,7 @@ trusted, so that a damaged or foreign one is reported as such.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for thirty-six combinations of procedure and
+non-interference are checked for forty-two combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
@@ -1906,10 +1924,10 @@ by a script in the repository from a fixed seed.
 The formats are specified in the repository (\code{SPEC.md}), and a
 second executor in TypeScript implements the run, the delivery policies,
 the topologies, checkpoints and the observation log, and all
-thirty-six procedures (with the pure-Python backend where a procedure
+forty-one procedures (with the pure-Python backend where a procedure
 offers numpy), rebuilt from the identities recorded in checkpoints. It
-reproduces all fifty-three conformance vectors: nineteen bit for bit,
-the others to a relative $3.6\cdot 10^{-13}$, every difference traced to
+reproduces all sixty-five conformance vectors: twenty-four bit for bit,
+the others to a relative $4.5\cdot 10^{-13}$, every difference traced to
 the last bit of \code{log}, \code{log1p}, \code{exp}, \code{expm1} or \code{cos},
 which the C library and the JavaScript engine round differently, and
 amplified at most by cancellation in a log-evidence or log e-value near zero, or by the stopping
@@ -1949,7 +1967,7 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers thirty-six procedures; optimal
+The reference implementation covers forty-one procedures; optimal
 design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the
