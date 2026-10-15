@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sequential-analysis"
 dynamic = ["version"]
-description = "Sequential statistical procedures (SPRT, Kiefer-Weiss, anytime-valid and group sequential tests, change-point detection) separated from a reproducible experimental runtime"
+description = "Sequential testing and online inference: SPRT, anytime-valid A/B tests and confidence sequences, group sequential trials, change-point detection, Kalman and particle filters; checkpointed and reproducible"
 readme = "README.md"
 license = "AGPL-3.0-only OR LicenseRef-Commercial"  # see COMMERCIAL.md
 license-files = ["LICENSE", "COMMERCIAL.md"]
-requires-python = ">=3.10"
+requires-python = ">=3.8"  # the oldest version the CI tests (job "oldest"); see CONTRIBUTING.md
 authors = [
     { name = "Alexander Stepanov" },
     { name = "Andrej Novikov" },
@@ -18,23 +18,32 @@ maintainers = [
     { name = "Novikov Laboratories LLC", email = "andrei@hobukob.ru" },
 ]
 keywords = [
-    "sequential analysis", "SPRT", "Kiefer-Weiss", "optional stopping", "anytime-valid inference",
-    "group sequential design", "alpha spending", "change-point detection", "CUSUM", "reproducibility",
+    "sequential analysis", "sequential testing", "SPRT", "A/B testing", "online experiments", "anytime-valid inference",
+    "confidence sequence", "always-valid p-value", "e-values", "optional stopping", "nonparametric statistics",
+    "quantile", "group sequential design", "alpha spending", "clinical trials", "Kiefer-Weiss", "change-point detection",
+    "CUSUM", "Bayesian online changepoint detection", "Kalman filter", "particle filter", "hidden Markov model",
+    "state space model", "streaming statistics", "reproducibility",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Financial and Insurance Industry",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 dependencies = []
@@ -43,12 +52,14 @@ dependencies = []
 Homepage = "https://github.com/andre-a-no/sequential-analysis"
 Source = "https://github.com/andre-a-no/sequential-analysis"
 Issues = "https://github.com/andre-a-no/sequential-analysis/issues"
+Documentation = "https://github.com/andre-a-no/sequential-analysis#readme"
 Changelog = "https://github.com/andre-a-no/sequential-analysis/blob/main/CHANGELOG.md"
+Performance = "https://github.com/andre-a-no/sequential-analysis/blob/main/PERFORMANCE.md"
 Paper = "https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.pdf"
 "Commercial license" = "https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md"
 
 [project.optional-dependencies]
-fast = ["numpy>=1.22"]  # the backward pass of sequential_analysis.design as array operations
+fast = ["numpy>=1.22"]  # optimal designs, particle filters, kernel and betting procedures as array operations
 
 [tool.setuptools.dynamic]
 version = { attr = "sequential_analysis.version.__version__" }  # the one place the version is written
@@ -61,7 +72,7 @@ sequential_analysis = ["data/*.json", "py.typed"]  # precomputed tables (tools/l
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py38"
 extend-exclude = ["paper"]
 
 [tool.ruff.lint]
@@ -74,7 +85,7 @@ ignore = [
 "tests/*" = ["E731", "RUF012"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.10"  # mypy checks types only; the code itself runs on 3.8 (see CI)
 files = ["src/sequential_analysis"]
 check_untyped_defs = true
 no_implicit_optional = true

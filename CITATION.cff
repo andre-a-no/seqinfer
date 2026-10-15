@@ -10,23 +10,36 @@ authors:
   - given-names: Andrej
     family-names: Novikov
     affiliation: Novikov Laboratories LLC
-version: 0.2.0
-date-released: "2026-10-13"
+version: 0.3.0
+date-released: "2026-10-15"
 license: AGPL-3.0-only
 repository-code: "https://github.com/andre-a-no/sequential-analysis"
 url: "https://pypi.org/project/sequential-analysis/"
 abstract: >-
-  Sequential statistical procedures (SPRT, Lorden's 2-SPRT, optimal
-  Kiefer-Weiss designs, anytime-valid and group sequential tests,
-  change-point detection, filtering) written as state-transition functions
-  F(S, X, R) -> (S', O, R'), separated from a reproducible runtime with
-  checkpoints, replay and conformance vectors. Dual-licensed: GNU AGPL v3,
-  or a commercial license from Novikov Laboratories LLC (see COMMERCIAL.md).
+  Sequential testing and online statistical inference in Python: Wald's
+  SPRT and Kiefer-Weiss optimal tests, anytime-valid A/B tests and
+  confidence sequences (parametric and nonparametric), group sequential
+  designs, A/B tests with false discovery rate control, change-point
+  detection (CUSUM, Shiryaev-Roberts, nonparametric e-detectors, Bayesian
+  online change points), and Kalman, particle and hidden Markov filters
+  with smoothing; a TypeScript executor continues the same runs. Each
+  procedure is a state-transition function F(S, X, R) -> (S', O, R'),
+  separated from a reproducible runtime with checkpoints, replay and
+  conformance vectors. Dual-licensed: GNU AGPL v3, or a commercial license
+  from Novikov Laboratories LLC (see COMMERCIAL.md).
 keywords:
   - sequential analysis
+  - sequential testing
   - SPRT
-  - Kiefer-Weiss problem
+  - A/B testing
   - anytime-valid inference
+  - confidence sequences
+  - nonparametric statistics
   - group sequential design
+  - clinical trials
+  - Kiefer-Weiss problem
   - change-point detection
+  - Kalman filter
+  - particle filter
+  - hidden Markov model
   - reproducibility

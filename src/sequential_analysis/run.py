@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from enum import Enum
 from typing import Any
 
+from .backend import numpy_version
 from .canonical import canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
@@ -257,6 +258,7 @@ class Run:
                 "summation": "Neumaier",
                 "python": platform.python_version(),
                 "implementation": platform.python_implementation(),
+                "numpy": numpy_version(),  # the numpy backend's last bits may depend on it
             },
             "events": [],
         }
@@ -651,6 +653,15 @@ class Run:
         run.status = RunStatus.PAUSED
         run._event("restore", checkpoint=cid, log=getattr(log, "path", None) if log is not None else None,
                    log_discarded=discarded)
+        recorded_numpy = prov.get("numerics", {}).get("numpy") if isinstance(prov.get("numerics"), dict) else None
+        if _uses_numpy(checkpoint["procedure"]) and recorded_numpy != numpy_version():
+            logger.warning(
+                "run %s: computed with numpy %s, continued with numpy %s; the continuation is statistically "
+                "the same, but may differ in the last bits from the uninterrupted run",
+                run.run_id, recorded_numpy, numpy_version(),
+                extra={"incident": {"kind": "numpy_version", "run_id": run.run_id, "recorded": recorded_numpy,
+                                    "current": numpy_version()}},
+            )
         return run
 
 
@@ -665,6 +676,15 @@ def _decoded(procedure: Procedure, data: Any) -> Any:
     if not _same(again, data):  # a missing, extra or retyped field would otherwise pass silently
         raise IncompatibleCheckpoint(f"malformed checkpoint: {procedure.name} state does not round-trip")
     return state
+
+
+def _uses_numpy(identity: Any) -> bool:
+    """True if a procedure identity (or a stage of a chain) was configured with the numpy backend."""
+    if isinstance(identity, dict):
+        return identity.get("backend") == "numpy" or any(_uses_numpy(v) for v in identity.values())
+    if isinstance(identity, list):
+        return any(_uses_numpy(v) for v in identity)
+    return False
 
 
 def checkpoint_id(checkpoint: dict) -> str:

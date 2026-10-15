@@ -34,6 +34,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import NormalDist
 
+from ._compat import zip_strict
+
 _N = NormalDist()
 _SQRT2 = math.sqrt(2.0)
 
@@ -88,7 +90,7 @@ class _Recursion:
         mu = self.drift * (t - self.t)
         upper = b * math.sqrt(t)
         p = 0.0
-        for x, m in zip(self.xs, self.mass, strict=True):
+        for x, m in zip_strict(self.xs, self.mass):
             p += m * _upper((upper - x - mu) / sd)
             if self.two_sided:
                 p += m * _upper((upper + x + mu) / sd)
@@ -99,7 +101,7 @@ class _Recursion:
         sd = math.sqrt(t - self.t)
         mu = self.drift * (t - self.t)
         lower = f * math.sqrt(t)
-        return sum(m * _upper((x + mu - lower) / sd) for x, m in zip(self.xs, self.mass, strict=True))
+        return float(sum(m * _upper((x + mu - lower) / sd) for x, m in zip_strict(self.xs, self.mass)))
 
     def advance(self, t: float, b: float, f: float | None = None) -> None:
         """Move to t, keeping only paths that crossed neither boundary."""
@@ -118,12 +120,12 @@ class _Recursion:
         density = []
         for y in ys:
             f = 0.0
-            for x, m in zip(self.xs, self.mass, strict=True):
+            for x, m in zip_strict(self.xs, self.mass):
                 z = (y - x - mu) / sd
                 f += m * math.exp(-0.5 * z * z)
             density.append(f / (sd * math.sqrt(2.0 * math.pi)))
         self.t, self.xs = t, ys
-        self.mass = [h * w * f for w, f in zip(weights, density, strict=True)]
+        self.mass = [h * w * f for w, f in zip_strict(weights, density)]
 
 
 @dataclass(frozen=True)
@@ -143,7 +145,7 @@ class GroupSequentialDesign:
         futility = self.futility if binding else None
         up, down = [], []
         last = len(self.fractions) - 1
-        for k, (t, b) in enumerate(zip(self.fractions, self.bounds, strict=True)):
+        for k, (t, b) in enumerate(zip_strict(self.fractions, self.bounds)):
             up.append(rec.cross(t, b))
             f = futility[k] if futility is not None else None
             down.append(rec.cross_below(t, f) if f is not None else 0.0)
@@ -172,7 +174,7 @@ class GroupSequentialDesign:
         up, down = self._walk(drift, 24, True)
         stopped_early = 0.0
         expected = 0.0
-        for t, p, q in zip(self.fractions[:-1], up[:-1], down[:-1], strict=True):
+        for t, p, q in zip_strict(self.fractions[:-1], up[:-1], down[:-1]):
             expected += t * (p + q)
             stopped_early += p + q
         return expected + 1.0 * (1.0 - stopped_early)
@@ -234,19 +236,19 @@ def group_sequential_design(
     if not 0 < alpha < 1:
         raise ValueError("alpha must lie in (0, 1)")
     ts = [float(t) for t in fractions]
-    if not ts or any(b <= a for a, b in zip([0.0, *ts], ts, strict=False)) or abs(ts[-1] - 1.0) > 1e-12:
+    if not ts or any(b <= a for a, b in zip([0.0, *ts], ts)) or abs(ts[-1] - 1.0) > 1e-12:  # novermin (not PEP 798)
         raise ValueError("fractions must increase strictly and end at 1")
     side = alpha / 2.0 if two_sided else alpha
     if side >= 0.5:
         raise ValueError("a one-sided alpha must be below 0.5: the efficacy boundary has to be positive")
     spend = spending_function(spending, side)
     cumulative = [spend(t) for t in ts]
-    increasing = all(b >= a for a, b in zip([0.0, *cumulative], cumulative, strict=False))
+    increasing = all(b >= a for a, b in zip([0.0, *cumulative], cumulative))  # novermin (not PEP 798)
     if abs(cumulative[-1] - side) > 1e-9 * side or not increasing:
         raise ValueError("the spending function must increase and spend exactly alpha by t = 1")
     rec = _Recursion(0.0, two_sided, points_per_sd)
     bounds, previous = [], 0.0
-    for k, (t, c) in enumerate(zip(ts, cumulative, strict=True)):
+    for k, (t, c) in enumerate(zip_strict(ts, cumulative)):
         target = (c - previous) * (2.0 if two_sided else 1.0)
         previous = c
         if target <= 0:
@@ -280,7 +282,7 @@ def group_sequential_design(
         """Futility boundaries spending beta at this drift, and the beta actually left at the end."""
         rec = _Recursion(drift, False, points_per_sd)
         fs, previous = [], 0.0
-        for t, b, c in zip(ts[:-1], finite[:-1], beta_cumulative[:-1], strict=True):
+        for t, b, c in zip_strict(ts[:-1], finite[:-1], beta_cumulative[:-1]):
             target = c - previous
             previous = c
             if rec.cross_below(t, b) <= target:  # the boundaries meet before the end

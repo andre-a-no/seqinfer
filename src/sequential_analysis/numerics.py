@@ -14,6 +14,7 @@ import math
 from collections.abc import Iterable
 from typing import Any
 
+from ._compat import zip_strict
 from .errors import NumericalError
 
 
@@ -84,5 +85,5 @@ def equivalent(a: Any, b: Any, abs_tol: float = 0.0, rel_tol: float = 0.0) -> bo
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(equivalent(a[k], b[k], abs_tol, rel_tol) for k in a)
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
-        return len(a) == len(b) and all(equivalent(x, y, abs_tol, rel_tol) for x, y in zip(a, b, strict=True))
+        return len(a) == len(b) and all(equivalent(x, y, abs_tol, rel_tol) for x, y in zip_strict(a, b))
     return bool(a == b)

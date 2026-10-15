@@ -2,7 +2,9 @@
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Shared fixtures: procedures, observation histories and trace helpers."""
+import contextlib
 import json
+import logging
 import math
 import random
 
@@ -10,6 +12,8 @@ from sequential_analysis import (
     Chain,
     Delivery,
     Independent,
+    KeyJoin,
+    Observation,
     PositionalPair,
     Recorder,
     Run,
@@ -20,27 +24,60 @@ from sequential_analysis.procedures import (
     CUSUM,
     EMA,
     SPRT,
+    ABTest,
     AsymptoticConfidenceSequence,
+    BayesianChangePoint,
     BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
     CatoniConfidenceSequence,
     Gaussian,
+    GaussianEmission,
     GroupSequentialTest,
+    HiddenMarkovFilter,
+    KalmanFilter,
     KernelTwoSampleTest,
     LocalLevelKalman,
     MeanDifference,
+    MeanEDetector,
+    MultipleTests,
+    NormalGammaModel,
     NormalMixtureSPRT,
+    ParticleFilter,
     PlanTest,
     Poisson,
     QuantileConfidenceSequence,
+    QuantileEDetector,
     QuantileTest,
+    RobustKalmanFilter,
+    SampleRatioMismatch,
     SequentialSignTest,
     ShiryaevRoberts,
+    StochasticVolatilityModel,
     TMixtureSPRT,
+    TwoProportionTest,
     TwoSPRT,
 )
 from sequential_analysis.sources import from_values, gaussian, interleave
+
+
+@contextlib.contextmanager
+def no_logs(logger: str, level: str = "WARNING"):
+    """unittest's assertNoLogs, which needs Python 3.10: fail if `logger` emits a record at `level` or above."""
+    records = []
+
+    class Catch(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler, log = Catch(getattr(logging, level)), logging.getLogger(logger)
+    log.addHandler(handler)
+    try:
+        yield
+    finally:
+        log.removeHandler(handler)
+    if records:
+        raise AssertionError(f"unexpected log records: {[r.getMessage() for r in records]}")
 
 
 def fixed_clock():
@@ -84,6 +121,24 @@ def jittered_times(n: int, seed: int):
     tb = [i + rnd.uniform(-0.6, 0.6) for i in range(n)]
     tb.sort()
     return ta, tb
+
+
+def ab_units(n: int, seed: int, arms: int = 2):
+    """An A/B event stream: per unit, its arm and covariate at assignment, its outcome three units later."""
+    rnd = random.Random(seed)
+    units = []
+    for _ in range(n):
+        arm = rnd.randrange(arms)
+        x = rnd.gauss(0.0, 1.0)
+        y = int(rnd.random() < 0.2 + 0.1 * arm + 0.05 * (x > 0))
+        units.append((arm, x, y))
+    out = []
+    for i in range(n + 3):
+        if i < n:
+            out += [Observation("arm", units[i][0], seq=i, key=i), Observation("x", units[i][1], seq=i, key=i)]
+        if i >= 3:
+            out.append(Observation("y", units[i - 3][2], seq=i - 3, key=i - 3))
+    return out
 
 
 def chain_ema_cusum():
@@ -244,6 +299,90 @@ def cases():
             Independent,
             Delivery,
             list(gaussian("x", 0.4, 2.0, seed=34, n=n)),
+            None,
+        ),
+        (
+            "kalman_filter_tracking",
+            lambda: KalmanFilter(((1.0, 1.0), (0.0, 1.0)), ((1.0, 0.0), (0.0, 1.0)), ((0.01, 0.0), (0.0, 0.01)),
+                                 ((1.0, 0.0), (0.0, 0.5)), (0.0, 0.0), ((10.0, 0.0), (0.0, 10.0))),
+            Independent,
+            Delivery,
+            list(from_values("y", [[0.5 * i + math.sin(i), 0.5 + 0.1 * math.cos(i)] for i in range(n)])),
+            None,
+        ),
+        (
+            "robust_kalman_with_outliers",
+            lambda: RobustKalmanFilter.local_linear_trend(0.01, 0.001, 1.0, df=3.0),
+            Independent,
+            Delivery,
+            list(from_values("y", [0.2 * i + (30.0 if i % 17 == 5 else math.sin(i)) for i in range(n)])),
+            None,
+        ),
+        (
+            "hidden_markov_regimes",
+            lambda: HiddenMarkovFilter(
+                (0.5, 0.5), ((0.95, 0.05), (0.1, 0.9)), GaussianEmission((0.0, 2.0), (1.0, 1.5))
+            ),
+            Independent,
+            Delivery,
+            list(gaussian("y", lambda i: 0.0 if (i // 20) % 2 == 0 else 2.0, 1.0, seed=35, n=n)),
+            None,
+        ),
+        (
+            "bayesian_change_point",
+            lambda: BayesianChangePoint(NormalGammaModel(), 0.02, alarm_probability=0.99, alarm_window=10),
+            Independent,
+            Delivery,
+            shift,
+            None,
+        ),
+        (
+            "particle_filter_stochastic_volatility",
+            lambda: ParticleFilter(StochasticVolatilityModel(-1.0, 0.95, 0.3), 64),
+            Independent,
+            Delivery,
+            list(gaussian("y", 0.0, 0.6, seed=36, n=n)),
+            17,
+        ),
+        (
+            "ab_test_with_covariate",
+            lambda: ABTest(covariate=True, start=20, tuned_for=50),
+            lambda: KeyJoin(("arm", "y", "x")),
+            Delivery,
+            ab_units(n, seed=37),
+            None,
+        ),
+        (
+            "multiple_tests_versus_control",
+            lambda: MultipleTests({**MultipleTests.versus_control([1, 2], 0, alpha=0.2).tests_by_name(),
+                                   "srm": SampleRatioMismatch((1, 1, 1), 0.01)}, alpha=0.2),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            [o for o in ab_units(n, seed=38, arms=3) if o.input != "x"],
+            None,
+        ),
+        (
+            "two_proportion_one_sided",
+            lambda: TwoProportionTest(0.01, alternative="greater"),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            [o for o in ab_units(n, seed=39) if o.input != "x"],
+            None,
+        ),
+        (
+            "mean_e_detector",
+            lambda: MeanEDetector(0.3, 0.0, 1.0, arl=1e4, statistic="cusum"),
+            Independent,
+            Delivery,
+            list(from_values("x", [((i * 7919) % 101) / 101 * (0.6 if i < 40 else 1.0) for i in range(n)])),
+            None,
+        ),
+        (
+            "quantile_e_detector_heavy_tails",
+            lambda: QuantileEDetector(0.0, arl=1e5),
+            Independent,
+            Delivery,
+            shift,
             None,
         ),
         (

@@ -1757,7 +1757,7 @@ have the same feature set.
 
 We provide a reference implementation in Python. It uses only the
 standard library (numpy, when installed, accelerates the design of
-optimal plans) and comprises about $7\,500$ lines, with one module per
+optimal plans) and comprises about $10\,000$ lines, with one module per
 layer of \cref{fig:architecture}. The contract a procedure has to
 satisfy is small:
 
@@ -1778,7 +1778,7 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes twenty procedures. For testing simple
+The implementation includes thirty-one procedures. For testing simple
 hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
 precomputed sampling plans. For clinical trials: a group sequential
 test with efficacy and non-binding futility boundaries, for known or
@@ -1808,11 +1808,40 @@ an asymptotic one with estimated variance~\cite{waudbysmith2024asymptotic},
 whose coverage in simulations reaches its nominal level for skewed data
 only after about a thousand observations. For change-point
 detection: CUSUM~\cite{page1954} and the Shiryaev--Roberts
-procedure~\cite{shiryaev1963,roberts1966,pollak1985}. For filtering and
-estimation: a Kalman filter for the local-level model with an optional
-control input, a bootstrap particle filter for the same model, a
-two-sample mean difference that accepts unpaired inputs, and an
-exponential moving average. Likelihood-ratio procedures take one of four
+procedure~\cite{shiryaev1963,roberts1966,pollak1985}, and two nonparametric
+e-detectors~\cite{shin2024edetectors}, which mix Shiryaev--Roberts or CUSUM
+recursions over a grid of bets and keep the average run length to a false
+alarm above its target for every distribution with a given mean of bounded
+data or a given quantile. For A/B tests: an exact comparison of two
+conversion rates by sequential universal inference~\cite{wasserman2020}
+(Beta marginal likelihoods over the null supremum, valid for any
+allocation rule), a test of the traffic split by a Dirichlet-multinomial
+mixture~\cite{lindon2022}, a confidence sequence for a difference of
+means from inverse-propensity scores with a regression on a
+pre-experiment covariate fitted on past units only, in the manner of
+CUPED~\cite{deng2013} but without its in-sample bias, and the e-BH
+procedure~\cite{wang2022ebh} over any set of procedures with an
+e-process, which controls the false discovery rate at the stopping time.
+By simulation, the exact conversion test needs about 2.5 times the users
+of the asymptotic one: the price of validity at every sample size. For filtering and
+estimation: the Kalman filter~\cite{kalman1960} of any linear Gaussian
+state-space model, with control input and the exact likelihood, and a
+variant with Student-$t$ observation noise by variational
+Bayes~\cite{piche2012}; the forward algorithm of a hidden Markov
+model~\cite{rabiner1989}; Bayesian online change-point
+detection~\cite{adams2007} with conjugate models; a particle
+filter~\cite{gordon1993,doucet2001} for any model that can be simulated,
+with an unbiased likelihood estimate~\cite{delmoral2004}; a filter for the
+local-level model and a bootstrap particle filter for it, a two-sample
+mean difference that accepts unpaired inputs, and an exponential moving
+average. The filters are tested against independent references: exact
+Gaussian conditioning in rational arithmetic for the Kalman filter, and
+enumeration of every hidden path or segmentation for the hidden Markov
+and change-point filters, which agree to $10^{-15}$; a filter by
+numerical integration for the particle filter. Offline smoothers -- the
+Rauch--Tung--Striebel smoother~\cite{rauch1965}, forward-backward and
+Viterbi -- reuse the filters' models and are tested against the same
+references. Likelihood-ratio procedures take one of four
 families (normal with known variance, Bernoulli, Poisson, exponential).
 A design module computes operating characteristics and optimal plans
 for Bernoulli, Poisson, normal and exponential data, for a fixed or the
@@ -1840,11 +1869,11 @@ trusted, so that a damaged or foreign one is reported as such.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for twenty-one combinations of procedure and
+non-interference are checked for thirty-one combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$282$ tests in total; the remainder cover transactional updates,
+$381$ tests in total; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
@@ -1855,10 +1884,17 @@ sequential designs, and the power of designs with futility
 boundaries. \Cref{tab:oc} is produced
 by a script in the repository from a fixed seed.
 
-An independent implementation of the history digest and of the SPRT in
-JavaScript reproduces the conformance vectors bit for bit: all sixteen
-digests, the canonical encodings of 500 numbers, and every SPRT output
-for normal, Bernoulli and Poisson data.
+The formats are specified in the repository (\code{SPEC.md}), and a
+second executor in TypeScript implements the run, the delivery policies,
+the topologies, checkpoints and the observation log, and twenty-two of
+the procedures, rebuilt from the identities recorded in checkpoints. It
+reproduces all twenty-three conformance vectors: thirteen bit for bit,
+the others to a relative $7\cdot 10^{-15}$, every difference traced to
+the last bit of \code{log}, \code{exp} or \code{cos}, which the C
+library and the JavaScript engine round differently; no decision
+differs. A run checkpointed in Python, continued by the TypeScript
+executor and restored in Python again ends with the history digest of
+the uninterrupted run.
 
 Two examples show what the separation buys. A paired test fed by two
 concurrent producers with random delays produces the same history
@@ -1892,7 +1928,7 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers twenty procedures; optimal
+The reference implementation covers twenty-five procedures; optimal
 design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the
@@ -1950,7 +1986,7 @@ experiments reproducible, composable, and long-lived.
 \section*{Code availability}
 
 The reference implementation is released as the Python package
-\texttt{sequential-analysis}, version~0.2.0, available from the Python
+\texttt{sequential-analysis}, version~0.3.0, available from the Python
 Package Index (\url{https://pypi.org/project/sequential-analysis/}) and
 at \url{https://github.com/andre-a-no/sequential-analysis}, together with
 the conformance vectors, the JavaScript check and the scripts that

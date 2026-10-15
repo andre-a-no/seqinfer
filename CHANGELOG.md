@@ -6,6 +6,79 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## 0.3.0 — 2026-10-15
+
+Filters and smoothers, A/B tests, nonparametric change detection, data
+source adapters, a numpy backend, a specification of the formats with a
+TypeScript executor, and a documentation site.
+
+### Added: A/B tests
+- `TwoProportionTest`: exact anytime-valid comparison of conversion rates by
+  sequential universal inference; any allocation rule; one- or two-sided.
+- `SampleRatioMismatch`: Dirichlet-multinomial test of the traffic split.
+- `ABTest`: difference of means by inverse-propensity scores with a
+  predictable regression on a pre-experiment covariate (CUPED without its
+  in-sample bias), asymptotic confidence sequence, reported variance ratio.
+- `e_bh` and `MultipleTests`: e-BH false discovery rate control over every
+  procedure with an e-process (`e_value_field`); `versus_control` for
+  multi-arm experiments.
+
+### Added: change detection and smoothing
+- `MeanEDetector`, `QuantileEDetector`: e-detectors (Shin, Ramdas and
+  Rinaldo), Shiryaev–Roberts or CUSUM type, average run length at least
+  `arl` for every distribution with the given mean or quantile.
+- `sequential_analysis.smoothing`: Rauch–Tung–Striebel smoother,
+  forward-backward and Viterbi, checked against exact conditioning and
+  enumeration.
+
+### Added: data sources
+- `sequential_analysis.adapters`: `from_dataframe` (pandas, polars),
+  `from_sql` (DB-API), `from_kafka` (kafka-python, confluent-kafka), with
+  `next_position` and `kafka_offsets` to resume from a checkpoint.
+- `Delivery.skip_range`: sequence numbers that do not exist (Kafka offset
+  gaps, skipped missing values) no longer accumulate in checkpoints.
+
+### Added: specification, TypeScript executor, documentation
+- `SPEC.md`: the formats and semantics another implementation needs.
+- `ts/`: a TypeScript executor that reproduces the 23 conformance vectors
+  and continues runs started in Python (and hands them back).
+- Seven conformance vectors for the new procedures.
+- A documentation site (mkdocs) with tutorials whose code runs in the tests.
+
+### Added: filters
+- `KalmanFilter`: any linear Gaussian state-space model in matrix form, with
+  control input, Joseph-form covariance update and the exact likelihood;
+  constructors for local linear trends and autoregressions.
+- `RobustKalmanFilter`: Student-t observation noise by variational Bayes
+  (Piché, Särkkä and Hartikainen 2012).
+- `HiddenMarkovFilter`: the forward algorithm with categorical, Gaussian
+  and Poisson emissions.
+- `BayesianChangePoint` (Adams and MacKay 2007) with normal-gamma,
+  Poisson-gamma and beta-Bernoulli models, pruning and an alarm.
+- `ParticleFilter` for any `StateSpaceModel`: adaptive systematic
+  resampling, unbiased likelihood; linear Gaussian, stochastic volatility
+  and Student-t local level models.
+- Tests against independent references: exact rational Gaussian
+  conditioning, enumeration of paths and partitions, grid filters.
+
+### Added: speed
+- numpy backend (`backend="auto" | "python" | "numpy"`) for
+  `ParticleFilter`, `KernelTwoSampleTest`, `BettingConfidenceSequence` and
+  `CatoniConfidenceSequence`, 2 to 12 times faster; part of the
+  procedure's identity, so checkpoints never switch backend. The numpy
+  draws are exactly those of the run's SplitMix64 generator.
+- `tools/benchmark.py`, `PERFORMANCE.md`, a CI benchmark job; README
+  sections "Checkpoints and backends" and "Speed". The provenance records
+  the numpy version; restoring under another one is reported.
+
+### Changed
+- Python 3.8 and 3.9 are supported again: the library needs Python 3.8 or
+  later (it needed 3.10), tested in CI on 3.8 with numpy 1.22.0 and on 3.9;
+  the TypeScript executor runs on Node.js 16 or later. Results are the same
+  bits on every version.
+- The four procedures above have a `backend` entry in their
+  configuration, so their checkpoints from 0.2.0 are refused.
+
 ## 0.2.0 — 2026-10-13
 
 Methods that do not assume normal data, and the fixes of a line-by-line

@@ -12,6 +12,7 @@ the mixture SPRT assumes normal data and reports a confidence sequence.
 import math
 
 from sequential_analysis import PositionalPair, Run, difference
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.procedures import BettingMeanTest, NormalMixtureSPRT, SequentialSignTest
 from sequential_analysis.rng import SplitMix64
 from sequential_analysis.sources import from_values
@@ -30,7 +31,7 @@ variant = [lognormal(0.3) for _ in range(n)]
 # 1. Paired sign test on the differences: is the median difference zero?
 sign = Run(SequentialSignTest(0.0), topology=PositionalPair(("variant", "control")).map(
     difference("variant", "control"), "variant-control"))
-for a, b in zip(from_values("variant", variant), from_values("control", control), strict=True):
+for a, b in zip_strict(from_values("variant", variant), from_values("control", control)):
     sign.offer(a)
     sign.offer(b)
     if sign.terminal:
@@ -48,7 +49,7 @@ print(f"betting test: {event.output.decision} after {event.output.n} sessions, "
 
 # 3. Normal-theory mSPRT with a confidence sequence on the log scale.
 mix = Run(NormalMixtureSPRT(sigma=1.2 * math.sqrt(2), tau=0.2, stop_on_reject=False))
-for i, (a, b) in enumerate(zip(variant, control, strict=True), start=1):
+for i, (a, b) in enumerate(zip_strict(variant, control), start=1):
     out = mix.step({"x": math.log(a) - math.log(b)}).output
     if i in (100, 500, 2000):
         print(f"mSPRT n={i:4d}: effect {out.mean:+.3f}, 95% sequence [{out.lower:+.3f}, {out.upper:+.3f}], "

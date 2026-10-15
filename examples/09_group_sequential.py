@@ -9,6 +9,7 @@ the maximum sample size and the expected sample size; the trial then
 runs on a simulated stream and looks at the data only at the analyses.
 """
 from sequential_analysis import Recorder, Run, run_sync
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.group_sequential import group_sequential_design
 from sequential_analysis.procedures import GroupSequentialTest
 from sequential_analysis.sources import gaussian
@@ -19,7 +20,7 @@ n_max = design.max_sample_size(effect=effect, sigma=sigma, power=0.9)
 drift = effect * n_max**0.5 / sigma
 
 print("analysis  fraction  boundary  alpha spent  P(stop here | effect)")
-rows = zip(design.fractions, design.bounds, design.spent, design.crossing(drift), strict=True)
+rows = zip_strict(design.fractions, design.bounds, design.spent, design.crossing(drift))
 for k, (t, c, a, p) in enumerate(rows, start=1):
     print(f"   {k}        {t:.1f}      {c:6.3f}     {a:.5f}       {p:.3f}")
 print(f"\nmaximum sample size {n_max}; expected {design.expected_fraction(drift) * n_max:.1f} under the effect, "

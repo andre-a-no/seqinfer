@@ -28,7 +28,7 @@ S = TypeVar("S")
 O = TypeVar("O")  # noqa: E741 -- O_t in the paper
 
 #: One statistical input X_t: logical input name -> value.
-StatInput = Mapping[str, Any]
+StatInput = typing.Mapping[str, Any]  # typing: evaluated at import, also on Python 3.8
 
 
 @dataclass(frozen=True)
@@ -170,27 +170,64 @@ def _number(name: str, value: Any) -> float:
     return float(value)
 
 
+class _Annotation:
+    """A field annotation of a state dataclass, read from its text.
+
+    The annotations are strings (``from __future__ import annotations``);
+    typing.get_type_hints would evaluate ``float | None`` and
+    ``tuple[float, ...]``, which Python 3.8 and 3.9 cannot.  They are read
+    here with names bound to these objects instead, the same way on every
+    Python version.
+    """
+
+    def __init__(self, base: Any, args: tuple[Any, ...] = (), optional: bool = False):
+        self.base, self.args, self.optional = base, args, optional
+
+    def __or__(self, other: Any) -> _Annotation:
+        if other is None:
+            return _Annotation(self.base, self.args, True)
+        raise TypeError("only X | None unions are supported in states")
+
+    __ror__ = __or__
+
+    def __getitem__(self, item: Any) -> _Annotation:
+        return _Annotation(self.base, item if isinstance(item, tuple) else (item,))
+
+
+_NAMES = {"int": _Annotation(int), "float": _Annotation(float), "str": _Annotation(str),
+          "tuple": _Annotation(tuple), "Any": _Annotation(Any)}
+
+
+def _annotation(text: Any) -> _Annotation:
+    if isinstance(text, _Annotation):
+        return text
+    if not isinstance(text, str):
+        raise TypeError(f"unsupported state annotation {text!r}")
+    result = eval(text, {"__builtins__": {}}, dict(_NAMES))  # the package's own annotations, not data
+    if not isinstance(result, _Annotation):
+        raise TypeError(f"unsupported state annotation {text!r}")
+    return result
+
+
 def _field(name: str, kind: Any, value: Any) -> Any:
-    args = typing.get_args(kind)
-    if type(None) in args:  # X | None
-        if value is None:
-            return None
-        (kind,) = [a for a in args if a is not type(None)]
-    if kind is int:  # every integer in a state is a count
+    kind = _annotation(kind)
+    if kind.optional and value is None:
+        return None
+    if kind.base is int:  # every integer in a state is a count
         number = _number(name, value)
         if number != int(number) or number < 0:
             raise ValueError(f"state field {name!r} must be a non-negative integer, got {value!r}")
         return int(number)
-    if kind is float:
+    if kind.base is float:
         return _number(name, value)
-    if kind is str:
+    if kind.base is str:
         if type(value) is not str:
             raise ValueError(f"state field {name!r} must be a string, got {value!r}")
         return value
-    if typing.get_origin(kind) is tuple:
+    if kind.base is tuple:
         if type(value) not in (list, tuple):
             raise ValueError(f"state field {name!r} must be a list, got {value!r}")
-        return tuple(_field(name, typing.get_args(kind)[0], v) for v in value)
+        return tuple(_field(name, kind.args[0], v) for v in value)
     raise TypeError(f"state field {name!r} has an unsupported type {kind!r}")
 
 
@@ -204,7 +241,7 @@ def decode_fields(cls: type[S], data: Any) -> S:
     """
     if not isinstance(data, dict):
         raise TypeError(f"{cls.__name__} expects a JSON object, got {type(data).__name__}")
-    hints = typing.get_type_hints(cls)
+    hints = {f.name: f.type for f in fields(cls)}  # type: ignore[arg-type]
     names = [f.name for f in fields(cls)]  # type: ignore[arg-type]
     if set(data) != set(names):
         raise TypeError(f"{cls.__name__} has fields {names}, got {sorted(data)}")

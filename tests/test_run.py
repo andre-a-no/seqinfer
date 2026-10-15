@@ -94,11 +94,8 @@ class TransactionalUpdates(unittest.TestCase):
     def test_invalid_input_is_rejected_before_inference(self):
         for bad in ({"x": -1.0}, {"x": float("nan")}, {"x": "3"}, {"x": True}, {"y": 1.0}, {}):
             run = Run(FragileSum(), on_invalid="raise")
-            with (
-                self.subTest(bad=bad),
-                self.assertRaises(ContractViolation),
-                self.assertLogs("sequential_analysis", "WARNING"),
-            ):
+            with self.subTest(bad=bad), self.assertRaises(ContractViolation), \
+                    self.assertLogs("sequential_analysis", "WARNING"):
                 run.step(bad)
             self.assertEqual(run.state, Total())
             self.assertIs(run.status, RunStatus.FAILED)

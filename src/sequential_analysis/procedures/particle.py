@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import logsumexp, ordered_sum, require_finite
@@ -59,8 +60,8 @@ class BootstrapParticleFilter(Procedure):
         logw = [-0.5 * (y - p) ** 2 / self.r for p in cloud]
         norm = require_finite(logsumexp(logw), "log normalizing constant")
         w = [math.exp(lw - norm) for lw in logw]
-        mean = ordered_sum(wi * p for wi, p in zip(w, cloud, strict=True))
-        var = ordered_sum(wi * (p - mean) ** 2 for wi, p in zip(w, cloud, strict=True))
+        mean = ordered_sum(wi * p for wi, p in zip_strict(w, cloud))
+        var = ordered_sum(wi * (p - mean) ** 2 for wi, p in zip_strict(w, cloud))
         ess = 1.0 / ordered_sum(wi * wi for wi in w)
         # systematic resampling: one uniform draw
         u = rng.random() / size

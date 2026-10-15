@@ -9,6 +9,7 @@ import statistics
 import unittest
 
 from sequential_analysis import Run, SplitMix64, equivalent, run_sync, trajectory
+from sequential_analysis._compat import zip_strict
 from sequential_analysis.numerics import logsumexp, neumaier_add
 from sequential_analysis.procedures import (
     ACCEPT_H0,
@@ -225,7 +226,7 @@ class Filtering(unittest.TestCase):
         ys = [{"y": o.value} for o in gaussian("y", lambda i: math.sin(i / 10), 0.5, seed=4, n=60)]
         exact = trajectory(LocalLevelKalman(q=0.05, r=0.25), ys)
         approx = trajectory(BootstrapParticleFilter(q=0.05, r=0.25, particles=2000), ys, seed=1)
-        err = [abs(a[1].mean - e[1].mean) for a, e in zip(approx, exact, strict=True)]
+        err = [abs(a[1].mean - e[1].mean) for a, e in zip_strict(approx, exact)]
         self.assertLess(max(err), 0.1)
         self.assertLess(statistics.fmean(err), 0.03)
 

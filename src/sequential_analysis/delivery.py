@@ -46,6 +46,7 @@ class Delivery:
         self._next: dict[str, int] = {}
         self._ahead: dict[str, set[int]] = {}
         self._pending: dict[str, dict[int, Observation]] = {}
+        self._gaps: dict[str, dict[int, int]] = {}  # declared gaps not reached yet: first -> stop
 
     def spec(self) -> dict:
         return {"policy": self.policy, "dedup": self.dedup, "start": self.start}
@@ -72,13 +73,50 @@ class Delivery:
         src, nxt = obs.source, self._next.get(obs.source, self.start)
         ahead = self._ahead.setdefault(src, set())
         if obs.seq == nxt:
-            nxt += 1
-            while nxt in ahead:
-                ahead.discard(nxt)
-                nxt += 1
-            self._next[src] = nxt
+            self._next[src] = self._settle(src, nxt + 1)
         else:
             ahead.add(obs.seq)
+
+    def skip_range(self, source: str, first: int, stop: int) -> None:
+        """Declare that the sequence numbers first..stop-1 of `source` do not exist.
+
+        For sources numbered with gaps by design (Kafka offsets of a
+        compacted or transactional topic): without it the arrival policy
+        keeps every number seen beyond a gap, and the checkpoint grows.
+        A gap ahead of numbers not yet delivered is remembered until they
+        are; it is not part of the checkpoint (an adapter that reads the
+        source again declares it again).  Only the arrival policy can pass
+        over numbers.
+        """
+        if self.policy != "arrival":
+            raise OrderingError(f"policy {self.policy!r} cannot pass over sequence numbers")
+        if type(first) is not int or type(stop) is not int:
+            raise ValueError("first and stop must be ints")
+        if stop <= first:
+            return
+        nxt = self._next.get(source, self.start)
+        if stop <= nxt:
+            return
+        if first <= nxt:
+            self._next[source] = self._settle(source, stop)
+        else:
+            gaps = self._gaps.setdefault(source, {})
+            gaps[first] = max(stop, gaps.get(first, stop))
+
+    def _settle(self, src: str, nxt: int) -> int:
+        """The next needed number from `nxt` on, passing numbers delivered ahead and declared gaps."""
+        ahead = self._ahead.get(src, set())
+        gaps = self._gaps.get(src, {})
+        while True:
+            if nxt in ahead:
+                ahead.discard(nxt)
+                nxt += 1
+            elif gaps and any(first <= nxt for first in gaps):
+                for first in [f for f in gaps if f <= nxt]:
+                    nxt = max(nxt, gaps.pop(first))
+                ahead.difference_update({n for n in ahead if n < nxt})
+            else:
+                return nxt
 
     def positions(self) -> dict[str, int]:
         return dict(self._next)
@@ -109,10 +147,7 @@ class Delivery:
                     return []
                 return [obs]
             if seq == nxt:
-                nxt += 1
-                while nxt in ahead:
-                    ahead.discard(nxt)
-                    nxt += 1
+                nxt = self._settle(src, nxt + 1)
             else:
                 ahead.add(seq)
             self._next[src] = nxt
@@ -156,6 +191,7 @@ class Delivery:
         self._next = {s: position(n) for s, n in state["next"].items()}
         self._ahead = {s: {position(n) for n in a} for s, a in state.get("ahead", {}).items()}
         self._pending = {}
+        self._gaps = {}
         self.duplicates = position(state.get("duplicates", 0))
         if self.duplicates < 0:
             raise ValueError("negative duplicate count")

@@ -16,6 +16,7 @@ The vectors change only when a procedure's version does.
 """
 from __future__ import annotations
 
+import math
 import random
 import struct
 import sys
@@ -30,6 +31,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     CUSUM,
     EMA,
     SPRT,
+    ABTest,
     Bernoulli,
     BettingMeanTest,
     BootstrapParticleFilter,
@@ -38,12 +40,16 @@ from sequential_analysis.procedures import (  # noqa: E402
     GroupSequentialTest,
     LocalLevelKalman,
     MeanDifference,
+    MeanEDetector,
     NormalMixtureSPRT,
     PlanTest,
     Poisson,
+    QuantileEDetector,
+    SampleRatioMismatch,
     SequentialSignTest,
     ShiryaevRoberts,
     TMixtureSPRT,
+    TwoProportionTest,
     TwoSPRT,
 )
 
@@ -71,7 +77,7 @@ def cases():
 
     two_sprt = TwoSPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05)
     level = [{"y": 0.05 * i + rnd.gauss(0.0, 1.0)} for i in range(40)]
-    return [
+    existing = [
         ("sprt_gaussian", SPRT(Gaussian(1.0), 0.0, 0.5, 0.05, 0.05), None, normal(0.25, 60)),
         ("sprt_bernoulli", SPRT(Bernoulli(), 0.3, 0.5, 0.05, 0.05), None, bernoulli(0.4, 120)),
         ("sprt_poisson", SPRT(Poisson(), 2.0, 3.0, 0.05, 0.05), None, poisson(2.5, 80)),
@@ -94,6 +100,55 @@ def cases():
         ("group_sequential", GroupSequentialTest(1.0, [20, 40, 60], [3.71, 2.51, 1.99]), None, normal(0.2, 60)),
         ("t_mixture", TMixtureSPRT(1.0, 0.5, stop_on_reject=False), None, normal(1.3, 50, sd=2.0)),
     ]
+    # Cases added later draw their data only after all of the above, so the earlier vectors stay as they were.
+
+    def arm_rows(n, rates, weights=(0.45, 0.45, 0.1)):
+        rows = []
+        for _ in range(n):
+            u, arm = rnd.random(), 0
+            while arm < len(weights) - 1 and u >= weights[arm]:
+                u -= weights[arm]
+                arm += 1
+            rows.append({"arm": arm, "y": int(rnd.random() < rates[arm])})
+        return rows
+
+    def srm_rows(n, split):
+        rows = []
+        for _ in range(n):
+            u, arm = rnd.random(), 0
+            while arm < len(split) - 1 and u >= split[arm]:
+                u -= split[arm]
+                arm += 1
+            rows.append({"arm": arm})
+        return rows
+
+    def ab_rows(n, effect):
+        rows = []
+        for _ in range(n):
+            u = rnd.random()
+            arm = 1 if u < 0.45 else 0 if u < 0.9 else 2
+            x = rnd.gauss(0.0, 1.0)
+            y = 1.0 + 0.8 * x + (effect if arm == 1 else 0.0) + rnd.gauss(0.0, 0.6)
+            rows.append({"arm": arm, "y": y, "x": x})
+        return rows
+
+    def cauchy(loc, n):
+        return [{"x": loc + math.tan(math.pi * (rnd.random() - 0.5))} for _ in range(n)]
+
+    added = [
+        ("two_proportion", TwoProportionTest(0.05), None, arm_rows(120, (0.25, 0.65, 0.9))),
+        ("two_proportion_greater", TwoProportionTest(0.05, alternative="greater", arms=(2, 0)), None,
+         arm_rows(90, (0.5, 0.2, 0.6), weights=(0.4, 0.2, 0.4))),
+        ("sample_ratio_mismatch", SampleRatioMismatch((5, 3, 2), alpha=0.001), None, srm_rows(120, (0.42, 0.33, 0.25))),
+        ("ab_test_covariate", ABTest(covariate=True, start=20), None, ab_rows(110, 0.7)),
+        ("mean_e_detector", MeanEDetector(0.3, 0.0, 1.0, arl=200.0), None,
+         [{"x": rnd.betavariate(3.0, 7.0)} for _ in range(50)] + [{"x": rnd.betavariate(6.0, 4.0)} for _ in range(50)]),
+        ("quantile_e_detector", QuantileEDetector(0.0, 0.5, arl=200.0, statistic="cusum", direction="increase", grid=8),
+         None, cauchy(0.0, 50) + cauchy(1.5, 60)),
+        ("group_sequential_t", GroupSequentialTest(None, [10, 20, 30], [3.71, 2.51, 1.99]), None,
+         normal(0.4, 30, sd=1.5)),
+    ]
+    return existing + added
 
 
 def vector(label, procedure, seed, inputs):
@@ -130,7 +185,7 @@ def number_vectors(count=500):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    vectors = [vector(*case) for case in cases()]
+    vectors = [vector(*case) for case in cases()]  # novermin (not PEP 798)
     (OUT / "procedures.json").write_text(canonical_json(vectors) + "\n", encoding="utf-8")
     (OUT / "numbers.json").write_text(canonical_json(number_vectors()) + "\n", encoding="utf-8")
     print(f"wrote {len(vectors)} procedure vectors and the number vectors to {OUT}")

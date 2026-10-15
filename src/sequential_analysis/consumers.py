@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -27,7 +28,7 @@ class OutputEvent:
     terminal: bool
 
 
-Consumer = Callable[[OutputEvent], None]
+Consumer = typing.Callable[[OutputEvent], None]  # typing: evaluated at import, also on Python 3.8
 
 
 class Recorder:

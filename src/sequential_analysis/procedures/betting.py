@@ -23,12 +23,17 @@ predictable estimates mu, s2 of the mean and variance, truncated to
 [0, c/m] for bets on a larger mean and [0, c/(1 - m)] for bets on a
 smaller one (c = 1/2), so that the wealth stays positive.  A two-sided
 test averages the two one-sided wealth processes.
+
+Cost per step (PERFORMANCE.md): the tests take 3 µs and a constant state;
+BettingConfidenceSequence updates two wealths per grid point, 0.2 ms with
+numpy and 0.5 ms in Python for grid=1000, and checkpoints 40 kB.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
+from .. import backend as _backend
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
 from ..numerics import require_finite
@@ -133,6 +138,7 @@ class BettingMeanTest(_Betting):
     """
 
     name = "betting_mean_test"
+    e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(
@@ -193,6 +199,7 @@ class SequentialSignTest(_Betting):
     """
 
     name = "sequential_sign_test"
+    e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(
@@ -276,7 +283,8 @@ class BettingConfidenceSequence(Procedure):
     version = "1"
 
     def __init__(
-        self, lower: float = 0.0, upper: float = 1.0, alpha: float = 0.05, *, grid: int = 1000, input: str = "x"
+        self, lower: float = 0.0, upper: float = 1.0, alpha: float = 0.05, *, grid: int = 1000,
+        backend: str = "auto", input: str = "x",
     ):
         if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
             raise ValueError("need finite bounds lower < upper")
@@ -289,9 +297,11 @@ class BettingConfidenceSequence(Procedure):
         self._points = tuple((j + 0.5) / grid for j in range(grid))  # candidate means of the scaled data
         self._log_level = math.log(1.0 / self.alpha)
         self._c = math.log(2.0 / self.alpha)
+        self.backend = _backend.resolve(backend)
 
     def config(self) -> dict:
-        return {"lower": self.lower, "upper": self.upper, "alpha": self.alpha, "grid": self.grid, "input": self.input}
+        return {"lower": self.lower, "upper": self.upper, "alpha": self.alpha, "grid": self.grid,
+                "backend": self.backend, "input": self.input}
 
     def inputs(self):
         return {self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
@@ -309,14 +319,22 @@ class BettingConfidenceSequence(Procedure):
         mu = (0.5 + state.total) / i  # predictable estimates, shrunk towards 1/2 and 1/4
         s2 = (0.25 + state.squares) / i
         stake = math.sqrt(2.0 * self._c / (s2 * i * math.log1p(i)))
-        log_up, log_down, kept = [], [], []
-        for j, m in enumerate(self._points):
-            up = state.log_up[j] + math.log1p(min(stake, _TRUNCATION / m) * (y - m))
-            down = state.log_down[j] + math.log1p(-min(stake, _TRUNCATION / (1.0 - m)) * (y - m))
-            log_up.append(up)
-            log_down.append(down)
-            if _log_add(up, down) - _LOG2 < self._log_level:
-                kept.append(m)
+        if self.backend == "numpy":
+            np = _backend.np
+            m = np.array(self._points)
+            up_a = np.array(state.log_up) + np.log1p(np.minimum(stake, _TRUNCATION / m) * (y - m))
+            down_a = np.array(state.log_down) + np.log1p(-np.minimum(stake, _TRUNCATION / (1.0 - m)) * (y - m))
+            kept = m[np.logaddexp(up_a, down_a) - _LOG2 < self._log_level].tolist()
+            log_up, log_down = up_a.tolist(), down_a.tolist()
+        else:
+            log_up, log_down, kept = [], [], []
+            for j, mj in enumerate(self._points):
+                up = state.log_up[j] + math.log1p(min(stake, _TRUNCATION / mj) * (y - mj))
+                down = state.log_down[j] + math.log1p(-min(stake, _TRUNCATION / (1.0 - mj)) * (y - mj))
+                log_up.append(up)
+                log_down.append(down)
+                if _log_add(up, down) - _LOG2 < self._log_level:
+                    kept.append(mj)
         step_size = 1.0 / self.grid
         lo = max(0.0, kept[0] - step_size) if kept else mu
         hi = min(1.0, kept[-1] + step_size) if kept else mu
