@@ -397,7 +397,17 @@ def cases():
                                                                      two_sided=True, alternative="less"), None,
          [{"arm": i % 2, "y": rnd.gauss(-0.4 if i % 2 else 0.0, 1.5)} for i in range(95)]),
     ]
-    return existing + added + ported + later + round_four
+    # The stratified anytime-valid log-rank test; its data are drawn after all of the above.
+    stratified_logrank = [
+        ("anytime_logrank_test_stratified", AnytimeLogRankTest(cs_grid=30, strata=3), None,
+         [{"arm": 2, "kind": 1, "stratum": 1}, *stratified_survival_rows(220, 0.35, 3, 45)]),
+        ("anytime_logrank_test_stratified_grow",
+         AnytimeLogRankTest(alternative="less", method="grow", confidence_sequence=False, strata=2,
+                            stratum_input="centre"), None,
+         [{"arm": r["arm"], "kind": r["kind"], "centre": r["stratum"]}
+          for r in stratified_survival_rows(160, 0.5, 2, 30)]),
+    ]
+    return existing + added + ported + later + round_four + stratified_logrank
 
 
 def vector(label, procedure, seed, inputs):

@@ -492,6 +492,18 @@ def cases():
             None,
         ),
         (
+            "anytime_logrank_test_stratified",
+            lambda: AnytimeLogRankTest(cs_grid=21, strata=2),
+            lambda: KeyJoin(("arm", "kind", "stratum")),
+            Delivery,
+            # 40 patients enter, 20 per stratum and 10 per arm in each, then 40 events and censorings
+            record_stream([{"arm": i % 2, "kind": 0, "stratum": (i // 2) % 2} for i in range(40)]
+                          + [{"arm": (i // 3) % 2 if i < 36 else i % 2, "kind": 1 if i % 4 else 2,
+                              "stratum": (i // 2) % 2} for i in range(40)],
+                          ("arm", "kind", "stratum")),
+            None,
+        ),
+        (
             "online_fdr",
             lambda: OnlineFDR(0.1),
             Independent,

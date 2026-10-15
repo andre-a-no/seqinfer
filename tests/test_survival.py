@@ -16,18 +16,31 @@
   the penalised Cox estimate by Newton's method, the mixtures from their
   definition.
 * Invariance to the time scale, state round trip, contract violations.
+* Stratification: strata=1 is the unstratified test bit for bit (its
+  conformance vectors); the exact martingale property by enumeration in
+  two strata; the stratified partial likelihood from its definition;
+  entry cohorts against hazards in time since entry, and centres with
+  different baseline hazards, by Monte Carlo; checkpoints, contracts, and
+  a run moved to the TypeScript executor and back.
 """
 import json
 import math
+import os
 import random
 import statistics
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from sequential_analysis import KeyJoin, Observation, Run, run_sync
+from sequential_analysis import KeyJoin, Observation, Recorder, Run, equivalent, run_sync
+from sequential_analysis.canonical import canonical_json
 from sequential_analysis.core import trajectory
-from sequential_analysis.errors import ContractViolation
+from sequential_analysis.errors import ContractViolation, IncompatibleCheckpoint
 from sequential_analysis.numerics import logsumexp
 from sequential_analysis.procedures.survival import AnytimeLogRankTest
+
+from .test_typescript import CLI, NODE
 
 TREATMENT, CONTROL = 1, 0
 ENTER, EVENT, CENSOR = 0, 1, 2
@@ -519,6 +532,434 @@ class StateAndContractTests(unittest.TestCase):
         self.assertTrue(proc.is_terminal(steps[-1][0]))
         self.assertEqual(steps[-1][1].p_value, math.exp(-steps[-1][0].max_log_e))
         self.assertLessEqual(steps[-1][1].p_value, proc.alpha)
+
+
+# ---------------------------------------------------------------- stratification
+
+def cohort_trial(rnd, patients, hazard_ratio, *, shape=0.3, accrual=25.0, censoring=0.3):
+    """(time, kind, arm, entry) records with Weibull hazards in time since entry, sorted by calendar time.
+
+    The setup of the module docstring's time-scale paragraph: entry uniform
+    over `accrual` scale units, censoring exponential after entry.
+    """
+    records = []
+    for _ in range(patients):
+        e = rnd.uniform(0.0, accrual)
+        arm = TREATMENT if rnd.random() < 0.5 else CONTROL
+        g = rnd.expovariate(1.0) / (hazard_ratio if arm == TREATMENT else 1.0)
+        t, c = e + g ** (1.0 / shape), e + rnd.expovariate(censoring)
+        records.append((e, ENTER, arm, e))
+        records.append((t, EVENT, arm, e) if t <= c else (c, CENSOR, arm, e))
+    records.sort()
+    return records
+
+
+def cohort_inputs(records, cohorts, accrual=25.0):
+    """Stratum = entry cohort: the accrual period cut into `cohorts` equal periods."""
+    return [{"arm": a, "kind": k, "stratum": min(cohorts - 1, int(e / accrual * cohorts))} for _, k, a, e in records]
+
+
+def centre_trial(rnd, patients, hazard_ratio, rates, allocation, *, accrual=2.0, censoring=0.3):
+    """Records {arm, kind, stratum} of a trial in several centres, in calendar order.
+
+    Centre s (chosen uniformly) has exponential baseline hazard rates[s] and
+    randomises to treatment with probability allocation[s].
+    """
+    records = []
+    for _ in range(patients):
+        s = rnd.randrange(len(rates))
+        e = rnd.uniform(0.0, accrual)
+        arm = TREATMENT if rnd.random() < allocation[s] else CONTROL
+        t = e + rnd.expovariate(rates[s] * (hazard_ratio if arm == TREATMENT else 1.0))
+        c = e + rnd.expovariate(censoring)
+        records.append((e, ENTER, arm, s))
+        records.append((t, EVENT, arm, s) if t <= c else (c, CENSOR, arm, s))
+    records.sort()
+    return [{"arm": a, "kind": k, "stratum": s} for _, k, a, s in records]
+
+
+def unstratified(xs):
+    return [{"arm": x["arm"], "kind": x["kind"]} for x in xs]
+
+
+def stratified_informative_events(xs):
+    """(x, n_T, n_C) of every event with both arms of its stratum at risk, by an independent count."""
+    at_risk = {}
+    out = []
+    for x in xs:
+        counts = at_risk.setdefault(x["stratum"], {TREATMENT: 0, CONTROL: 0})
+        if x["kind"] == ENTER:
+            counts[x["arm"]] += 1
+            continue
+        if x["kind"] == EVENT and counts[TREATMENT] and counts[CONTROL]:
+            out.append((1 if x["arm"] == TREATMENT else 0, counts[TREATMENT], counts[CONTROL]))
+        counts[x["arm"]] -= 1
+    return out
+
+
+#: Two strata: entries in both, then events, a censoring and an entry; "busiest"
+#: is the stratum with more patients at risk, a choice that depends on the past.
+STRATIFIED_SCHEDULE = ([("enter-t", 0)] * 2 + [("enter-c", 0)] * 3 + [("enter-t", 1)] * 3 + [("enter-c", 1)]
+                       + [("event", 0), ("event", 1), ("censor-larger", 0), ("event", "busiest"),
+                          ("enter-smaller", 1), ("event", 1), ("event", 0), ("event", "busiest"),
+                          ("event", "busiest")])
+STRATIFIED_EVENTS = sum(op == "event" for op, _ in STRATIFIED_SCHEDULE)
+
+
+def stratified_expectations(proc, theta, stop_at=None, at_end=None):
+    """As `expectations`, for a two-stratum procedure: the arm of an event in stratum s is
+    Bernoulli(n_T^s theta / (n_T^s theta + n_C^s)).  `at_end(state)`, if given, is averaged
+    over the final states too (third value returned)."""
+    by_n = [0.0] * (STRATIFIED_EVENTS + 1)
+    totals = [0.0, 0.0]
+
+    def walk(state, i, prob, frozen):
+        if i == len(STRATIFIED_SCHEDULE):
+            totals[0] += prob * (math.exp(proc.log_e_value(state)) if frozen is None else frozen)
+            if at_end is not None:
+                totals[1] += prob * at_end(state)
+            return
+        op, s = STRATIFIED_SCHEDULE[i]
+        if s == "busiest":
+            s = 0 if sum(state.at_risk[0:2]) >= sum(state.at_risk[2:4]) else 1
+        n_t, n_c = state.at_risk[2 * s], state.at_risk[2 * s + 1]
+        if op == "event":
+            p = n_t * theta / (n_t * theta + n_c)
+            for arm, q in ((TREATMENT, p), (CONTROL, 1.0 - p)):
+                if q == 0.0:
+                    continue
+                new, out = proc.step(state, {"arm": arm, "kind": EVENT, "stratum": s})
+                e = math.exp(out.log_e_value)
+                by_n[out.n_events] += prob * q * e
+                stop = frozen is None and stop_at is not None and out.log_e_value >= stop_at
+                walk(new, i + 1, prob * q, e if stop else frozen)
+            return
+        if op == "enter-t":
+            arm, kind = TREATMENT, ENTER
+        elif op == "enter-c":
+            arm, kind = CONTROL, ENTER
+        elif op == "censor-larger":
+            arm, kind = (TREATMENT if n_t >= n_c else CONTROL), CENSOR
+        else:
+            arm, kind = (TREATMENT if n_t <= n_c else CONTROL), ENTER
+        new, _ = proc.step(state, {"arm": arm, "kind": kind, "stratum": s})
+        walk(new, i + 1, prob, frozen)
+
+    walk(proc.initial_state(), 0, 1.0, None)
+    return by_n[1:], totals[0], totals[1]
+
+
+class StratifiedExactTests(unittest.TestCase):
+    def procedures(self, **kw):
+        for method in ("mixture", "grow"):
+            for alternative in ("two-sided", "less", "greater"):
+                for theta0 in (1.0, 1.7):
+                    yield AnytimeLogRankTest(theta0=theta0, alternative=alternative, method=method, prior_sd=1.0,
+                                             confidence_sequence=False, strata=2, **kw)
+
+    def test_each_factor_has_mean_one_under_the_null_in_every_stratum(self):
+        """One event from a state with different risk sets in three strata: E[e-value] = 1 for an event in any."""
+        counts = ((3, 1), (1, 4), (6, 2))
+        for theta0 in (1.0, 0.4, 2.5):
+            for alternative in ("two-sided", "less", "greater"):
+                proc = AnytimeLogRankTest(theta0=theta0, alternative=alternative, strata=3)
+                state = proc.initial_state()
+                for s, (n_t, n_c) in enumerate(counts):
+                    for arm, n in ((TREATMENT, n_t), (CONTROL, n_c)):
+                        for _ in range(n):
+                            state, _ = proc.step(state, {"arm": arm, "kind": ENTER, "stratum": s})
+                for s, (n_t, n_c) in enumerate(counts):
+                    p = n_t * theta0 / (n_t * theta0 + n_c)
+                    _, treated = proc.step(state, {"arm": TREATMENT, "kind": EVENT, "stratum": s})
+                    _, control = proc.step(state, {"arm": CONTROL, "kind": EVENT, "stratum": s})
+                    with self.subTest(theta0=theta0, alternative=alternative, stratum=s):
+                        self.assertNotAlmostEqual(treated.log_e_value, 0.0, delta=1e-3)
+                        mean = p * math.exp(treated.log_e_value) + (1 - p) * math.exp(control.log_e_value)
+                        self.assertAlmostEqual(mean, 1.0, delta=1e-14)
+
+    def test_expected_e_value_is_one_under_the_null(self):
+        for proc in self.procedures():
+            with self.subTest(**proc.config()):
+                by_n, at_stop, _ = stratified_expectations(proc, proc.theta0, stop_at=math.log(2.0))
+                for n, mean in enumerate(by_n, 1):
+                    self.assertAlmostEqual(mean, 1.0, delta=1e-12, msg=f"after {n} events")
+                self.assertAlmostEqual(at_stop, 1.0, delta=1e-12, msg="at the stopping time")
+
+    def test_one_sided_nulls_and_alternatives(self):
+        for proc in self.procedures():
+            if proc.alternative == "two-sided":
+                continue
+            inside = proc.theta0 * (2.0 if proc.alternative == "less" else 0.5)
+            outside = proc.theta0 * (0.3 if proc.alternative == "less" else 3.0)
+            with self.subTest(**proc.config()):
+                by_n, at_stop, _ = stratified_expectations(proc, inside, stop_at=math.log(2.0))
+                self.assertLessEqual(max(by_n), 1.0 + 1e-12)
+                self.assertLessEqual(at_stop, 1.0 + 1e-12)
+                self.assertLess(by_n[-1], 1.0 - 1e-6)
+                self.assertGreater(stratified_expectations(proc, outside)[0][-1], 1.05)
+
+    def test_confidence_sequence_e_values_are_martingales_at_every_grid_point(self):
+        """E[E_n(theta_i)] = 1 when theta = theta_i, for the mixture behind the confidence sequence."""
+        proc = AnytimeLogRankTest(prior_sd=1.0, cs_range=(0.25, 4.0), cs_grid=9, strata=2)
+        for i in (0, 3, 8):
+            theta = proc._cs_points[i]
+            _, _, mean = stratified_expectations(
+                proc, theta, at_end=lambda state, i=i: math.exp(proc.cs_log_e_values(state.cs_log_lik, i, i)[0]))
+            with self.subTest(theta=theta):
+                self.assertAlmostEqual(mean, 1.0, delta=1e-12)
+
+
+class StratifiedTests(unittest.TestCase):
+    def test_one_stratum_is_the_unstratified_test_as_released(self):
+        """strata=1: the identity, inputs and state of the unstratified test; its conformance vectors bit for bit."""
+        default, explicit = AnytimeLogRankTest(), AnytimeLogRankTest(strata=1, stratum_input="centre")
+        self.assertEqual(explicit.identity(), default.identity())
+        self.assertNotIn("strata", explicit.config())
+        self.assertEqual(set(explicit.inputs()), {"arm", "kind"})
+        self.assertEqual(explicit.encode_state(explicit.initial_state()), default.encode_state(default.initial_state()))
+        root = Path(__file__).resolve().parent.parent
+        vectors = [v for v in json.loads((root / "conformance" / "procedures.json").read_text())
+                   if v["procedure"]["name"] == "anytime_logrank_test"]
+        self.assertGreaterEqual(len(vectors), 2)
+        for v in vectors:
+            proc = AnytimeLogRankTest(**v["procedure"]["config"], strata=1)
+            with self.subTest(case=v["case"]):
+                self.assertEqual(proc.identity(), v["procedure"])
+                steps = trajectory(proc, v["inputs"])
+                outputs = [proc.encode_output(o) for _, o in steps]
+                self.assertEqual(canonical_json(outputs), canonical_json(v["outputs"]))
+                self.assertEqual(canonical_json(proc.encode_state(steps[-1][0])), canonical_json(v["state"]))
+
+    def test_records_all_in_one_stratum_give_the_unstratified_test(self):
+        xs = inputs(trial(random.Random(20), 150, 0.6))
+        for method in ("mixture", "grow"):
+            plain = trajectory(AnytimeLogRankTest(method=method), xs)
+            for stratum in (0, 3):
+                proc = AnytimeLogRankTest(method=method, strata=4)
+                got = trajectory(proc, [{**x, "stratum": stratum} for x in xs])
+                with self.subTest(method=method, stratum=stratum):
+                    self.assertEqual([o for _, o in got], [o for _, o in plain])
+                    for (state, _), (reference, _) in zip(got, plain):
+                        self.assertEqual(state.at_risk[2 * stratum:2 * stratum + 2], reference.at_risk)
+                        self.assertEqual(sum(state.at_risk), sum(reference.at_risk))
+                        self.assertEqual(state.log_lik, reference.log_lik)
+                        self.assertEqual(state.cs_log_lik, reference.cs_log_lik)
+
+    def test_stratified_partial_likelihood_from_its_definition(self):
+        """The mixture and the estimate against the stratified Cox partial likelihood, computed independently."""
+        tau = 0.5
+        xs = centre_trial(random.Random(21), 300, 0.6, (0.2, 1.0, 5.0), (0.3, 0.5, 0.7))
+        events = stratified_informative_events(xs)
+        self.assertNotEqual(events, informative_events(unstratified(xs)))
+        proc = AnytimeLogRankTest(prior_sd=tau, confidence_sequence=False, strata=3)
+        _, out = trajectory(proc, xs)[-1]
+        self.assertEqual(out.n_events, sum(x["kind"] == EVENT for x in xs))
+        deltas = [j * tau / 8 for j in range(-32, 33) if j != 0]
+        weights = [math.exp(-d * d / (2 * tau * tau)) for d in deltas]
+        logs = []
+        for d, w in zip(deltas, weights):
+            log_lr = math.fsum(x * d - math.log(n_t * math.exp(d) + n_c) + math.log(n_t + n_c)
+                               for x, n_t, n_c in events)
+            logs.append(math.log(w / math.fsum(weights)) + log_lr)
+        self.assertAlmostEqual(out.log_e_value, logsumexp(logs), delta=1e-9)
+        beta = 0.0
+        for _ in range(30):
+            fitted = [n_t * math.exp(beta) / (n_t * math.exp(beta) + n_c) for _, n_t, n_c in events]
+            score = math.fsum(x - f for (x, _, _), f in zip(events, fitted)) - beta / tau**2
+            beta += score / (math.fsum(f * (1 - f) for f in fitted) + 1 / tau**2)
+        self.assertAlmostEqual(math.log(out.hazard_ratio_estimate), beta, delta=5e-4)
+        self.assertLess(beta, 0.0)
+
+    def test_relabelling_the_strata_changes_nothing(self):
+        xs = centre_trial(random.Random(22), 120, 0.7, (0.5, 1.0, 2.0), (0.5, 0.5, 0.5))
+        proc = AnytimeLogRankTest(strata=3)
+        reference = [o for _, o in trajectory(proc, xs)]
+        relabelled = [{**x, "stratum": (2, 0, 1)[x["stratum"]]} for x in xs]
+        self.assertEqual([o for _, o in trajectory(proc, relabelled)], reference)
+
+    def test_entry_cohorts_against_hazards_in_time_since_entry(self):
+        """The module docstring's case: Weibull shape 0.3 in time since entry, 200 patients entering over 25 units.
+
+        Rejection rates of a true H0 at alpha = 0.05 measured with 4000 trials
+        of cohort_trial (random.Random(seed), seeds 0..3999): unstratified 21%,
+        8 entry cohorts 11%, 25 cohorts 3.8%; an exact analysis (the records
+        sorted by time since entry, seeds 0..1999) 1.7%.  Stratifying by fine enough cohorts brings the test back
+        under its level, but not to exactness: within a cohort entry still varies.
+        """
+        runs = 150
+        rejected = {1: 0, 8: 0, 25: 0}
+        for r in range(runs):
+            records = cohort_trial(random.Random(7000 + r), 200, 1.0)
+            for cohorts in rejected:
+                proc = AnytimeLogRankTest(strata=cohorts, confidence_sequence=False)
+                xs = cohort_inputs(records, cohorts)
+                rejected[cohorts] += first_rejection(proc, unstratified(xs) if cohorts == 1 else xs) is not None
+        rates = {k: v / runs for k, v in rejected.items()}
+        self.assertGreater(rates[1], 0.12, rates)  # badly anti-conservative
+        self.assertLess(rates[25], rates[8], rates)
+        self.assertLess(rates[8], rates[1], rates)
+        self.assertLessEqual(rates[25], binomial_upper_bound(0.05, runs), rates)
+
+    def test_centres_with_different_baseline_hazards(self):
+        """Stratified by centre, the test keeps its level where the unstratified test is confounded, and has more power.
+
+        Measured with 600 trials of centre_trial (seeds 0..599): with allocation 1:3, 1:1, 3:1 in centres with
+        hazards 0.2, 1 and 5, a true H0 is rejected in 96% of trials
+        unstratified and 2.5% stratified; with 1:1 allocation and hazards 0.1
+        and 10, power at a hazard ratio of 0.6 (400 patients) is 18%
+        unstratified and 82% stratified.
+        """
+        runs = 120
+        confounded = [centre_trial(random.Random(8000 + r), 200, 1.0, (0.2, 1.0, 5.0), (0.25, 0.5, 0.75))
+                      for r in range(runs)]
+        stratified = AnytimeLogRankTest(strata=3, confidence_sequence=False)
+        plain = AnytimeLogRankTest(confidence_sequence=False)
+        level = sum(first_rejection(stratified, xs) is not None for xs in confounded) / runs
+        self.assertLessEqual(level, binomial_upper_bound(0.05, runs))
+        self.assertGreater(sum(first_rejection(plain, unstratified(xs)) is not None for xs in confounded[:20]), 10)
+
+        runs = 30
+        effect = [centre_trial(random.Random(9000 + r), 400, 0.6, (0.1, 10.0), (0.5, 0.5)) for r in range(runs)]
+        stratified = AnytimeLogRankTest(strata=2, confidence_sequence=False)
+        power = {"stratified": sum(first_rejection(stratified, xs) is not None for xs in effect) / runs,
+                 "unstratified": sum(first_rejection(plain, unstratified(xs)) is not None for xs in effect) / runs}
+        self.assertGreaterEqual(power["stratified"], 0.6, power)
+        self.assertGreaterEqual(power["stratified"], power["unstratified"] + 0.3, power)
+
+    def test_stratified_state_round_trip(self):
+        xs = centre_trial(random.Random(23), 150, 0.6, (0.3, 1.0, 3.0), (0.5, 0.4, 0.6))
+        for kw in ({}, {"method": "grow"}, {"confidence_sequence": False, "alternative": "less"}):
+            proc = AnytimeLogRankTest(strata=3, **kw)
+            states = trajectory(proc, xs)
+            for state, _ in states[::30] + states[-1:]:
+                encoded = json.loads(json.dumps(proc.encode_state(state)))
+                self.assertEqual(len(encoded["at_risk"]), 6)
+                self.assertEqual(proc.decode_state(encoded), state)
+            middle = len(xs) // 2
+            restored = proc.decode_state(json.loads(json.dumps(proc.encode_state(states[middle - 1][0]))))
+            self.assertEqual(trajectory(proc, xs[middle:], state=restored), states[middle:])
+
+    def test_checkpoint_and_restore_through_run(self):
+        xs = centre_trial(random.Random(24), 120, 0.6, (0.3, 3.0), (0.5, 0.5))
+        observations = []
+        for i, x in enumerate(xs):
+            observations += [Observation(name, value, key=f"r{i}") for name, value in x.items()]
+
+        def make():
+            return Run(AnytimeLogRankTest(strata=2, stratum_input="stratum"),
+                       topology=KeyJoin(("arm", "kind", "stratum")), run_id="strata", clock=lambda: 0.0)
+
+        full = make()
+        run_sync(full, observations)
+        self.assertEqual(full.state, trajectory(full.procedure, xs)[-1][0])
+        first = make()
+        run_sync(first, observations[:len(observations) // 2])
+        checkpoint = json.loads(json.dumps(first.checkpoint()))
+        self.assertEqual(checkpoint["procedure"]["config"]["strata"], 2)
+        second = Run.restore(AnytimeLogRankTest(strata=2), checkpoint, topology=KeyJoin(("arm", "kind", "stratum")),
+                             clock=lambda: 0.0)
+        run_sync(second, observations[len(observations) // 2:])
+        self.assertEqual(second.state, full.state)
+        self.assertEqual(second.history_digest, full.history_digest)
+        with self.assertRaises(IncompatibleCheckpoint):  # another number of strata is another procedure
+            Run.restore(AnytimeLogRankTest(strata=3), checkpoint, topology=KeyJoin(("arm", "kind", "stratum")))
+
+    def test_malformed_stratified_states_are_rejected(self):
+        proc = AnytimeLogRankTest(strata=3)
+        xs = centre_trial(random.Random(25), 100, 0.6, (0.3, 1.0, 3.0), (0.5, 0.5, 0.5))
+        good = proc.encode_state(trajectory(proc, xs)[-1][0])
+        unstratified_state = AnytimeLogRankTest().encode_state(AnytimeLogRankTest().initial_state())
+        for i, bad in enumerate([good["at_risk"][:2], good["at_risk"][:5], good["at_risk"] + [0, 0],
+                                 [-1, *good["at_risk"][1:]], [0.5, *good["at_risk"][1:]]]):
+            with self.subTest(case=i), self.assertRaises((ValueError, TypeError)):
+                proc.decode_state({**good, "at_risk": bad})
+        with self.assertRaises(ValueError):
+            proc.decode_state(unstratified_state)
+        with self.assertRaises(ValueError):
+            AnytimeLogRankTest().decode_state(good)
+
+    def test_stratum_contracts(self):
+        proc = AnytimeLogRankTest(strata=2)
+        self.assertEqual(set(proc.inputs()), {"arm", "kind", "stratum"})
+        for bad in ({"arm": 1, "kind": 0}, {"arm": 1, "kind": 0, "stratum": 2}, {"arm": 1, "kind": 0, "stratum": -1},
+                    {"arm": 1, "kind": 0, "stratum": 0.5}, {"arm": 1, "kind": 0, "stratum": True}):
+            with self.subTest(x=bad), self.assertRaises(ContractViolation):
+                trajectory(proc, [bad])
+        state = proc.initial_state()
+        for bad in (2, -1, 0.5, True, float("nan"), "0"):  # step itself refuses, without the contracts of Run
+            with self.subTest(stratum=bad), self.assertRaises(ContractViolation):
+                proc.step(state, {"arm": 1, "kind": 0, "stratum": bad})
+        state, out = proc.step(state, {"arm": TREATMENT, "kind": ENTER, "stratum": 1.0})  # an integral float is fine
+        self.assertEqual(state.at_risk, (0, 0, 1, 0))
+        state, _ = proc.step(state, {"arm": CONTROL, "kind": ENTER, "stratum": 0})
+        self.assertEqual(out.at_risk, (1, 0))
+        for x in ({"arm": TREATMENT, "kind": EVENT, "stratum": 0}, {"arm": CONTROL, "kind": CENSOR, "stratum": 1}):
+            with self.subTest(x=x), self.assertRaisesRegex(ContractViolation, f"stratum {x['stratum']} with nobody"):
+                proc.step(state, x)
+        state, out = proc.step(state, {"arm": TREATMENT, "kind": EVENT, "stratum": 1})  # alone in its stratum
+        self.assertEqual((out.n_events, out.at_risk, out.log_e_value), (1, (0, 1), 0.0))
+        state, out = proc.step(state, {"arm": 7, "kind": EVENT, "stratum": 1})  # another arm: ignored
+        self.assertEqual(out.n_events, 1)
+
+    def test_strata_argument_validation(self):
+        for kw in (dict(strata=0), dict(strata=1.0), dict(strata=True), dict(strata=10_001),
+                   dict(strata=2, stratum_input="arm"), dict(strata=2, stratum_input="kind")):
+            with self.subTest(**{k: repr(v) for k, v in kw.items()}), self.assertRaises(ValueError):
+                AnytimeLogRankTest(**kw)
+        proc = AnytimeLogRankTest(strata=5, stratum_input="centre")
+        self.assertEqual((proc.config()["strata"], proc.config()["stratum_input"]), (5, "centre"))
+        self.assertEqual(proc.identity()["version"], "1")
+        self.assertEqual(proc.inputs()["centre"].upper, 4)
+        self.assertEqual(AnytimeLogRankTest(strata=1, stratum_input="arm").config(), AnytimeLogRankTest().config())
+
+
+@unittest.skipUnless((NODE and CLI.exists()) or os.environ.get("REQUIRE_TYPESCRIPT"),
+                     "node or the built TypeScript executor (ts/dist) is missing")
+class StratifiedTypeScriptTests(unittest.TestCase):
+    def test_a_stratified_run_moves_between_executors(self):
+        """Python, then the TypeScript executor from a checkpoint, then Python again (as tests/test_typescript.py)."""
+        xs = centre_trial(random.Random(26), 90, 0.5, (0.3, 1.0, 3.0), (0.5, 0.4, 0.6))
+        observations = []
+        for i, x in enumerate(xs):
+            observations += [Observation(name, value, key=i) for name, value in x.items()]
+        for kw in ({}, {"method": "grow", "alternative": "less", "confidence_sequence": False}):
+            def make(kw=kw):
+                return AnytimeLogRankTest(strata=3, stratum_input="stratum", cs_grid=41, **kw)
+
+            def topology():
+                return KeyJoin(("arm", "kind", "stratum"))
+
+            with self.subTest(**kw), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                full_rec, rec = Recorder(), Recorder()
+                full = Run(make(), topology=topology(), consumers=[full_rec], run_id="r", clock=lambda: 0.0)
+                run_sync(full, observations, stop_on_terminal=False)
+                a, b = len(observations) // 3, 2 * len(observations) // 3
+                first = Run(make(), topology=topology(), consumers=[rec], run_id="r", clock=lambda: 0.0)
+                run_sync(first, observations[:a], stop_on_terminal=False)
+                (tmp / "cp.json").write_text(json.dumps(first.checkpoint()))
+                (tmp / "obs.jsonl").write_text("".join(json.dumps(o.to_json()) + "\n" for o in observations[a:b]))
+                done = subprocess.run(
+                    [NODE, str(CLI), "continue", str(tmp / "cp.json"), str(tmp / "obs.jsonl"),
+                     "--checkpoint", str(tmp / "cp2.json"), "--outputs", str(tmp / "out.jsonl")],
+                    capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(done.returncode, 0, done.stderr)
+                ts_outputs = [json.loads(line)["output"] for line in (tmp / "out.jsonl").read_text().splitlines()]
+                second = Run.restore(make(), json.loads((tmp / "cp2.json").read_text()), topology=topology(),
+                                     consumers=[rec], clock=lambda: 0.0)
+                run_sync(second, observations[b:], stop_on_terminal=False)
+                proc = full.procedure
+                self.assertEqual(second.history_digest, full.history_digest)
+                self.assertTrue(equivalent(json.loads(json.dumps(proc.encode_state(second.state))),
+                                           json.loads(json.dumps(proc.encode_state(full.state))),
+                                           abs_tol=1e-12, rel_tol=1e-12))
+                expected = json.loads(json.dumps([proc.encode_output(o) for o in full_rec.outputs]))
+                got = json.loads(json.dumps([proc.encode_output(o) for o in rec.outputs[:first.t]])) + ts_outputs \
+                    + json.loads(json.dumps([proc.encode_output(o) for o in rec.outputs[first.t:]]))
+                self.assertEqual(len(got), len(expected))
+                self.assertGreater(len(ts_outputs), 20)
+                self.assertTrue(equivalent(got, expected, abs_tol=1e-12, rel_tol=1e-12))
 
 
 if __name__ == "__main__":

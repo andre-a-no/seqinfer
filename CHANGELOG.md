@@ -28,6 +28,24 @@ property-based tests; a guide to choosing a method.
   `max_sample_size_two_proportions` (rpact's method), `max_events`
   (Schoenfeld).
 
+### Added: stratified survival tests
+- `AnytimeLogRankTest(strata=k, stratum_input="stratum")`: a stratified
+  anytime-valid log-rank test, with numbers at risk per arm and stratum and
+  a common hazard ratio. It is exact under proportional hazards within the
+  strata, whatever each stratum's baseline hazard. Stratifying by centre
+  keeps the level when centres differ in baseline hazard. In simulation,
+  with unequal allocation and hazards of 0.2, 1 and 5, the unstratified
+  test rejects 96% of null trials and the stratified one 2.5%. Stratifying
+  by narrow entry cohorts brings the test back under its level when
+  hazards depend on time since entry (21% → 3.8% of null trials with 25
+  cohorts). With `strata=1`, the default, the identity, configuration,
+  state and conformance vectors are unchanged. Ported to the TypeScript
+  executor.
+- `GroupSequentialLogRank` takes `strata=` too.
+- Corrected numbers in the time-scale caveat of the log-rank test, from
+  new simulations: 21% (not 24%) for Weibull shape 0.3, 14% (not 5%) for
+  shape 0.5.
+
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
   or later): `plot_e_process`, `plot_confidence_sequence`,
