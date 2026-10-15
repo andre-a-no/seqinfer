@@ -1,0 +1,1699 @@
+{
+  "generated_by": "tools/r_reference.R",
+  "versions": {
+    "R": "4.3.3",
+    "rpact": "3.4.0",
+    "survival": "3.5.8"
+  },
+  "designs": [
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [4.33263364604956, 2.96313159912825, 2.35904427617788, 2.01409014314413],
+      "futility_bounds": null,
+      "shift": 10.6994989342262,
+      "inflation": 1.01828001705674,
+      "rejection": [0.00349700623399396, 0.25436725282238, 0.427395978631692, 0.214739762311934],
+      "futility_probabilities": null,
+      "asn1": 0.77729857551837,
+      "asn0": 1.01543341004209
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.36832770352391, 2.36752428859472, 2.3581683114171, 2.35003597289324],
+      "futility_bounds": null,
+      "shift": 9.38965703367935,
+      "inflation": 1.19630537751615,
+      "rejection": [0.20152110362351, 0.250355490668665, 0.205985927972424, 0.1421374776744],
+      "futility_probabilities": null,
+      "asn1": 0.80413846258615,
+      "asn0": 1.18280598571526
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.49770547441237, 2.40716346353292, 2.32084480673075, 2.2448180988431],
+      "futility_bounds": null,
+      "shift": 8.92478245726465,
+      "inflation": 1.13707723386397,
+      "rejection": [0.157692499026479, 0.25069019321728, 0.22960513837449, 0.162012169415004],
+      "futility_probabilities": null,
+      "asn1": 0.794799069620011,
+      "asn0": 1.12641713312765
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.95516684749784, 2.55935015529394, 2.30085531622171, 2.09196685999632],
+      "futility_bounds": null,
+      "shift": 8.2875009445218,
+      "inflation": 1.05588328844602,
+      "rejection": [0.0647892852398867, 0.243730799871923, 0.284527239774108, 0.206952675114083],
+      "futility_probabilities": null,
+      "asn1": 0.800793315607634,
+      "asn0": 1.05010892519374
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.35935371793431, 2.76039702445269, 2.35936341434717, 2.02930066734552],
+      "futility_bounds": null,
+      "shift": 8.06038674456811,
+      "inflation": 1.02694741381925,
+      "rejection": [0.0262012279936251, 0.202616712786271, 0.320039222277006, 0.251142836943098],
+      "futility_probabilities": null,
+      "asn1": 0.820562732317058,
+      "asn0": 1.02333705031927
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [4.33263364604956, 2.96313159912825, 2.35904429107904, 2.01409014314413],
+      "futility_bounds": null,
+      "shift": 10.6994989439936,
+      "inflation": 1.01828001798632,
+      "rejection": [0.0034970062418338, 0.254367253155594, 0.42739597361748, 0.214739766985091],
+      "futility_probabilities": null,
+      "asn1": 0.777298519656587,
+      "asn0": 1.0125868070876
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.36832770352391, 2.36752428859472, 2.35816774517298, 2.3500295355916],
+      "futility_bounds": null,
+      "shift": 9.389693713788,
+      "inflation": 1.19631005080838,
+      "rejection": [0.201521945250895, 0.250356277882186, 0.205986027332753, 0.142135749473172],
+      "futility_probabilities": null,
+      "asn1": 0.804095881381522,
+      "asn0": 1.16931116530332
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.49770547441237, 2.40716346353292, 2.32084452360868, 2.24481400102377],
+      "futility_bounds": null,
+      "shift": 8.92480546936546,
+      "inflation": 1.13708016576019,
+      "rejection": [0.157692963141415, 0.250690763035399, 0.229605267961223, 0.162011005895226],
+      "futility_probabilities": null,
+      "asn1": 0.794770829359736,
+      "asn0": 1.11575991262692
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.95516684749784, 2.55935015529394, 2.30085530132055, 2.09196639806032],
+      "futility_bounds": null,
+      "shift": 8.28750343343508,
+      "inflation": 1.05588360555029,
+      "rejection": [0.0647893125763473, 0.243730879219452, 0.284527274077348, 0.206952534126852],
+      "futility_probabilities": null,
+      "asn1": 0.800787869265775,
+      "asn0": 1.04433487865082
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.35935371793431, 2.76039702445269, 2.35936341434717, 2.02930062264204],
+      "futility_bounds": null,
+      "shift": 8.06038700624569,
+      "inflation": 1.02694744715873,
+      "rejection": [0.026201229394312, 0.202616721237009, 0.320039227740398, 0.251142821628282],
+      "futility_probabilities": null,
+      "asn1": 0.820561454329927,
+      "asn0": 1.0197267229174
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": "obrien-fleming",
+      "critical": [4.33263364604956, 2.96313159912825, 2.35904427617788, 2.01409014314413],
+      "futility_bounds": [-1.40266658268633, 0.324877881910652, 1.29113703081384],
+      "shift": 11.3798364112747,
+      "inflation": 1.08302828816664,
+      "rejection": [0.00407329763313946, 0.277712054913804, 0.433945685635847, 0.18426896181708],
+      "futility_probabilities": [0.00100291665665453, 0.0190063369049429, 0.0375140323663491],
+      "asn1": 0.79057676660079,
+      "asn0": 0.64279334846195
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": "obrien-fleming",
+      "futility_spending": "pocock",
+      "critical": [4.33263364604956, 2.96313159912825, 2.35904427617788, 2.01409014314413],
+      "futility_bounds": [0.123707631317291, 0.892166395206004, 1.48074257792905],
+      "shift": 10.09463139854,
+      "inflation": 1.28612384699472,
+      "rejection": [0.00303448881755131, 0.233684517035915, 0.402069825689376, 0.16121116845069],
+      "futility_probabilities": [0.0714748037985603, 0.0525480972345688, 0.0415748864097443],
+      "asn1": 0.887541906996103,
+      "asn0": 0.532920371517517
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": [
+        "power",
+        2
+      ],
+      "critical": [2.36832770352391, 2.36752428859472, 2.3581683114171, 2.35003597289324],
+      "futility_bounds": [-0.674245289898246, 0.517076334450394, 1.43066391674802],
+      "shift": 9.82392971345804,
+      "inflation": 1.25163463398038,
+      "rejection": [0.211516540613039, 0.259444553396483, 0.206525941740684, 0.122512964235758],
+      "futility_probabilities": [0.0125000000639558, 0.0375000001675911, 0.0625000000897314],
+      "asn1": 0.771330897943676,
+      "asn0": 0.649314809847901
+    },
+    {
+      "alpha": 0.01,
+      "sided": 1,
+      "fractions": [0.25, 0.5, 0.75, 1],
+      "power": 0.9,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": [
+        "power",
+        3
+      ],
+      "critical": [3.22721842596316, 2.86926140636206, 2.64337719231844, 2.4645127132535],
+      "futility_bounds": [-1.08084659899457, 0.385107999201864, 1.47615903383121],
+      "shift": 14.0523055445389,
+      "inflation": 1.07953999237405,
+      "rejection": [0.0880440805362082, 0.33242541603458, 0.31743612869641, 0.162094374730444],
+      "futility_probabilities": [0.00156250001055832, 0.0109374999805274, 0.02968750054995],
+      "asn1": 0.727969117028355,
+      "asn0": 0.611549758348528
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [4.87688494879076, 3.35701192170382, 2.68028006702662, 2.28981677442789, 2.03103206306696],
+      "futility_bounds": null,
+      "shift": 10.7499169157696,
+      "inflation": 1.02307833737264,
+      "rejection": [0.000324097236614529, 0.0993675718193916, 0.346586926756562, 0.299660682513815, 0.154060721673615],
+      "futility_probabilities": null,
+      "asn1": 0.758667086532142,
+      "asn0": 1.01971966251044
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.43797668805001, 2.42681386321783, 2.41019413620234, 2.39664929360151, 2.38599970191717],
+      "futility_bounds": null,
+      "shift": 9.517654379153,
+      "inflation": 1.21261309910265,
+      "rejection": [0.144961255194042, 0.201973026599212, 0.190572518232975, 0.152115746488433, 0.110377453444174],
+      "futility_probabilities": null,
+      "asn1": 0.795710678477091,
+      "asn0": 1.19811094449274
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.5758293035489, 2.49196922034025, 2.41082521528006, 2.33914489299059, 2.27552288025618],
+      "futility_bounds": null,
+      "shift": 9.02430806092797,
+      "inflation": 1.14975746429581,
+      "rejection": [0.108903971939166, 0.190821104294996, 0.203560934076027, 0.171446823713733, 0.125267166046863],
+      "futility_probabilities": null,
+      "asn1": 0.784905410557329,
+      "asn0": 1.13825988743864
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [3.09023230616781, 2.71411157399416, 2.47277721017599, 2.27986339479685, 2.11402835696936],
+      "futility_bounds": null,
+      "shift": 8.34649383708432,
+      "inflation": 1.06339937922064,
+      "rejection": [0.0360711666687219, 0.158250098547994, 0.230634328419236, 0.216604470205867, 0.158439936158181],
+      "futility_probabilities": null,
+      "asn1": 0.787573125745414,
+      "asn0": 1.05701898091274
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.54008379920614, 2.97431064397097, 2.60451420396566, 2.30635679513216, 2.04547994583845],
+      "futility_bounds": null,
+      "shift": 8.10036562395748,
+      "inflation": 1.03204099159627,
+      "rejection": [0.0116870862013855, 0.11058372090684, 0.231634366048687, 0.254114213591232, 0.191980613251855],
+      "futility_probabilities": null,
+      "asn1": 0.805841866870726,
+      "asn0": 1.02791282563218
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [4.87688494879076, 3.35701192170382, 2.68028006702662, 2.28981677442789, 2.0310320481658],
+      "futility_bounds": null,
+      "shift": 10.7499167997153,
+      "inflation": 1.02307832632766,
+      "rejection": [0.000324097227207498, 0.0993675707428957, 0.346586923327973, 0.299660682789803, 0.154060725912119],
+      "futility_probabilities": null,
+      "asn1": 0.758667014706837,
+      "asn0": 1.01636098061879
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.43797668805001, 2.42681386321783, 2.41019383817911, 2.39664540439844, 2.3859845623374],
+      "futility_bounds": null,
+      "shift": 9.51775516885387,
+      "inflation": 1.21262594038755,
+      "rejection": [0.144962919932334, 0.201975059445065, 0.190573612600454, 0.152114982784952, 0.110373425196045],
+      "futility_probabilities": null,
+      "asn1": 0.795646624730379,
+      "asn0": 1.18362132876689
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.5758293035489, 2.49196922034025, 2.41082509607077, 2.33914283663034, 2.27551344782114],
+      "futility_bounds": null,
+      "shift": 9.02436923615895,
+      "inflation": 1.14976525843116,
+      "rejection": [0.108904822040464, 0.190822435350774, 0.203561788024797, 0.171446465172505, 0.125264489482265],
+      "futility_probabilities": null,
+      "asn1": 0.784864310576189,
+      "asn0": 1.1267699533983
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [3.09023230616781, 2.71411157399416, 2.47277719527483, 2.27986327558756, 2.1140274181962],
+      "futility_bounds": null,
+      "shift": 8.34649906962686,
+      "inflation": 1.06340004588171,
+      "rejection": [0.0360711987454835, 0.158250222518231, 0.230634447237113, 0.216604465534385, 0.158439665964787],
+      "futility_probabilities": null,
+      "asn1": 0.787566314291043,
+      "asn0": 1.05063924530661
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.54008379920614, 2.97431064397097, 2.60451420396566, 2.306356780231, 2.04547984153032],
+      "futility_bounds": null,
+      "shift": 8.10036596479786,
+      "inflation": 1.03204103502162,
+      "rejection": [0.0116870870188193, 0.110583727765311, 0.231634375391473, 0.254114218389377, 0.19198059143502],
+      "futility_probabilities": null,
+      "asn1": 0.805840368663549,
+      "asn0": 1.02378470667952
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": "obrien-fleming",
+      "critical": [4.87688494879076, 3.35701192170382, 2.68028006702662, 2.28981677442789, 2.03103206306696],
+      "futility_bounds": [-1.97725228249215, -0.207043725531548, 0.764423065353185, 1.44675322575495],
+      "shift": 11.5515297227104,
+      "inflation": 1.09936848027956,
+      "rejection": [0.000394085429521129, 0.113247468022146, 0.369528594292285, 0.294840031294398, 0.121989820961356],
+      "futility_probabilities": [0.00023506579156443, 0.00906717404106168, 0.0244099946281912, 0.0322026187292804],
+      "asn1": 0.772992284406929,
+      "asn0": 0.621410724865574
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": "obrien-fleming",
+      "futility_spending": "pocock",
+      "critical": [4.87688494879076, 3.35701192170382, 2.68028006702662, 2.28981677442789, 2.03103206306696],
+      "futility_bounds": [-0.126442061118968, 0.581150913145393, 1.1237429655157, 1.57708451291546],
+      "shift": 10.3120706223254,
+      "inflation": 1.3138270646697,
+      "rejection": [0.000290026203768945, 0.0921272173969285, 0.329890450402049, 0.274944862476358, 0.10274744351887],
+      "futility_probabilities": [0.0590789059130548, 0.0455485272205177, 0.0370751803601136, 0.0312653317460151],
+      "asn1": 0.86958418603204,
+      "asn0": 0.508033268209664
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": [
+        "power",
+        2
+      ],
+      "critical": [2.43797668805001, 2.42681386321783, 2.41019413620234, 2.39664929360151, 2.38599970191717],
+      "futility_bounds": [-0.994178649940918, 0.0913459141738713, 0.901121933478862, 1.61103199562058],
+      "shift": 10.0074024522742,
+      "inflation": 1.27501029331342,
+      "rejection": [0.153097241955391, 0.211745056679592, 0.195557574283105, 0.14958022565013, 0.0900199014249304],
+      "futility_probabilities": [0.00799999995424629, 0.0239999998756349, 0.0399999993106561, 0.0560000007303045],
+      "asn1": 0.757784642415321,
+      "asn0": 0.628186490087601
+    },
+    {
+      "alpha": 0.01,
+      "sided": 1,
+      "fractions": [0.2, 0.4, 0.6, 0.8, 1],
+      "power": 0.9,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": [
+        "power",
+        3
+      ],
+      "critical": [3.35279478050483, 3.01007082313299, 2.7968822941184, 2.62934123724699, 2.48744492977858],
+      "futility_bounds": [-1.46964042787365, -0.129806817974895, 0.849383911583573, 1.67896296037361],
+      "shift": 14.2174706258454,
+      "inflation": 1.0922284661657,
+      "rejection": [0.0478041028944101, 0.224270830051917, 0.291563120473749, 0.221368291597803, 0.114993654977586],
+      "futility_probabilities": [0.000800000008689571, 0.00560000008700236, 0.0152000003221684, 0.0296000003459524],
+      "asn1": 0.710271052149365,
+      "asn0": 0.590202894300141
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [3.92857254262661, 2.43874237686396, 2.00000857561827],
+      "futility_bounds": null,
+      "shift": 10.6534367061052,
+      "inflation": 1.01389623733724,
+      "rejection": [0.0161439607593261, 0.598851523539184, 0.285004515701489],
+      "futility_probabilities": null,
+      "asn1": 0.820286433657709,
+      "asn0": 1.01163277674772
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.31183530380578, 2.25834635645151, 2.30618288367987],
+      "futility_bounds": null,
+      "shift": 9.19500757305444,
+      "inflation": 1.17150572874933,
+      "rejection": [0.257535716565446, 0.37507347398795, 0.167390809343139],
+      "futility_probabilities": null,
+      "asn1": 0.828492313431839,
+      "asn0": 1.1596965837589
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.43237905858445, 2.25320955365896, 2.2089948579669],
+      "futility_bounds": null,
+      "shift": 8.77978199275799,
+      "inflation": 1.11860320070073,
+      "rejection": [0.209131352980739, 0.39739396139933, 0.193474685619935],
+      "futility_probabilities": null,
+      "asn1": 0.821490851882864,
+      "asn0": 1.10937472319244
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.84080371786319, 2.29572067409754, 2.06904078274965],
+      "futility_bounds": null,
+      "shift": 8.21163859284113,
+      "inflation": 1.0462179152656,
+      "rejection": [0.10181944868988, 0.444720190322295, 0.253460360987825],
+      "futility_probabilities": null,
+      "asn1": 0.832067913177036,
+      "asn0": 1.04143146731276
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.20513318018478, 2.40019235759974, 2.01430470496416],
+      "futility_bounds": null,
+      "shift": 8.01644600673084,
+      "inflation": 1.0213490686637,
+      "rejection": [0.0490283841436393, 0.440750139004685, 0.310221476851676],
+      "futility_probabilities": null,
+      "asn1": 0.851248578323577,
+      "asn0": 1.01844588291589
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [3.92857254262661, 2.43874237686396, 2.00000857561827],
+      "futility_bounds": null,
+      "shift": 10.6534367083025,
+      "inflation": 1.01389623754636,
+      "rejection": [0.0161439607667626, 0.59885152364088, 0.285004515592357],
+      "futility_probabilities": null,
+      "asn1": 0.820286395311739,
+      "asn0": 1.00936931836764
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.31183530380578, 2.25834631174803, 2.30618030577898],
+      "futility_bounds": null,
+      "shift": 9.19502026649862,
+      "inflation": 1.17150734597938,
+      "rejection": [0.257536086587704, 0.375073742605647, 0.167390170703188],
+      "futility_probabilities": null,
+      "asn1": 0.828463689562437,
+      "asn0": 1.14788902569425
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.43237905858445, 2.2532095387578, 2.20899317413568],
+      "futility_bounds": null,
+      "shift": 8.77979010378113,
+      "inflation": 1.11860423409956,
+      "rejection": [0.209131568507646, 0.397394175228844, 0.193474256263515],
+      "futility_probabilities": null,
+      "asn1": 0.82147144954335,
+      "asn0": 1.10014726430062
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.84080371786319, 2.29572067409754, 2.0690405741334],
+      "futility_bounds": null,
+      "shift": 8.21163966747834,
+      "inflation": 1.0462180521816,
+      "rejection": [0.101819466952363, 0.444720233560597, 0.253460299487039],
+      "futility_probabilities": null,
+      "asn1": 0.832063819442834,
+      "asn0": 1.03664515707921
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [3.20513318018478, 2.40019235759974, 2.01430467516184],
+      "futility_bounds": null,
+      "shift": 8.01644609721569,
+      "inflation": 1.02134908019208,
+      "rejection": [0.049028385032272, 0.440750143439843, 0.310221471527885],
+      "futility_probabilities": null,
+      "asn1": 0.851247604236664,
+      "asn0": 1.01554271063163
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": "obrien-fleming",
+      "critical": [3.92857254262661, 2.43874237686396, 2.00000857561827],
+      "futility_bounds": [-0.952351466522369, 1.13992498768494],
+      "shift": 11.2008873947297,
+      "inflation": 1.06599756469633,
+      "rejection": [0.0180646318739489, 0.623083474369848, 0.258851893756155],
+      "futility_probabilities": [0.00267263821331082, 0.0466287322251219],
+      "asn1": 0.836349974725006,
+      "asn0": 0.711584349516212
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": "obrien-fleming",
+      "futility_spending": "pocock",
+      "critical": [3.92857254262661, 2.43874237686396, 2.00000857561827],
+      "futility_bounds": [0.331272936625741, 1.42859352426603],
+      "shift": 9.809608451782,
+      "inflation": 1.24981000904526,
+      "rejection": [0.0134457426136396, 0.550512009963244, 0.236042247405095],
+      "futility_probabilities": [0.0831470441116322, 0.0747985647809624],
+      "asn1": 0.930848342366542,
+      "asn0": 0.582299755713845
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": [
+        "power",
+        2
+      ],
+      "critical": [2.31183530380578, 2.25834635645151, 2.30618288367987],
+      "futility_bounds": [-0.403899516976506, 1.26129310438409],
+      "shift": 9.55447834595644,
+      "inflation": 1.2173047198243,
+      "rejection": [0.26802162536024, 0.381653465108406, 0.150324909496003],
+      "futility_probabilities": [0.0180000001001464, 0.0799999999079398],
+      "asn1": 0.804990005006685,
+      "asn0": 0.710657856639033
+    },
+    {
+      "alpha": 0.01,
+      "sided": 1,
+      "fractions": [0.3, 0.7, 1],
+      "power": 0.9,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": [
+        "power",
+        3
+      ],
+      "critical": [3.12138914935986, 2.63001901656389, 2.44088164716959],
+      "futility_bounds": [-0.742928848222305, 1.27945016277954],
+      "shift": 13.8614158417542,
+      "inflation": 1.06487527649271,
+      "rejection": [0.139589043477516, 0.550371409411482, 0.21003954711004],
+      "futility_probabilities": [0.00270000000829403, 0.0315999998900767],
+      "asn1": 0.772893127708773,
+      "asn0": 0.677849428373375
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [2.96258804272755, 1.96859564632177],
+      "futility_bounds": null,
+      "shift": 10.5433367858427,
+      "inflation": 1.00341793836529,
+      "rejection": [0.252521299438152, 0.647478700561848],
+      "futility_probabilities": null,
+      "asn1": 0.876725737032535,
+      "asn0": 1.00265266976173
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.15699921834468, 2.20097697526217],
+      "futility_bounds": null,
+      "shift": 8.8107617109769,
+      "inflation": 1.12255022489621,
+      "rejection": [0.476834764872307, 0.323165235127698],
+      "futility_probabilities": null,
+      "asn1": 0.854914738069596,
+      "asn0": 1.11384885335187
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.24140272760494, 2.12511879950762],
+      "futility_bounds": null,
+      "shift": 8.49476036347813,
+      "inflation": 1.08228953060683,
+      "rejection": [0.428385752936147, 0.371614247063862],
+      "futility_probabilities": null,
+      "asn1": 0.850470822340985,
+      "asn0": 1.07552522050665
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.49770547441237, 2.01831025630236],
+      "futility_bounds": null,
+      "shift": 8.06521513637277,
+      "inflation": 1.02756258336804,
+      "rejection": [0.312219059346804, 0.487780940653196],
+      "futility_probabilities": null,
+      "asn1": 0.867150271261575,
+      "asn0": 1.02435144978812
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [2.73436878653318, 1.98252899199724],
+      "futility_bounds": null,
+      "shift": 7.92878696588476,
+      "inflation": 1.01018071804387,
+      "rejection": [0.228652967185966, 0.571347032814034],
+      "futility_probabilities": null,
+      "asn1": 0.894690308258166,
+      "asn0": 1.00860231017361
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.5, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": null,
+      "critical": [2.96258804272755, 1.96859564632177],
+      "futility_bounds": null,
+      "shift": 10.5433367862502,
+      "inflation": 1.00341793840407,
+      "rejection": [0.252521299452327, 0.647478700547673],
+      "futility_probabilities": null,
+      "asn1": 0.876725701141086,
+      "asn0": 1.00188740218685
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": null,
+      "critical": [2.15699921834468, 2.200976960361],
+      "futility_bounds": null,
+      "shift": 8.81076173063676,
+      "inflation": 1.12255022740101,
+      "rejection": [0.476834765804929, 0.323165234195076],
+      "futility_probabilities": null,
+      "asn1": 0.854908896837149,
+      "asn0": 1.10514748538099
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        1
+      ],
+      "futility_spending": null,
+      "critical": [2.24140272760494, 2.12511878460646],
+      "futility_bounds": null,
+      "shift": 8.49476035802913,
+      "inflation": 1.08228952991259,
+      "rejection": [0.42838575267671, 0.3716142473233],
+      "futility_probabilities": null,
+      "asn1": 0.850466249284146,
+      "asn0": 1.06876091078868
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": null,
+      "critical": [2.49770547441237, 2.01831025630236],
+      "futility_bounds": null,
+      "shift": 8.06521515230029,
+      "inflation": 1.02756258539731,
+      "rejection": [0.312219060048518, 0.487780939951483],
+      "futility_probabilities": null,
+      "asn1": 0.867148574800088,
+      "asn0": 1.02114031923858
+    },
+    {
+      "alpha": 0.05,
+      "sided": 2,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": [
+        "power",
+        3
+      ],
+      "futility_spending": null,
+      "critical": [2.73436878653318, 1.98252899199724],
+      "futility_bounds": null,
+      "shift": 7.92878696847969,
+      "inflation": 1.01018071837448,
+      "rejection": [0.228652967284575, 0.571347032715425],
+      "futility_probabilities": null,
+      "asn1": 0.894689729131958,
+      "asn0": 1.00702390362956
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.9,
+      "spending": "obrien-fleming",
+      "futility_spending": "obrien-fleming",
+      "critical": [2.96258804272755, 1.96859564632177],
+      "futility_bounds": [0.267025013754386],
+      "shift": 10.7702094626876,
+      "inflation": 1.02500959556976,
+      "rejection": [0.260434903441267, 0.639565096558732],
+      "futility_probabilities": [0.0200092536188305],
+      "asn1": 0.881280619565726,
+      "asn0": 0.714021493728959
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": "obrien-fleming",
+      "futility_spending": "pocock",
+      "critical": [2.96258804272755, 1.96859564632177],
+      "futility_bounds": [0.984538357938961],
+      "shift": 9.15618144744459,
+      "inflation": 1.166559019547,
+      "rejection": [0.205270856346511, 0.594729143755132],
+      "futility_probabilities": [0.124022900994903],
+      "asn1": 0.974488718193426,
+      "asn0": 0.677129251604845
+    },
+    {
+      "alpha": 0.025,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.8,
+      "spending": "pocock",
+      "futility_spending": [
+        "power",
+        2
+      ],
+      "critical": [2.15699921834468, 2.20097697526217],
+      "futility_bounds": [0.479227954139523],
+      "shift": 9.02344511204633,
+      "inflation": 1.14964751881176,
+      "rejection": [0.486870133294359, 0.3131298667743],
+      "futility_probabilities": [0.0500000001725382],
+      "asn1": 0.841041810379581,
+      "asn0": 0.747492408265913
+    },
+    {
+      "alpha": 0.01,
+      "sided": 1,
+      "fractions": [0.5, 1],
+      "power": 0.9,
+      "spending": [
+        "power",
+        2
+      ],
+      "futility_spending": [
+        "power",
+        3
+      ],
+      "critical": [2.8070337683438, 2.38728079944849],
+      "futility_bounds": [0.353772143899263],
+      "shift": 13.4698652020093,
+      "inflation": 1.0347951893992,
+      "rejection": [0.416108558161127, 0.483891441838782],
+      "futility_probabilities": [0.0125000000790655],
+      "asn1": 0.813034152298064,
+      "asn0": 0.703275177329895
+    }
+  ],
+  "realised": [
+    {
+      "alpha": 0.025,
+      "spending": "obrien-fleming",
+      "fractions": [0.3, 0.62, 1],
+      "critical": [3.92857254262661, 2.61942594498396, 1.9842941686511]
+    },
+    {
+      "alpha": 0.025,
+      "spending": "obrien-fleming",
+      "fractions": [0.18, 0.45, 0.8, 1],
+      "critical": [5.15463931127279, 3.14379391819239, 2.25919345766306, 2.02663926035166]
+    },
+    {
+      "alpha": 0.025,
+      "spending": "obrien-fleming",
+      "fractions": [0.3, 0.6, 0.9],
+      "critical": [3.92857254262661, 2.66997200995684, 1.97545396536589]
+    },
+    {
+      "alpha": 0.025,
+      "spending": "obrien-fleming",
+      "fractions": [0.35, 0.7, 1.12],
+      "critical": [3.61278873643243, 2.44057569652796, 2.01335179060698]
+    },
+    {
+      "alpha": 0.025,
+      "spending": "obrien-fleming",
+      "fractions": [0.5, 0.95],
+      "critical": [2.96258804272755, 1.96770120412111]
+    }
+  ],
+  "sample_sizes": [
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.5,
+      "n": 593.804202577706
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.5,
+      "n": 7779.98081294511
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.5,
+      "n": 342.955357400162
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.5,
+      "n": 249.944699319701
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.5,
+      "n": 66.1817447279618
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.5,
+      "n": 461.933832539479
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.5,
+      "n": 794.930468022857
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.666666666666667,
+      "n": 678.879908781692
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.666666666666667,
+      "n": 8843.25689190038
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.666666666666667,
+      "n": 387.466365738957
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.666666666666667,
+      "n": 281.187786734663
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.666666666666667,
+      "n": 74.454462818957
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.666666666666667,
+      "n": 519.675561606914
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.666666666666667,
+      "n": 894.296776525714
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.333333333333333,
+      "n": 655.230519650369
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.333333333333333,
+      "n": 8657.71231982963
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.333333333333333,
+      "n": 382.758481657382
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.333333333333333,
+      "n": 281.187786734663
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.333333333333333,
+      "n": 74.454462818957
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.333333333333333,
+      "n": 519.675561606914
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.333333333333333,
+      "n": 894.296776525714
+    },
+    {
+      "design": {
+        "alpha": 0.025,
+        "sided": 1,
+        "fractions": [0.333333333333333, 0.666666666666667, 1],
+        "spending": "obrien-fleming",
+        "power": 0.8
+      },
+      "kind": "mean",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "n": 198.732617005714
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.5,
+      "n": 923.107942448785
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.5,
+      "n": 12108.7284171685
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.5,
+      "n": 532.649123165639
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.5,
+      "n": 389.050592670064
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.5,
+      "n": 103.014975234256
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.5,
+      "n": 719.021574824305
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.5,
+      "n": 1237.34638325017
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.666666666666667,
+      "n": 1046.64516446063
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.666666666666667,
+      "n": 13694.7529513553
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.666666666666667,
+      "n": 600.160859811362
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.666666666666667,
+      "n": 437.681916753822
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.666666666666667,
+      "n": 115.891847138538
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.666666666666667,
+      "n": 808.899271677343
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.666666666666667,
+      "n": 1392.01468115645
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.3,
+      "p_control": 0.2,
+      "allocation": 0.333333333333333,
+      "n": 1027.48812740219
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.12,
+      "p_control": 0.1,
+      "allocation": 0.333333333333333,
+      "n": 13543.4171092757
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "rates",
+      "p_treatment": 0.5,
+      "p_control": 0.65,
+      "allocation": 0.333333333333333,
+      "n": 596.368392062541
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.7,
+      "allocation": 0.333333333333333,
+      "n": 437.681916753822
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 0.5,
+      "allocation": 0.333333333333333,
+      "n": 115.891847138538
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "events",
+      "hazard_ratio": 1.3,
+      "allocation": 0.333333333333333,
+      "n": 808.899271677343
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "two_means",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "allocation": 0.333333333333333,
+      "n": 1392.01468115645
+    },
+    {
+      "design": {
+        "alpha": 0.05,
+        "sided": 2,
+        "fractions": [0.25, 0.5, 0.75, 1],
+        "spending": "pocock",
+        "power": 0.9
+      },
+      "kind": "mean",
+      "effect": 0.3,
+      "sigma": 1.5,
+      "n": 309.336595812544
+    }
+  ],
+  "logrank": {
+    "arm": [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    "entry": [4.38777392730117, 2.60449852701277, 7.78801204729825, 5.7565292660147, 0.451470986008644, 11.2717976449057, 11.9423694144934, 1.20324939675629, 6.84451990574598, 2.81878643855453, 4.3047385532409, 3.40497363545001, 9.91363358683884, 6.59545177593827, 4.6061786133796, 10.3601291645318, 10.4383244281635, 4.16601862572134, 2.2739414004609, 10.6166390553117, 4.1182155450806, 6.07912053633481, 8.28304666187614, 4.43088876921684, 0.202230535447598, 9.83618350513279, 4.78761750552803, 11.2157543292269, 2.46630116924644, 3.66852460429072, 4.05792588740587, 0.963888583704829, 5.77530304435641, 3.40875166933984, 10.9499665237963, 4.97580680251122, 11.2850160039961, 10.3741912320256, 3.51104477327317, 7.65162782650441, 6.91635805461556, 11.3714441796765, 9.96823603380471, 7.37743889261037, 6.79105446394533, 11.9217348927632, 11.4777338197455, 10.5188873419538, 7.66573038697243, 0.00416861101984978, 5.7333306139335, 11.6376051502302, 8.7818856574595, 6.33674588240683, 0.0817052638158202, 2.7377229211852, 2.7800706513226, 0.433540161699057, 7.71991404332221, 7.67439627461135, 8.94531997293234, 1.93511043861508, 4.10314070340246, 3.23561012651771, 4.42559302132577, 7.69832698814571, 7.31211339868605, 8.42012747470289, 7.42224923148751, 10.8317052014172, 0.183586156927049, 11.9739170651883, 6.89269905164838, 5.29745859280229, 2.2600631704554, 1.73933320585638, 10.0171224838123, 0.813352388329804, 10.3792833471671, 7.08999313507229, 3.61179593671113, 3.65854266565293, 4.5447495393455, 7.55938487593085, 8.68138993531466, 10.3752488521859, 10.2337264409289, 11.4466152247041, 10.4267920497805, 0.152362519875169, 5.96985961776227, 5.12564599514008, 10.9651266122237, 8.74831237737089, 2.43367269169539, 5.79380794800818, 11.3787156455219, 6.85649356618524, 6.71873576380312, 10.6289159310982, 6.02056455239654, 10.867207464762, 8.28385598212481, 6.81229123100638, 8.31168508529663, 0.271490757353604, 1.16114957537502, 10.4527720324695, 7.36231655348092, 3.23892270494252, 7.01608914602548, 1.18744806200266, 9.79531382862478, 3.40246522519737, 5.80882068257779, 3.50416340958327, 4.69779327046126, 2.75245694071054, 11.0365881733596, 11.5574846137315, 3.89231354836375, 4.82779973186553, 6.6902524670586, 9.27537742629647, 2.22137121018022, 9.85279728379101, 7.9121358236298, 2.18838124070317, 5.71804120112211, 11.1815487015992, 6.89142664521933, 3.62164632976055, 1.16819813847542, 8.16636771988124, 10.3372283969074, 11.257886884734, 1.51527924556285, 8.01803798787296, 4.99377095885575, 0.321358124725521, 11.0767746688798, 3.06227509025484, 4.72913032025099, 8.72318404354155, 1.30398756545037, 3.44504480157048, 8.41559221688658, 4.90551937837154, 3.70526351127774, 10.9474071348086, 6.82723040599376, 2.55689799785614, 1.39090300910175, 3.25869551952928, 9.06558916624635, 4.36577280331403, 0.778913975693285, 10.7285747565329, 8.3479522112757, 4.84780883509666, 5.60232613887638, 9.68087438866496, 7.44366815406829, 6.48331362940371, 0.168631645850837, 9.83011055644602, 9.7236166158691, 7.42782411910594, 10.1240415098146, 7.25494072772563, 10.6374734351411, 2.27902725711465, 6.20970026962459, 5.79827102646232, 11.8623453117907, 9.1086889654398, 11.1877134852111, 4.90696766506881, 3.48873906768858, 4.70753992907703, 8.61357141472399, 7.57864631339908, 5.35576555877924, 10.5410617422312, 9.57642270158976, 1.04715124424547, 2.68031695950776, 5.54503349214792, 9.44218642730266, 10.3005734514445, 0.425689400173724, 0.830097234807909, 4.42223412171006, 8.51683190837502, 11.4535810528323, 9.72601985558867, 1.78610714245588, 4.85162591468543, 8.99657270126045, 1.59870600700378, 2.08909795805812, 3.78128882870078, 9.50776994414628, 7.70296109933406, 4.05934659205377, 10.6285168044269, 4.12102942541242, 11.49226448033, 8.76714848633856, 2.8909173393622, 6.73403940908611, 4.13612659927458, 8.90393613651395, 5.60729515738785, 6.60505261737853, 4.29127596784383, 0.333972154185176, 5.98211818747222, 11.238297614269, 2.90321212727576, 0.467408730648458, 3.50528375152498, 9.57950408197939, 8.00878069829196, 1.74663191847503, 4.4974133418873, 8.23926086816937, 4.8679648982361, 8.89060637354851, 11.4256925527006, 3.76824119500816, 7.77152417600155, 7.34801461268216, 8.7597835958004, 7.70958704687655, 0.197571658529341, 2.68120242655277, 9.71359078399837, 5.70580968540162, 11.2573280883953],
+    "exit": [11.6894743639656, 5.03495106380433, 19.8441324177413, 30.0728343549165, 29.950323401589, 22.907504898496, 23.2428630474221, 21.6137516067629, 8.19692102101307, 3.00644575804472, 33.0959556864249, 15.6169696263969, 12.8616265472598, 11.1459922604263, 22.945723921777, 23.0802133083344, 36, 13.4030275650622, 34.7539950601296, 12.588569926098, 24.917637529783, 36, 36, 9.34074597627399, 27.4272790876401, 36, 5.36411325726658, 16.5902014924213, 13.2231757343397, 24.8518352760913, 19.218742594696, 28.4339942830595, 13.5353075573221, 36, 35.8763322960585, 9.34024786762893, 12.8554106749372, 18.4195654056966, 36, 36, 22.3374688617455, 16.8877691606551, 36, 14.4204311564413, 11.121181265451, 31.6068041098069, 27.3105645989999, 36, 36, 4.00488302205631, 36, 32.9982601026697, 36, 23.5177980559858, 12.47436259995, 17.7346720690135, 9.86456225669155, 0.534212583675981, 8.03202597123499, 12.5580332744867, 36, 36, 24.2484534000978, 35.8606163386216, 18.8179195597528, 7.7132212575525, 24.308342523443, 14.187317102502, 19.8249387349933, 19.2204872891307, 36, 15.3858887497336, 15.9320365059035, 20.159489597285, 4.93719777400311, 8.2335404669866, 36, 24.4333440029042, 36, 24.7032594867962, 4.38220056757935, 33.4123304795434, 11.6921112643412, 27.0808610180393, 36, 31.1329292003977, 36, 27.2979323278161, 10.6789404298537, 22.4825520195257, 36, 31.0365170790794, 20.3805542966489, 24.3287439355627, 35.9764989512041, 32.6691827299985, 36, 7.51942488737906, 10.4340102467686, 22.0778130013763, 36, 19.5521209994331, 19.2362177001605, 35.4259436852288, 28.0069382432848, 8.33005131598574, 30.6273461248552, 28.6115300450474, 11.2561665092093, 6.66662623771793, 14.3275660602029, 4.35195762477815, 36, 22.2669604858384, 36, 5.04466411750764, 14.3186914157839, 5.55341736041009, 22.2116024334247, 12.600717486567, 7.52825936424331, 8.70571988634765, 36, 13.8666515015066, 36, 13.3469791775569, 28.3992547372069, 3.89676103725687, 5.72024654432272, 12.6528408639133, 13.457248221658, 15.5072423312813, 19.9090773413163, 15.3551831850782, 11.9195475482964, 12.6963821966201, 33.9433841416612, 36, 36, 10.3552493816242, 13.5895437772504, 9.98796111997217, 21.1885117871028, 12.7866347283125, 15.406898537239, 8.72450078601341, 15.311718944272, 15.0503443041816, 19.8817094797269, 36, 36, 12.7525393478572, 14.4178008046001, 8.29930141661316, 36, 15.8699619611725, 36, 11.4475156948664, 36, 11.1755404071882, 11.1209509271699, 36, 13.5772950885932, 10.3353854448227, 31.5274287451941, 13.1823948575184, 33.1885280456507, 18.9287902954966, 21.0640056942815, 28.3605864542517, 11.577453870971, 8.65035132877529, 28.8188266046345, 11.0038088522851, 36, 36, 36, 15.3858965458348, 35.3016136380312, 28.5693905587288, 36, 10.2480305042118, 25.6855653341, 10.5878497213125, 23.1889613780121, 7.96764966693256, 16.9692309312212, 36, 17.7159988823562, 36, 2.54277017175292, 7.42492314334959, 36, 18.6218600887805, 13.8201429141363, 10.4514286600323, 19.2294125397188, 10.5417674361613, 12.1077899008703, 3.9238623312775, 13.0800661649555, 13.8175632935017, 11.1765134539455, 8.67457204591483, 6.32448965697907, 36, 22.9333994541673, 27.037166585094, 15.3154137667093, 36, 20.3360703884122, 36, 36, 8.95593045279384, 36, 14.6375290444121, 14.92741603366, 19.0735873617232, 22.2923783103291, 21.4132989518436, 0.493216266640677, 29.1265736409443, 13.66221258689, 24.1007257011699, 15.6334665278689, 8.75658301170915, 36, 21.5548980311471, 21.7663940393879, 36, 19.6649666170457, 17.3615026790649, 36, 11.2296751596048, 27.7421495459891, 10.2948150718585, 31.0517589471344, 36, 34.4077881416306, 17.5124294077978],
+    "status": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1],
+    "analyses": [
+      {
+        "events": 30,
+        "score": -6.42100249376134,
+        "score_chisq": 5.52445318050798,
+        "log_hazard_ratio": -0.906999725878141
+      },
+      {
+        "events": 60,
+        "score": -12.3304541583828,
+        "score_chisq": 10.2471843990115,
+        "log_hazard_ratio": -0.852756565001662
+      },
+      {
+        "events": 90,
+        "score": -15.2306326921994,
+        "score_chisq": 10.4429727765258,
+        "log_hazard_ratio": -0.690206793861896
+      },
+      {
+        "events": 149,
+        "score": -21.0525550992627,
+        "score_chisq": 12.2310314540819,
+        "log_hazard_ratio": -0.573203161869698
+      }
+    ]
+  },
+  "proportions": [
+    {
+      "successes_treatment": 48,
+      "n_treatment": 400,
+      "successes_control": 31,
+      "n_control": 400,
+      "chisq": 4.05906002563247
+    },
+    {
+      "successes_treatment": 12,
+      "n_treatment": 90,
+      "successes_control": 25,
+      "n_control": 110,
+      "chisq": 2.89715259040412
+    },
+    {
+      "successes_treatment": 150,
+      "n_treatment": 1000,
+      "successes_control": 120,
+      "n_control": 1000,
+      "chisq": 3.85356454720617
+    }
+  ]
+}

@@ -9,7 +9,12 @@ from .cusum import CUSUM
 from .edetector import MeanEDetector, QuantileEDetector
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
-from .group_sequential import GroupSequentialTest
+from .group_sequential import (
+    GroupSequentialLogRank,
+    GroupSequentialMonitor,
+    GroupSequentialProportions,
+    GroupSequentialTest,
+)
 from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
 from .kalman import LocalLevelKalman
 from .linear_model import AnytimeLinearModel
@@ -59,6 +64,9 @@ __all__ = [
     "Family",
     "Gaussian",
     "GaussianEmission",
+    "GroupSequentialLogRank",
+    "GroupSequentialMonitor",
+    "GroupSequentialProportions",
     "GroupSequentialTest",
     "HiddenMarkovFilter",
     "KalmanFilter",
