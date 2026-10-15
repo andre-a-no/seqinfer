@@ -61,6 +61,7 @@ Paper = "https://github.com/andre-a-no/sequential-analysis/blob/main/paper/main.
 [project.optional-dependencies]
 fast = ["numpy>=1.22"]  # optimal designs, particle filters, kernel and betting procedures as array operations
 plot = ["matplotlib>=3.3"]  # sequential_analysis.plotting (3.3 is the oldest with Python 3.8, and tested)
+test = ["hypothesis"]  # the property-based tests (tests/test_properties.py); skipped without it
 
 [tool.setuptools.dynamic]
 version = { attr = "sequential_analysis.version.__version__" }  # the one place the version is written

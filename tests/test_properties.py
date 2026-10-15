@@ -21,9 +21,9 @@ included, and shrinks a failure to a minimal example.
 * SplitMix64 against the specification, the t distribution, Neumaier
   summation, logsumexp and e-BH.
 
-Bugs found this way and not fixed yet are expected failures with a minimal
-reproduction (KnownBugs, at the end); the generators keep away from them
-(`_AVOID`, `_HUGE_INTEGER`) until they are fixed.
+Defects found this way are kept as minimal reproductions (Regressions, at
+the end).  A defect found later and not fixed yet belongs there as an
+expected failure, and the generators keep away from it until it is fixed.
 
 hypothesis is a test dependency only (``pip install hypothesis``); without
 it this module is skipped.  The examples are chosen by a profile:
@@ -44,6 +44,7 @@ import logging
 import math
 import os
 import struct
+import tempfile
 import unittest
 from decimal import Decimal
 from fractions import Fraction
@@ -153,17 +154,11 @@ def _reals(lower, upper):
     return st.one_of(st.sampled_from([b for b in (lower, upper) if b is not None]), st.floats(lo, hi), near)
 
 
-#: The largest integer input generated.  2**53 is valid, but a procedure that sums such counts commits a
-#: state no checkpoint can hold (KnownBugs); raise it to 2**53
-#: when that is fixed.
-_HUGE_INTEGER = 2**40
-
-
 def _integers(lower, upper):
     lo = -20 if lower is None else math.ceil(lower)
     hi = lo + 40 if upper is None else math.floor(upper)
     typical = st.integers(lo, hi)
-    edges = st.sampled_from([v for v in (lo, hi, _HUGE_INTEGER, -_HUGE_INTEGER) if (lower is None or v >= lower)
+    edges = st.sampled_from([v for v in (lo, hi, 2**53, -(2**53)) if (lower is None or v >= lower)
                              and (upper is None or v <= upper)])
     numbers = st.one_of(typical, typical, edges)
     return st.one_of(numbers, numbers.map(float))  # 3.0 is an integer value too
@@ -190,16 +185,9 @@ def _contract(procedure, name: str) -> InputContract:
     return procedure.inputs().get(name) or InputContract(name)
 
 
-#: Valid values left out because they hit a known bug -- (procedure, input): keep the value if true.
-#: Information below about 1e-4 of max_information makes GroupSequentialMonitor's integration grid
-#: explode (KnownBugs): a hang, or all memory.  Remove when fixed.
-#: Covariates below about 1e-154 make AnytimeLinearModel write a state its decode_state refuses
-#: (KnownBugs).
-_AVOID = {
-    ("group_sequential_monitor", "information"): lambda v: v == 0 or v >= 0.01,
-    ("anytime_linear_model", "x"): lambda v: v == 0 or abs(v) >= 1e-100,
-    ("anytime_linear_model", "z"): lambda v: v == 0 or abs(v) >= 1e-100,
-}
+#: Valid values left out because they hit a known, not yet fixed defect (an expected failure in
+#: Regressions) -- {(procedure name, input name): keep the value if true}.  Empty: none is open.
+_AVOID: dict = {}
 
 
 def _generated_history(data, case, *, moderate: bool = False):
@@ -424,8 +412,7 @@ def _check_outputs(test: unittest.TestCase, case, data) -> None:
             lower, upper = _number_or(out["lower"], -math.inf), _number_or(out["upper"], math.inf)
             if procedure.name not in _INTERSECTED:  # an intersection may become empty: data against the model
                 test.assertLessEqual(lower, upper, out)
-            elif previous is not None and not (procedure.name == "rate_ratio_test" and out["lower"] is None
-                                               and out["upper"] is None):  # KnownBugs: an exhausted grid
+            elif previous is not None:
                 test.assertGreaterEqual(lower, _number_or(previous["lower"], -math.inf))
                 test.assertLessEqual(upper, _number_or(previous["upper"], math.inf))
         if previous is not None and previous.get("decision") is not None:
@@ -755,8 +742,8 @@ class DeliveryProperties(unittest.TestCase):
 
         The model: the position is the first number neither delivered nor inside a declared range that
         the position has reached; an observation is delivered if it is at or beyond the position and not
-        delivered before; `ahead` is what was delivered beyond the position.  A range declared from the
-        position never covers a number delivered ahead here (that is in KnownBugs).
+        delivered before; `ahead` is what was delivered beyond the position.  Ranges may cover numbers
+        already delivered.
         """
         delivery = Delivery()
         delivered: set = set()
@@ -785,8 +772,6 @@ class DeliveryProperties(unittest.TestCase):
             else:
                 first = data.draw(st.integers(0, 30), label="first")
                 stop = data.draw(st.integers(first, 32), label="stop")
-                if first <= p and any(p < d < stop for d in delivered):
-                    continue
                 delivery.skip_range("x", first, stop)
                 gaps.append((first, stop))
             p = position()
@@ -1081,147 +1066,118 @@ class EBH(unittest.TestCase):
             self.assertLessEqual(set(rejected), set(e_bh(log_e, alpha * factor)))
 
 
-# ------------------------------------------------------------------------------------------------- known bugs
+# -------------------------------------------------------------------------------------------- regressions
 
 
-class KnownBugs(unittest.TestCase):
-    """Bugs these properties found, each reduced to a minimal reproduction; expected to fail until fixed.
+class Regressions(unittest.TestCase):
+    """Defects these properties found (fixed in 0.4.0), each as its minimal reproduction."""
 
-    When one is fixed, remove its expectedFailure (an unexpected success fails the run as a reminder)
-    and the matching restriction of the generators (`_AVOID`, `_HUGE_INTEGER`).
-    """
+    def test_a_count_beyond_2_53_fails_the_step_and_commits_nothing(self):
+        """RateRatioTest sums integer counts, valid up to 2**53 each; two of them made a count of 2**54.
 
-    @unittest.expectedFailure
-    def test_a_count_beyond_2_53_fails_the_step_not_the_checkpoint(self):
-        """Bug: a step commits a state that no checkpoint can hold; the failure comes later, at checkpoint().
-
-        Found by CheckpointAtAnySplit.test_rate_ratio_test (explore profile).  Counts are integer
-        inputs, valid up to 2**53 (SPEC 3), and RateRatioTest adds them up in its state: two units with
-        2**53 events give a count of 2**54.  checked_step only refuses non-finite numbers (SPEC 6, step
-        5), so the step is committed and the run goes on -- but canonical JSON refuses integers beyond
-        2**53, so run.checkpoint() raises NumericalError from then on, and the state that was committed
-        cannot be decoded exactly either (decode_fields reads integers through float).  Any procedure
-        that sums integer inputs into an int field can do this.  Suggested fix: in checked_step, treat
-        an integer beyond 2**53 in the new state or output like a non-finite number (a numerical
-        failure, nothing committed), and say so in SPEC 6, step 5.
+        The step was committed, and the run could no longer be checkpointed (canonical JSON refuses
+        integers beyond 2**53).  Now such a state is a numerical failure of the step, like a non-finite
+        one: nothing is committed, and an earlier checkpoint restores the run.
         """
         from sequential_analysis.procedures import RateRatioTest
 
         run = Run(RateRatioTest(grid=10), run_id="r", clock=fixed_clock)
-        with _quiet(), self.assertRaises(NumericalError):  # the second step should fail, nothing committed
-            for _ in range(2):
-                run.step({"arm": 1, "count": 2**53, "exposure": 1.0})
-        run.checkpoint()
+        run.step({"arm": 1, "count": 2**53, "exposure": 1.0})
+        checkpoint = json.loads(json.dumps(run.checkpoint()))
+        with _quiet(), self.assertRaises(NumericalError):
+            run.step({"arm": 1, "count": 2**53, "exposure": 1.0})
+        self.assertEqual(run.t, 1)
+        self.assertEqual(list(run.procedure.encode_state(run.state)["counts"]), [2**53, 0])
+        restored = Run.restore(RateRatioTest(grid=10), checkpoint, clock=fixed_clock)
+        self.assertEqual(restored.t, 1)
+        self.assertEqual(list(restored.procedure.encode_state(restored.state)["counts"]), [2**53, 0])
 
-    @unittest.expectedFailure
     def test_a_run_with_a_tiny_covariate_restores_from_its_checkpoint(self):
-        """Bug: AnytimeLinearModel refuses to decode a state it reached itself.
+        """AnytimeLinearModel refused to decode a state it had reached itself.
 
-        Found by CheckpointAtAnySplit.test_anytime_linear_model (explore profile).  decode_state checks
-        the Cauchy-Schwarz inequality of the stored cross products, |a_ij| <= sqrt(a_ii a_jj) (1 + 1e-9),
-        a relative tolerance only.  With a covariate deviation d below about 1e-154, d * d underflows
-        (to a subnormal with a few bits, or to 0) while d * dy does not: here x = 1e-170 gives
-        a_xx = 0.0 and a_xy = 5e-171, and x = 1e-160 a subnormal a_xx; Run.restore then refuses the
-        run's own checkpoint ("cannot decode its state").  Suggested fix: an absolute slack for
-        underflow in that check, e.g. sqrt((a_ii + n 2**-1022) (a_jj + n 2**-1022)), or skip it when a_ii
-        or a_jj is below the normal range.
+        decode_state checks the Cauchy-Schwarz inequality of the cross products with a relative
+        tolerance; with a covariate deviation below about 1e-154 its square underflows (x = 1e-170:
+        a_xx = 0.0, a_xy = 5e-171), so the run's own checkpoint was refused.
         """
         from sequential_analysis.procedures import AnytimeLinearModel
 
-        for x in (1e-150, 1e-160, 1e-170):
+        for x in (1e-150, 1e-160, 1e-170, 5e-324):
             run = Run(AnytimeLinearModel(["x"], ["z"]), run_id="r", clock=fixed_clock)
             run.step({"x": 0.0, "z": 0.0, "y": 0.0})
             run.step({"x": x, "z": 1.0, "y": 1.0})
             Run.restore(AnytimeLinearModel(["x"], ["z"]), run.checkpoint(), clock=fixed_clock)
 
-    @unittest.expectedFailure
     def test_the_integration_grid_does_not_depend_on_the_scale_of_information(self):
-        """Bug: an analysis at a small information fraction makes the integration grid huge.
+        """GroupSequentialMonitor: an analysis at a small information fraction made the grid huge.
 
-        Found by CheckpointAtAnySplit.test_group_sequential_monitor (explore profile), which was killed
-        for lack of memory.  _Recursion.advance integrates the continuation region of B(t) = Z sqrt(t)
-        over [lower, upper] on a grid of `points_per_sd` points per standard deviation sqrt(t - t_prev).
-        For a one-sided design without futility, lower = min(-10 sqrt(t) + drift t, upper - 1.0): when
-        sqrt(t) < 1 / (b + 10), about t < 0.005, the second term wins, and its 1.0 does not scale with
-        sqrt(t), so the grid has 24 / sqrt(t) points: 289 at t = 0.5 and 0.01, 2 401 at 1e-4, 240 001 at
-        1e-8, and about 1e152 at 1e-302 (information 1e-300 with max_information 100; valid input, the
-        contract is lower=0).  The next analysis costs the product of two such grids: a
-        GroupSequentialMonitor fed information 1e-6, 2e-6, 3e-6 (max 100) does not finish in a minute,
-        and information 1e-300 exhausts the memory.  Suggested fix: ``upper - math.sqrt(t)`` (the same
-        width in standard deviations at any scale), and a cap on the number of grid points in
-        _Recursion._grid that raises NumericalError instead of allocating without bound.
+        The continuation region of a one-sided design reached down to upper - 1.0, a width that does not
+        scale with sqrt(t): 24 / sqrt(t) grid points, 240 001 at t = 1e-8 and about 1e152 at t = 1e-302
+        (information 1e-300, a valid input), the next analysis costing the product of two grids -- a hang,
+        or all the memory.  Now the width scales, and a grid is capped (NumericalError beyond the cap).
         """
         from sequential_analysis.group_sequential import _Recursion
+        from sequential_analysis.procedures import GroupSequentialMonitor
 
-        for t in (0.5, 0.01, 1e-4, 1e-8):
+        for t in (0.5, 0.01, 1e-4, 1e-8, 1e-302):
             recursion = _Recursion(0.0, False, 24)
             recursion.advance(t, 2.0)
             self.assertLessEqual(len(recursion.xs), 1000, f"t = {t}")
+        with self.assertRaises(NumericalError):
+            _Recursion(0.0, False, 24)._grid(0.0, 1.0, 1e-150)
+        monitor = GroupSequentialMonitor(0.025, 100.0, "pocock", max_analyses=6)
+        steps = trajectory(monitor, [{"z": 0.5, "information": i} for i in (1e-300, 2e-300, 1e-6, 2e-6, 3e-6)])
+        self.assertEqual(len(steps), 5)
 
-    @unittest.expectedFailure
     def test_a_checkpoint_written_by_json_stringify_is_restored(self):
-        """Bug: a float of magnitude 2**53 to 1e21, written by an ECMAScript executor, is refused on restore.
+        """A float of magnitude 2**53 to 1e21, written by an ECMAScript executor, was refused.
 
         JSON.stringify -- like canonical JSON, both use Number::toString -- writes 1e17 as
-        100000000000000000.  Python's json reads that as an int beyond 2**53, and validate_checkpoint
-        refuses it ("not canonical JSON"), so a run continued by the TypeScript executor (ts/, whose
-        command line writes its checkpoint with JSON.stringify) cannot come back to Python once any
-        number in its state, buffers or provenance is that large.  An observation log written by the
-        executor has the same problem (log.ts writes values with JSON.stringify): on replay such a value
-        becomes an int beyond 2**53, invalid input, and the replay departs from the run.  Reproduced with
-        the executor itself: a NormalMixtureSPRT whose running total is 1e17.
-
-        SPEC 1 says that numbers are binary64 and that 1 and 1.0 are the same number; a reader should then
-        take an integer literal beyond 2**53 as the binary64 number it denotes (as JSON.parse does) --
-        e.g. json.load(..., parse_int=...) returning float(text) beyond 2**53 in load_checkpoint and in the
-        log reader, and Run.restore converting such ints when int(float(n)) == n -- and SPEC 1 should say
-        so; the refusal of integers beyond 2**53 then applies to integers the writer meant as integers.
+        100000000000000000, which Python's json reads as an int beyond 2**53.  A run continued by the
+        TypeScript executor could not come back to Python, and the executor's observation logs did not
+        replay.  Such a literal is now read as the binary64 number it denotes (SPEC 1).
         """
+        from sequential_analysis.canonical import binary64, loads
         from sequential_analysis.procedures import NormalMixtureSPRT
+        from sequential_analysis.sources import ObservationLog
 
         run = Run(NormalMixtureSPRT(1.0, 0.5, stop_on_reject=False), run_id="r", clock=fixed_clock)
         run.offer(Observation("x", 1e17, seq=0))
         written = canonical_json(run.checkpoint())  # the number formatting of JSON.stringify
         self.assertIn('"total":100000000000000000', written)
-        Run.restore(NormalMixtureSPRT(1.0, 0.5, stop_on_reject=False), json.loads(written), clock=fixed_clock)
+        for checkpoint in (json.loads(written), loads(written)):
+            restored = Run.restore(NormalMixtureSPRT(1.0, 0.5, stop_on_reject=False), checkpoint, clock=fixed_clock)
+            self.assertEqual(_text(restored.procedure.encode_state(restored.state)),
+                             _text(run.procedure.encode_state(run.state)))
+        self.assertEqual(binary64({"a": [2**53 + 2, 2**53, -(2**60)]}), {"a": [float(2**53 + 2), 2**53, -2.0**60]})
+        self.assertIs(type(loads("100000000000000000")), float)
 
-    @unittest.expectedFailure
+        with tempfile.TemporaryDirectory() as directory:  # a log line as the executor writes it
+            path = os.path.join(directory, "log.jsonl")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('{"input": "x", "key": null, "seq": 0, "source": "x", "time": null, '
+                        '"value": 100000000000000000}\n')
+            (replayed,) = list(ObservationLog(path))
+            self.assertEqual(replayed.value, 1e17)
+            self.assertIs(type(replayed.value), float)
+
     def test_rate_ratio_interval_stays_nested_when_the_grid_is_exhausted(self):
-        """Bug: RateRatioTest reports (None, None), "unbounded", once every grid point is excluded.
+        """RateRatioTest reported (None, None), "unbounded", once every grid point was excluded.
 
-        Found by test_rate_ratio_test (explore profile).  The confidence sequence is a running
-        intersection (module docstring), and lower = None means "below the grid".  When the ratio lies
-        beyond ratio_range (here about 120 against (0.1, 10)), the points are excluded from the bottom
-        up: [0.79, inf), [2.04, inf), ..., [8.53, inf) -- and when the last one goes, _interval finds
-        nothing kept and returns (None, None): the interval jumps back to (0, inf), the least informative
-        answer, right when the evidence is strongest.  AnytimeLogRankTest handles the same situation
-        (it collapses onto the least-excluded point, see its docstring).  Suggested fix in
-        RateRatioTest._interval: with nothing kept, report (points[-1], None) when the point excluded
-        last is the top one (the ratio is above the grid), (None, points[0]) when it is the bottom one,
-        or collapse onto the least-excluded point as AnytimeLogRankTest does; and document it.
+        With the ratio beyond ratio_range (about 120 against (0.1, 10)) the points are excluded from the
+        bottom up, [0.79, inf), ..., [8.53, inf), and the interval then jumped back to (0, inf).
         """
         from sequential_analysis.procedures import RateRatioTest
 
         rows = [{"arm": arm, "count": 60 if arm else 0, "exposure": 1.0} for _ in range(12) for arm in (1, 0)]
         lowers = [o.lower for _, o in trajectory(RateRatioTest(grid=30), rows)[1::2]]
-        self.assertEqual(lowers[0:8], sorted(lowers[0:8]))  # [0.79, 2.04, ..., 8.53, 8.53]: nested so far
+        self.assertIsNotNone(lowers[-1])
         for previous, lower in zip(lowers, lowers[1:]):
             if previous is not None:  # once bounded below, bounded below at least as high
                 self.assertIsNotNone(lower)
                 self.assertGreaterEqual(lower, previous)
 
-    @unittest.expectedFailure
     def test_skip_range_leaves_no_number_below_the_position(self):
-        """Bug: skip_range from the position keeps the numbers delivered inside the range in `ahead`.
-
-        SPEC 4: `ahead` lists the numbers delivered beyond a gap.  Here 5 was delivered ahead of the gap
-        1..4; skip_range(1, 10) moves the position to 10 but leaves 5 in the state, for ever -- the
-        growth of the checkpoint that skip_range exists to prevent, and a state that differs from that of
-        a delivery which never saw 5.  (The other branch, a range declared ahead of the position, prunes
-        `ahead` when it is reached.)  Delivery.skip_range should, after moving the position, drop the
-        numbers below it: ``self._ahead.get(source, set()).difference_update(range(nxt, stop))`` or
-        prune in `_settle`.
-        """
+        """skip_range from the position kept the numbers delivered inside the range in `ahead`, for ever."""
         delivery = Delivery()
         for seq in (0, 5):
             delivery.push(Observation("x", 1.0, seq=seq))

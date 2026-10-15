@@ -115,8 +115,9 @@ number starts at `start`.
 * **sequence** holds observations back until the gap before them is
   filled. Then it delivers them in `seq` order. A duplicate is dropped
   and counted with `dedup`, and is an ordering error without it.
-* **strict** requires every `seq` to be the next one. Anything else is an
-  ordering error.
+* **strict** requires every `seq` to be the next one. A number below the
+  position is a duplicate: it is dropped and counted with `dedup`, and is
+  an ordering error without it. Any other number is an ordering error.
 
 Observations without `seq` are delivered at once under `arrival`, and
 are an ordering error under the other policies.

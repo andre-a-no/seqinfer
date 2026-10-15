@@ -530,7 +530,7 @@ class GroupSequentialProportions(_TwoArmGroupSequential):
         if label not in self.arms:
             return state, GroupSequentialProportionsOutput(state.n_treatment + state.n_control, *rates,
                                                            None, None, None, None)
-        y = x[self.input]
+        y = int(x[self.input])  # 1.0 is a valid binary input; the counts stay integers
         if label == self.arms[0]:
             state = GroupSequentialProportionsState(state.n_treatment + 1, state.successes_treatment + y,
                                                     state.n_control, state.successes_control, state.analysis)

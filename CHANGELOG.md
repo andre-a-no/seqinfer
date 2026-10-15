@@ -91,6 +91,23 @@ property-based tests; a guide to choosing a method.
   compensated from Python 3.12 on, and boundaries must not depend on the
   Python version.
 
+### Tests
+- Property-based tests with hypothesis (`tests/test_properties.py`,
+  derandomized in CI, about 25 s). They cover:
+  - checkpoint equivalence at any split for every procedure, with values
+    anywhere in the input contracts;
+  - transition-level state round trips;
+  - output invariants: monotone always-valid p-values, nested
+    confidence sequences, absorbing decisions;
+  - canonical JSON against an independent RFC 8785 /
+    `Number.prototype.toString` reference;
+  - models of the delivery policies and topologies;
+  - SplitMix64, the t distribution and the summation helpers.
+
+  They found the six defects below.
+- Agreement with R (above), and simulated level and power for every new
+  group sequential procedure.
+
 ### Fixed (found by the property-based tests)
 - A step whose new state or output holds an integer beyond 2**53 (two
   units with 2**53 events each in RateRatioTest) is a numerical failure,

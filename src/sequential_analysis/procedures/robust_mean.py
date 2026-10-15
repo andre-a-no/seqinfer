@@ -19,7 +19,11 @@ inequality the set of m with |sum psi(lambda_i (X_i - m))| <= sigma^2
 sum lambda_i^2 / 2 + log(2/alpha) contains the mean at every n
 simultaneously with probability at least 1 - alpha.  psi grows only
 logarithmically, so a few wild observations move the interval little.
-The interval is found by bisection over the stored sample.
+The interval is found by bisection over the stored sample.  It is
+intersected over time; data that contradict the variance bound (values
+far beyond sigma) can make the intersection empty, and the reported
+lower bound then lies above the upper one: read it as evidence that
+sigma is too small, not as an interval.
 
 AsymptoticConfidenceSequence (Waudby-Smith, Arbour, Sinha, Kennedy and
 Ramdas 2024) assumes only a finite variance (and slightly more than two
