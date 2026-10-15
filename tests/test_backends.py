@@ -92,6 +92,18 @@ class BackendIsPartOfTheIdentity(unittest.TestCase):
         Run.restore(BettingConfidenceSequence(grid=50, backend="numpy"), checkpoint)
         self.assertIsNotNone(run.provenance["numerics"]["numpy"])
 
+    def test_continuing_with_another_numpy_version_is_reported(self):
+        run = Run(KernelTwoSampleTest(backend="numpy"))
+        run.step({"a": 0.1, "b": 0.2})
+        checkpoint = run.checkpoint()
+        checkpoint["provenance"]["numerics"]["numpy"] = "1.0.0"
+        with self.assertLogs("sequential_analysis", "WARNING") as logs:
+            Run.restore(KernelTwoSampleTest(backend="numpy"), checkpoint)
+        self.assertEqual(logs.records[0].incident["kind"], "numpy_version")
+        same = run.checkpoint()
+        with self.assertNoLogs("sequential_analysis", "WARNING"):
+            Run.restore(KernelTwoSampleTest(backend="numpy"), same)
+
     def test_a_model_without_vectorised_methods_runs_in_python(self):
         class Walk(StateSpaceModel):
             name = "walk"

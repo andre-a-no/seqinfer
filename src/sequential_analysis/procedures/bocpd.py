@@ -36,6 +36,10 @@ dropping below 1e-12 changes the change probabilities by less than 1e-10;
 keeping 100 hypotheses for 200 observations, by 1e-5 and the log evidence
 by 1e-3; keeping 50, by 4e-4 and 0.02).
 prune = 0 and max_hypotheses = None keep the posterior exact.
+
+Cost per step (PERFORMANCE.md): O(number of hypotheses kept), 0.3 ms after 100
+observations and 4 ms with 2000 hypotheses; about 50 bytes per hypothesis
+in the checkpoint.
 """
 from __future__ import annotations
 

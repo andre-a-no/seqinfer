@@ -29,6 +29,10 @@ the expectation under the current state posterior, until lambda settles.
 An observation far from its prediction gets a small weight and moves the
 state little: outliers are discounted instead of dragging the filter.  As
 df grows the filter becomes the Kalman filter.
+
+Cost per step (PERFORMANCE.md): constant, O(n^3) in the state dimension; 0.1 ms
+for two states, 0.16 ms for four, in Python (numpy is slower at these
+sizes); the robust filter iterates the update, about 1 ms.
 """
 from __future__ import annotations
 

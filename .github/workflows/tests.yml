@@ -72,3 +72,17 @@ jobs:
         with:
           node-version: "22"
       - run: node conformance/check.mjs
+
+  benchmark:
+    # time per step of every procedure, both backends; reported, not asserted (see PERFORMANCE.md)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install numpy
+      - name: benchmark
+        run: |
+          python tools/benchmark.py | tee benchmark.txt
+          { echo '## Time per step'; echo; tail -n +2 benchmark.txt; } >> "$GITHUB_STEP_SUMMARY"

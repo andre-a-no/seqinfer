@@ -189,6 +189,70 @@ What sequential-analysis does **not** do: it does not keep observations beyond t
 last checkpoint. After a restore they must come again from the sources; a
 source that cannot replay them has to be buffered by the application.
 
+## Checkpoints and backends
+
+A checkpoint is a plain JSON value: the procedure's identity (name,
+version, configuration), its state, the 64-bit random state, topology
+buffers, source positions, the observation log position, counters and
+provenance. What "the restored run continues exactly" means, and when it
+holds:
+
+- **Same procedure, same arithmetic.** `Run.restore` compares the
+  procedure's identity with the checkpoint's and refuses any difference
+  (`IncompatibleCheckpoint`). The identity includes the version, which
+  changes whenever the arithmetic of a procedure changes, even in the last
+  bits: a checkpoint of an older version is refused rather than continued
+  differently. (0.2.0 changed the Kalman filter, the t-mixture SPRT and the
+  group sequential test.)
+- **The backend is part of the identity.** `ParticleFilter`,
+  `KernelTwoSampleTest`, `BettingConfidenceSequence` and
+  `CatoniConfidenceSequence` take `backend="auto" | "python" | "numpy"`;
+  "auto" becomes "numpy" when numpy is installed, and the resolved value is
+  stored. A run computed with numpy is continued with numpy; on a machine
+  without numpy its restore is refused, not silently continued in Python.
+  To move such a run, start a new one from its state
+  (`Run(..., initial_state=..., initialized_from=...)`): the numbers carry
+  over, the provenance says it is a new run.
+- **Bit for bit, and where.** With the Python backend a run depends only
+  on IEEE 754 arithmetic, sums in a fixed left-to-right order, and the
+  `exp`, `log` and similar functions of the platform's C library (through
+  the `math` module) — not on the Python version (3.10 to 3.14 give the
+  same bits). The mainstream C libraries agree on these functions in all
+  but rare cases; the conformance vectors in `conformance/` pin the bits
+  down and are checked in CI, in Python and in JavaScript. With the numpy backend a run is reproducible bit for bit
+  on the same machine and numpy version; numpy's `exp`, `log` and sums may
+  change their last bits between numpy versions and processors. The
+  provenance records the numpy version, and restoring a numpy run under
+  another one logs a `numpy_version` incident: the continuation is
+  statistically the same, but may differ in the last bits from the
+  uninterrupted run. Where results must agree bit for bit across machines,
+  choose `backend="python"`.
+- **Randomness.** Randomized procedures draw from one SplitMix64 state,
+  stored in the checkpoint; the numpy backend draws exactly the same
+  uniforms from it, so the particle filter consumes the same random
+  numbers in both backends (its results agree to about 1e-12).
+- **Size.** Most procedures checkpoint a few hundred bytes whatever the
+  length of the run. Those that hold the sample (`QuantileConfidenceSequence`,
+  `KernelTwoSampleTest`, `CatoniConfidenceSequence`) grow by about 20 bytes
+  per observation, `ParticleFilter` stores every particle, and
+  `BayesianChangePoint` one entry per run length kept; see
+  [PERFORMANCE.md](https://github.com/andre-a-no/sequential-analysis/blob/main/PERFORMANCE.md). A checkpoint
+  costs a JSON encoding of the state, so take them as often as the state
+  size allows.
+- **Not part of the trajectory.** Wall-clock times in the provenance
+  events and a run identifier generated when none is given differ from run
+  to run; the history digest and every output do not.
+
+## Speed
+
+A step takes microseconds for the tests, CUSUM and the scalar filters,
+about 0.1 ms for a small Kalman filter, and grows with the run for the
+procedures that hold the sample. numpy accelerates the array-heavy ones
+2 to 12 times (a particle filter with 20 000 particles: 35 ms → 2.7 ms per
+step). [PERFORMANCE.md](https://github.com/andre-a-no/sequential-analysis/blob/main/PERFORMANCE.md) has the
+measured table for every procedure and backend; `python tools/benchmark.py`
+measures them on your machine, and CI reports it on every change.
+
 ## Development
 
 ```

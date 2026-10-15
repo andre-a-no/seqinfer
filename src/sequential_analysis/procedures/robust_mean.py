@@ -38,6 +38,11 @@ nothing before `start` observations (default 1000).  Use it for long
 runs; when a variance bound is known, or n is small, the Catoni sequence
 has exact coverage.  rho is tuned so that the sequence is tightest after
 `tuned_for` observations.  Its state is a handful of numbers.
+
+Cost per step (PERFORMANCE.md): the Catoni sequence holds the sample and solves
+for its bounds by Newton steps over it -- 0.6 ms after 1000 observations
+with numpy, 3 ms in Python; the asymptotic sequence takes 2 µs and a
+constant state.
 """
 from __future__ import annotations
 

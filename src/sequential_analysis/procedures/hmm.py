@@ -18,6 +18,9 @@ Emission models: CategoricalEmission (a symbol 0..M-1), GaussianEmission
 (a mean and standard deviation per state), PoissonEmission (a rate per
 state).  Typical uses: regime detection (calm/volatile), a machine's
 hidden condition, a patient's disease stage.
+
+Cost per step (PERFORMANCE.md): O(K^2) for K states, 6 µs for three; a constant
+state.
 """
 from __future__ import annotations
 

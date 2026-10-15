@@ -32,6 +32,11 @@ generally, F_i(q) >= p and F_i(q-) <= p for each i given the past).
 
 The prior Beta(r p, r (1 - p)) is tuned by `tuned_for`, the number of
 observations at which the sequence is to be tightest; any value is valid.
+
+Cost per step (PERFORMANCE.md): QuantileTest keeps three counts, 30 to 120 µs (an
+incomplete beta function); QuantileConfidenceSequence holds the sorted
+sample, about 20 bytes per observation, 0.2 ms after 100 observations and
+0.9 ms after 10 000.
 """
 from __future__ import annotations
 

@@ -31,6 +31,10 @@ The state holds the past pairs: memory grows with the run and each step
 costs O(n) kernel evaluations.
 
 For two streams that arrive separately, pair them with PositionalPair.
+
+Cost per step (PERFORMANCE.md): O(n) kernel evaluations; after 10 000 pairs 0.75 ms
+with numpy, 6 ms in Python; the state holds both samples, about 40 bytes
+per pair.
 """
 from __future__ import annotations
 

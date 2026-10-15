@@ -26,6 +26,10 @@ Models provided: LinearGaussianModel (scalar, the Kalman filter's model:
 use it to check a filter), StochasticVolatilityModel, and
 StudentTLocalLevel (a random walk observed with heavy-tailed noise).
 Write your own by subclassing StateSpaceModel.
+
+Cost per step (PERFORMANCE.md): O(N); 20 000 particles take 2.7 ms with numpy and
+35 ms in Python; the checkpoint holds every particle and its weight,
+about 40 bytes each.
 """
 from __future__ import annotations
 

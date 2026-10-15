@@ -15,11 +15,12 @@ Within one backend a run is reproducible bit for bit, and a restored run
 continues exactly as the uninterrupted one would have -- on the same
 machine and library versions.  numpy evaluates exp, log and sums with its
 own routines, whose last bits may change with the numpy version and the
-processor; the Python backend uses the math module and left-to-right sums
-and gives the same bits everywhere (it is what the conformance vectors
-pin down).  Use backend="python" where results must match bit for bit
-across machines or another language; the numbers differ from numpy's only
-in the last bits, the statistics not at all.
+processor; the Python backend uses the math module (the C library's exp
+and log) and left-to-right sums, which do not depend on the Python or
+numpy version, and which the conformance vectors pin down.  Use
+backend="python" where results must match bit for bit across machines or
+another language; the numbers differ from numpy's only in the last bits,
+the statistics not at all.
 
 Random numbers come from the run's SplitMix64 state in both backends: the
 vectorised generator below produces exactly the uniforms that successive

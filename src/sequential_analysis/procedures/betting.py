@@ -23,6 +23,10 @@ predictable estimates mu, s2 of the mean and variance, truncated to
 [0, c/m] for bets on a larger mean and [0, c/(1 - m)] for bets on a
 smaller one (c = 1/2), so that the wealth stays positive.  A two-sided
 test averages the two one-sided wealth processes.
+
+Cost per step (PERFORMANCE.md): the tests take 3 µs and a constant state;
+BettingConfidenceSequence updates two wealths per grid point, 0.2 ms with
+numpy and 0.5 ms in Python for grid=1000, and checkpoints 40 kB.
 """
 from __future__ import annotations
 
