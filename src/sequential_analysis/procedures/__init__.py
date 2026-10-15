@@ -32,6 +32,7 @@ from .particle_filter import (
 from .plan import PlanTest
 from .quantile import QuantileConfidenceSequence, QuantileTest
 from .rates import RateRatioTest
+from .ratio import RatioABTest
 from .robust_mean import AsymptoticConfidenceSequence, CatoniConfidenceSequence
 from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
@@ -90,6 +91,7 @@ __all__ = [
     "QuantileEDetector",
     "QuantileTest",
     "RateRatioTest",
+    "RatioABTest",
     "RobustKalmanFilter",
     "SampleRatioMismatch",
     "SequentialSignTest",

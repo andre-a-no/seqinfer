@@ -27,6 +27,7 @@ export {
 export { contractFromSpec, PlanTest } from "./plan.js";
 export { QuantileConfidenceSequence, QuantileTest } from "./quantile.js";
 export { RateRatioTest } from "./rates.js";
+export { RatioABTest } from "./ratio.js";
 export { AsymptoticConfidenceSequence, CatoniConfidenceSequence } from "./robust_mean.js";
 export { ShiryaevRoberts } from "./shiryaev_roberts.js";
 export { SPRT } from "./sprt.js";

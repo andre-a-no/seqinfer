@@ -28,6 +28,20 @@ property-based tests; a guide to choosing a method.
   `max_sample_size_two_proportions` (rpact's method), `max_events`
   (Schoenfeld).
 
+### Added: ratio metrics and relative lift
+- `RatioABTest`: anytime-valid A/B test for ratio metrics (revenue per
+  session, click-through rate, average order value) and for relative lift.
+  It uses the delta method on the totals of the randomised unit (Deng,
+  Knoblich and Lu 2018) with the asymptotic confidence sequence of
+  Waudby-Smith et al. (2024). It reports sequences for R_T − R_C and, on
+  the log scale, for R_T / R_C − 1. `denominator=False` gives the
+  relative lift of a mean per user.
+- Measured with sessions correlated within users and monitoring from
+  1,000 users: the time-uniform miscoverage is at most 0.047. In the same
+  simulations, the naive per-session test rejected a true null in 24–26%
+  of runs.
+- Constant state, 7 µs per step. TypeScript port included.
+
 ### Added: stratified survival tests
 - `AnytimeLogRankTest(strata=k, stratum_input="stratum")`: a stratified
   anytime-valid log-rank test, with numbers at risk per arm and stratum and

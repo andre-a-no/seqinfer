@@ -67,6 +67,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     QuantileEDetector,
     QuantileTest,
     RateRatioTest,
+    RatioABTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -116,6 +117,11 @@ def bounded_unit(rnd):
 
 def rate_unit(rnd):
     return {"arm": rnd.randrange(2), "count": rnd.randrange(5), "exposure": rnd.uniform(0.5, 2.0)}
+
+
+def ratio_unit(rnd):
+    s = rnd.randrange(5)
+    return {"arm": rnd.randrange(2), "y": s * rnd.expovariate(1.0), "d": float(s)}
 
 
 def e_value(rnd):
@@ -207,6 +213,7 @@ CASES = [
     ("MultipleTests, 2 arms vs control", lambda b: MultipleTests.versus_control([1, 2], 0, alpha=1e-12), unit,
      (100,), False),
     ("BoundedABTest, grid 1000", lambda b: BoundedABTest(backend=b), bounded_unit, (100,), True),
+    ("RatioABTest", lambda b: RatioABTest(start=10), ratio_unit, (100,), False),
     ("RateRatioTest, grid 200", lambda b: RateRatioTest(alpha=1e-12), rate_unit, (100,), False),
     ("AnytimeLinearModel, 2 covariates", lambda b: AnytimeLinearModel(["x1", "x2"], ["z"]), regression_unit,
      (100,), False),

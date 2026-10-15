@@ -24,14 +24,14 @@ approximately in long runs.
 | any bounded metric (share, capped revenue) | `BoundedABTest` | exact confidence sequence for the difference | [A/B test §6](tutorials/ab-test.md) |
 | mean with a pre-experiment covariate (CUPED) | `ABTest` | asymptotic | [A/B test](tutorials/ab-test.md) |
 | several covariates, regression adjustment | `AnytimeLinearModel` | exact under Gaussian errors | — |
-| ratio metric (revenue per session, clicks per impression), relative lift | `RatioABTest` | asymptotic, delta method on the randomised unit | [A/B test](tutorials/ab-test.md) |
+| ratio metric (revenue per session, clicks per impression), relative lift | `RatioABTest` | asymptotic, delta method on the randomised unit | [A/B test §8](tutorials/ab-test.md) |
 | events per unit of exposure | `RateRatioTest` | exact for Poisson counts, robust to a drifting rate | [A/B test §7](tutorials/ab-test.md) |
 | median, 90th percentile (latency, heavy tails) | `QuantileTest`, `QuantileConfidenceSequence` | exact, no assumption on the distribution | — |
 | "are A and B distributed the same at all?" | `KernelTwoSampleTest` | exact | — |
 | traffic split as intended? | `SampleRatioMismatch` | exact | [A/B test](tutorials/ab-test.md) |
 | many metrics or arms at once | `MultipleTests` (e-BH) | false discovery rate at any stopping time | [A/B test](tutorials/ab-test.md) |
 | a series of experiments decided one by one | `OnlineFDR` (e-LOND) | false discovery rate over the series | [programme](tutorials/experiment-programme.md) |
-| how long will it take, how much power? | `planning.simulate` | simulation | [A/B test §8](tutorials/ab-test.md) |
+| how long will it take, how much power? | `planning.simulate` | simulation | [A/B test §9](tutorials/ab-test.md) |
 
 ## Clinical trials
 

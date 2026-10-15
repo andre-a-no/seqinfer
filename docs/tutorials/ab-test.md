@@ -301,7 +301,7 @@ has a spend level that all their sessions share, and treatment raises
 spend per session by 5%:
 
 ```python
-from sequential_analysis.procedures.ratio import RatioABTest
+from sequential_analysis.procedures import RatioABTest
 
 rnd = random.Random(11)
 session_stream, session_spend = [], []

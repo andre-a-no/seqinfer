@@ -73,6 +73,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     QuantileEDetector,
     QuantileTest,
     RateRatioTest,
+    RatioABTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -407,7 +408,28 @@ def cases():
          [{"arm": r["arm"], "kind": r["kind"], "centre": r["stratum"]}
           for r in stratified_survival_rows(160, 0.5, 2, 30)]),
     ]
-    return existing + added + ported + later + round_four + stratified_logrank
+
+    def ratio_rows(n, lift):
+        rows = []
+        for _ in range(n):
+            u = rnd.random()
+            arm = 1 if u < 0.4 else 0 if u < 0.9 else 2
+            k = rnd.randrange(4)
+            level = math.exp(rnd.gauss(0.0, 0.8)) * (1.0 + lift if arm == 1 else 1.0)
+            y = 0.0
+            for _ in range(k):
+                y += level * rnd.expovariate(1.0)
+            rows.append({"arm": arm, "y": y, "d": float(k)})
+        return rows
+
+    ratio = [
+        ("ratio_ab_test", RatioABTest(start=30, tuned_for=50), None, ratio_rows(150, 1.0)),
+        ("ratio_ab_test_relative", RatioABTest(scale="relative", effect0=0.1, start=30, tuned_for=50), None,
+         ratio_rows(150, 0.6)),
+        ("ratio_ab_test_means", RatioABTest(denominator=False, start=20), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in ratio_rows(100, 0.5)]),
+    ]
+    return existing + added + ported + later + round_four + stratified_logrank + ratio
 
 
 def vector(label, procedure, seed, inputs):

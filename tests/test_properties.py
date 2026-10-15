@@ -149,11 +149,17 @@ def _reals(lower, upper):
     return st.one_of(st.sampled_from([b for b in (lower, upper) if b is not None]), st.floats(lo, hi), near)
 
 
+#: The largest integer input generated.  2**53 is valid, but a procedure that sums such counts commits a
+#: state no checkpoint can hold (CommittedStatesCanBeCheckpointed, an expected failure); raise it to 2**53
+#: when that is fixed.
+_HUGE_INTEGER = 2**40
+
+
 def _integers(lower, upper):
     lo = -20 if lower is None else math.ceil(lower)
     hi = lo + 40 if upper is None else math.floor(upper)
     typical = st.integers(lo, hi)
-    edges = st.sampled_from([v for v in (lo, hi, 2**53, -(2**53)) if (lower is None or v >= lower)
+    edges = st.sampled_from([v for v in (lo, hi, _HUGE_INTEGER, -_HUGE_INTEGER) if (lower is None or v >= lower)
                              and (upper is None or v <= upper)])
     numbers = st.one_of(typical, typical, edges)
     return st.one_of(numbers, numbers.map(float))  # 3.0 is an integer value too
@@ -262,6 +268,10 @@ def _trajectory(run: Run, recorder: Recorder, skip: int = 0) -> dict:
 def _check_any_split(test: unittest.TestCase, case, data) -> None:
     _, make_procedure, make_topology, make_delivery, _, seed = case
     observations = _generated_history(data, case)
+    for i in data.draw(st.lists(st.integers(0, max(len(observations) - 1, 0)), max_size=3), label="redelivered"):
+        if observations:  # at-least-once delivery: an observation comes again, later; delivery drops it
+            later = data.draw(st.integers(i + 1, len(observations)), label="again at")
+            observations.insert(later, observations[i])
     n = len(observations)
     splits = set(data.draw(st.lists(st.integers(0, n), min_size=1, max_size=3), label="splits"))
     if seed is not None:
@@ -317,6 +327,30 @@ class CheckpointAtAnySplit(unittest.TestCase):
     different (1 and 1.0 are one number, as in canonical JSON) -- and fails, if it fails, at the
     same observation with the same error.
     """
+
+
+class CommittedStatesCanBeCheckpointed(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_a_count_beyond_2_53_fails_the_step_not_the_checkpoint(self):
+        """Bug: a step commits a state that no checkpoint can hold; the failure comes later, at checkpoint().
+
+        Found by CheckpointAtAnySplit.test_rate_ratio_test (explore profile).  Counts are integer
+        inputs, valid up to 2**53 (SPEC 3), and RateRatioTest adds them up in its state: two units with
+        2**53 events give a count of 2**54.  checked_step only refuses non-finite numbers (SPEC 6, step
+        5), so the step is committed and the run goes on -- but canonical JSON refuses integers beyond
+        2**53, so run.checkpoint() raises NumericalError from then on, and the state that was committed
+        cannot be decoded exactly either (decode_fields reads integers through float).  Any procedure
+        that sums integer inputs into an int field can do this.  Suggested fix: in checked_step, treat
+        an integer beyond 2**53 in the new state or output like a non-finite number (a numerical
+        failure, nothing committed), and say so in SPEC 6, step 5.
+        """
+        from sequential_analysis.procedures import RateRatioTest
+
+        run = Run(RateRatioTest(grid=10), run_id="r", clock=fixed_clock)
+        with _quiet(), self.assertRaises(NumericalError):  # the second step should fail, nothing committed
+            for _ in range(2):
+                run.step({"arm": 1, "count": 2**53, "exposure": 1.0})
+        run.checkpoint()
 
 
 def _split_test(index: int):
@@ -405,6 +439,29 @@ def _check_outputs(test: unittest.TestCase, case, data) -> None:
 
 class OutputProperties(unittest.TestCase):
     """Promises of the procedures, on generated histories near the cases' own."""
+
+    @unittest.expectedFailure
+    def test_rate_ratio_interval_stays_nested_when_the_grid_is_exhausted(self):
+        """Bug: RateRatioTest reports (None, None), "unbounded", once every grid point is excluded.
+
+        Found by test_rate_ratio_test (explore profile).  The confidence sequence is a running
+        intersection (module docstring), and lower = None means "below the grid".  When the ratio lies
+        beyond ratio_range (here about 120 against (0.1, 10)), the points are excluded from the bottom
+        up: [0.79, inf), [2.04, inf), ..., [8.53, inf) -- and when the last one goes, _interval finds
+        nothing kept and returns (None, None): the interval jumps back to (0, inf), the least informative
+        answer, right when the evidence is strongest.  AnytimeLogRankTest handles the same situation
+        (it collapses onto the least-excluded point, see its docstring).  Suggested fix in
+        RateRatioTest._interval: with nothing kept, report (points[-1], None) when the point excluded
+        last is the top one (the ratio is above the grid), (None, points[0]) when it is the bottom one,
+        or collapse onto the least-excluded point as AnytimeLogRankTest does; and document it.
+        """
+        from sequential_analysis.procedures import RateRatioTest
+
+        rows = [{"arm": arm, "count": 60 if arm else 0, "exposure": 1.0} for _ in range(12) for arm in (1, 0)]
+        lowers = [o.lower for _, o in trajectory(RateRatioTest(grid=30), rows)[1::2]]
+        self.assertEqual(lowers[0:8], sorted(lowers[0:8]))  # [0.79, 2.04, ..., 8.53, 8.53]: nested so far
+        for previous, lower in zip(lowers, lowers[1:]):
+            self.assertIsNotNone(lower if previous is not None else 0.0)
 
 
 def _outputs_test(index: int):
@@ -994,7 +1051,10 @@ class TDistribution(unittest.TestCase):
         if df1 > df2:
             df1, df2 = df2, df1
         upper1, upper2 = _log_upper_tail(t, df1), _log_upper_tail(t, df2)
-        self.assertLessEqual(upper2, upper1 + 1e-9 * abs(upper1) + 1e-15)
+        if math.isinf(upper1):  # the tail's logarithm itself overflows (t^2 beyond the floats)
+            self.assertEqual(upper2, -math.inf)
+        else:
+            self.assertLessEqual(upper2, upper1 + 1e-9 * abs(upper1) + 1e-15)
 
     @_settings(examples=200)
     @given(st.floats(1e-6, 1e300), _DF)
