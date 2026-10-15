@@ -12,11 +12,12 @@ specified in SPEC.md:
 ## Agreement with the Python library
 
 * **History digests and random states** are identical.
-* **Outputs and states** are identical for 18 of the 45 conformance
-  cases. For the others they agree to 5e-14 relative, and to 2.2e-13 in
-  two cases (a log-evidence near zero that is a difference of large
-  log-gamma terms; bounds found by a root search): V8 rounds `Math.log`,
-  `log1p`, `exp` and `cos` differently from the C library.
+* **Outputs and states** are identical for 19 of the 53 conformance
+  cases. For the others they agree to 5e-14 relative, and to 3.6e-13 in
+  four cases (a log-evidence or log e-value near zero that is a
+  difference of much larger terms, in three; bounds found by a root
+  search, in one): V8 rounds `Math.log`, `log1p`, `exp`, `expm1` and
+  `cos` differently from the C library.
 * **Decisions** never differ.
 * **Round trip.** A run checkpointed in Python, continued here and
   restored in Python again ends with the digest of the uninterrupted
@@ -56,7 +57,12 @@ The executor has two parts:
     the kernel two-sample test;
   * confidence sequences: betting, quantile, Catoni and asymptotic;
   * group sequential tests;
-  * the A/B tests, and several tests with e-BH (`MultipleTests`);
+  * the A/B tests (including the exact bounded-metric test and the
+    rate-ratio test), several tests with e-BH (`MultipleTests`), and
+    online FDR control over a series of experiments (e-LOND);
+  * the anytime-valid linear model (tests and confidence sequences for
+    regression coefficients) and the anytime-valid log-rank test with
+    its hazard-ratio confidence sequence;
   * the local-level and general Kalman filters, the robust (Student t)
     Kalman filter, the hidden Markov filter (categorical, Gaussian and
     Poisson emissions), the bootstrap particle filters (local level;

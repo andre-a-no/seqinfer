@@ -125,7 +125,12 @@ def regression_unit(rnd):
 
 
 def survival_record(rnd):
-    return {"arm": rnd.randrange(2), "kind": 1 if rnd.random() < 0.5 else 0}
+    """Entries and events, never an event in an arm with nobody at risk (counted on the generator)."""
+    at_risk = rnd.__dict__.setdefault("at_risk", [0, 0])
+    arm = rnd.randrange(2)
+    kind = 1 if at_risk[arm] > 0 and rnd.random() < 0.4 else 0
+    at_risk[arm] += -1 if kind else 1
+    return {"arm": arm, "kind": kind}
 
 
 def four_states():

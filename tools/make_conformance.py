@@ -32,6 +32,8 @@ from sequential_analysis.procedures import (  # noqa: E402
     EMA,
     SPRT,
     ABTest,
+    AnytimeLinearModel,
+    AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     Bernoulli,
@@ -39,6 +41,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
+    BoundedABTest,
     CategoricalEmission,
     CatoniConfidenceSequence,
     Exponential,
@@ -55,6 +58,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     MultipleTests,
     NormalGammaModel,
     NormalMixtureSPRT,
+    OnlineFDR,
     ParticleFilter,
     PlanTest,
     Poisson,
@@ -63,6 +67,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
+    RateRatioTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -256,7 +261,88 @@ def cases():
             "bounded": BettingMeanTest(0.0, -4.0, 4.0, stop_on_reject=False),
         }, alpha=0.1), None, [{"x": max(-4.0, min(4.0, r["x"]))} for r in normal(0.35, 100)]),
     ]
-    return existing + added + ported
+    # The procedures ported after those; their data are drawn after all of the above.
+
+    def bounded_rows(n):
+        rows = []
+        for _ in range(n):
+            u = rnd.random()
+            arm = 1 if u < 0.36 else 0 if u < 0.9 else 2
+            y = rnd.betavariate(5.0, 3.0) if arm == 1 else rnd.betavariate(3.0, 4.0)
+            rows.append({"arm": arm, "y": y})
+        return rows
+
+    def poisson_count(mean):
+        k, prod, limit = 0, rnd.random(), math.exp(-mean)
+        while prod > limit:
+            k += 1
+            prod *= rnd.random()
+        return k
+
+    def rate_rows(n, rates):
+        rows = []
+        for _ in range(n):
+            u = rnd.random()
+            arm = 1 if u < 0.45 else 0 if u < 0.92 else 2
+            exposure = rnd.uniform(0.5, 3.0)
+            rows.append({"arm": arm, "count": poisson_count(rates[arm] * exposure), "exposure": exposure})
+        return rows
+
+    def e_value_rows(n, signal):
+        return [{"log_e": rnd.uniform(5.0, 12.0) if rnd.random() < signal else rnd.gauss(-0.5, 1.0)} for _ in range(n)]
+
+    def regression_rows(n, two_covariates, tested, effects, constant_until):
+        rows = []
+        for i in range(n):
+            row = {"x1": rnd.gauss(0.0, 1.0)}
+            if two_covariates:
+                row["x2"] = rnd.uniform(-1.0, 1.0)
+            for name in tested:
+                row[name] = 0.0 if i < constant_until else float(rnd.random() < 0.5)
+            y = 1.0 + 0.5 * row["x1"] - 0.3 * row.get("x2", 0.0) + rnd.gauss(0.0, 1.0)
+            for name, effect in zip(tested, effects):
+                y += effect * row[name]
+            row["y"] = y
+            rows.append(row)
+        return rows
+
+    def survival_rows(n, theta, start, entry, switch=None, theta_late=None):
+        """Entries, events and censorings in the order they happen; no event or censoring in an empty arm.
+
+        The hazard ratio is theta, and theta_late from row `switch` on.
+        """
+        rows, at_risk = [], [0, 0]  # treatment (arm 1), control (arm 0)
+        for i in range(n):
+            u = rnd.random()
+            if u < 0.05:
+                rows.append({"arm": 2, "kind": rnd.randrange(3)})
+            elif i < start or u < 0.05 + entry or at_risk[0] + at_risk[1] == 0:
+                k = rnd.randrange(2)
+                at_risk[k] += 1
+                rows.append({"arm": 1 - k, "kind": 0})
+            else:
+                weight = at_risk[0] * (theta if switch is None or i < switch else theta_late)
+                k = 0 if rnd.random() * (weight + at_risk[1]) < weight else 1
+                at_risk[k] -= 1
+                rows.append({"arm": 1 - k, "kind": 1 if rnd.random() < 0.8 else 2})
+        return rows
+
+    later = [
+        ("bounded_ab_test", BoundedABTest(0.0, 1.0, allocation=0.4, grid=100, backend="python"), None,
+         [{"arm": 2, "y": 0.5}, *bounded_rows(120)]),
+        ("rate_ratio_test", RateRatioTest(grid=40), None, rate_rows(150, (1.0, 1.6, 1.0))),
+        ("online_fdr", OnlineFDR(0.1), None, e_value_rows(40, 0.25)),
+        ("online_fdr_horizon", OnlineFDR(0.1, horizon=20), None, e_value_rows(20, 0.3)),
+        ("anytime_linear_model", AnytimeLinearModel(["x1", "x2"], ["z"]), None,
+         regression_rows(80, True, ("z",), (0.6,), 6)),
+        ("anytime_linear_model_two_tested", AnytimeLinearModel(["x1"], ["z1", "z2"], delta0=[0.0, 0.2], g=0.5), None,
+         regression_rows(80, False, ("z1", "z2"), (0.7, -0.2), 0)),
+        ("anytime_logrank_test", AnytimeLogRankTest(cs_grid=30), None,
+         survival_rows(200, 4.0, 40, 0.45, switch=90, theta_late=0.05)),
+        ("anytime_logrank_test_grow", AnytimeLogRankTest(alternative="less", method="grow", confidence_sequence=False),
+         None, survival_rows(150, 0.5, 40, 0.3)),
+    ]
+    return existing + added + ported + later
 
 
 def vector(label, procedure, seed, inputs):

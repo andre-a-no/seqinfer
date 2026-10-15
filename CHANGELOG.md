@@ -71,11 +71,11 @@ TypeScript executor, and a documentation site.
 
 ### Added: specification, TypeScript executor, documentation
 - `SPEC.md`: the formats and semantics another implementation needs.
-- `ts/`: a TypeScript executor of every procedure of the library (31;
-  those with a numpy backend with the Python backend). It reproduces all 45
-  conformance vectors -- 18 bit for bit, the others to 2.2e-13 -- and
+- `ts/`: a TypeScript executor of every procedure of the library (36;
+  those with a numpy backend with the Python backend). It reproduces all 53
+  conformance vectors -- 19 bit for bit, the others to 3.6e-13 -- and
   continues runs started in Python (and hands them back).
-- 29 conformance vectors for the new procedures.
+- 37 conformance vectors for the new procedures.
 - A documentation site (mkdocs, GitHub Pages) with tutorials whose code
   runs in the tests, and an API reference generated from the docstrings.
 - Release workflow: tested on Python 3.8 to 3.14; the TypeScript executor

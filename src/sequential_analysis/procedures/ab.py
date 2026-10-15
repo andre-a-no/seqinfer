@@ -617,7 +617,7 @@ class BoundedABTest(Procedure):
     ignored.  `log_e_value` is an e-process (usable by MultipleTests).
 
     Cost per step (PERFORMANCE.md): that of BettingConfidenceSequence on
-    `grid` points: 0.14 ms with numpy, 0.46 ms in Python for grid=1000.
+    `grid` points: 0.14 ms with numpy, 0.5 to 0.7 ms in Python for grid=1000.
     """
 
     name = "bounded_ab_test"
