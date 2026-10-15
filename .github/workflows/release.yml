@@ -4,9 +4,9 @@ name: release
 # to npm when the repository has an NPM_TOKEN secret. Run by hand (Actions -> release ->
 # Run workflow) it is a rehearsal: "none" builds and tests the release without
 # publishing anything, "testpypi" also uploads it to test.pypi.org and installs it
-# from there. Uploads use trusted publishing: no token is stored anywhere (see
-# RELEASING.md). After every upload the package is installed from the index and
-# smoke-tested (tools/smoke_test.py).
+# from there. Uploads use trusted publishing: no token is stored anywhere. After
+# every upload the package is installed from the index and smoke-tested
+# (tools/smoke_test.py).
 
 on:
   push:

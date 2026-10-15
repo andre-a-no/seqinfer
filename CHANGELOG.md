@@ -139,9 +139,7 @@ property-based tests; a guide to choosing a method.
   exact each guarantee is.
 - The group sequential tutorial covers binary and survival endpoints and
   analyses that move.
-- A conda-forge recipe (`packaging/conda-forge/meta.yaml`) and a paper for
-  the Journal of Open Source Software (`paper/joss/`); RELEASING.md says
-  how to submit both.
+- A short paper for the Journal of Open Source Software (`paper/joss/`).
 
 ## 0.3.0 — 2026-10-15
 
