@@ -11,3 +11,5 @@
 ::: sequential_analysis.procedures.two_sample_betting
 
 ::: sequential_analysis.procedures.robust_mean
+
+::: sequential_analysis.procedures.linear_model

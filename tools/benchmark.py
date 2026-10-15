@@ -34,6 +34,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     EMA,
     SPRT,
     ABTest,
+    AnytimeLinearModel,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     Bernoulli,
@@ -116,6 +117,12 @@ def e_value(rnd):
     return {"log_e": rnd.gauss(0.0, 2.0)}
 
 
+def regression_unit(rnd):
+    x = [rnd.gauss(0.0, 1.0) for _ in range(2)]
+    z = float(rnd.random() < 0.5)
+    return {"x1": x[0], "x2": x[1], "z": z, "y": x[0] - x[1] + 0.2 * z + rnd.gauss(0.0, 1.0)}
+
+
 def four_states():
     f = tuple(tuple(1.0 if j in (i, i + 1) else 0.0 for j in range(4)) for i in range(4))
     q = tuple(tuple(0.01 if i == j else 0.0 for j in range(4)) for i in range(4))
@@ -170,6 +177,8 @@ CASES = [
      (100,), False),
     ("BoundedABTest, grid 1000", lambda b: BoundedABTest(backend=b), bounded_unit, (100,), True),
     ("RateRatioTest, grid 200", lambda b: RateRatioTest(alpha=1e-12), rate_unit, (100,), False),
+    ("AnytimeLinearModel, 2 covariates", lambda b: AnytimeLinearModel(["x1", "x2"], ["z"]), regression_unit,
+     (100,), False),
     ("OnlineFDR (e-LOND)", lambda b: OnlineFDR(), e_value, (100,), False),
     ("MeanDifference", lambda b: MeanDifference(), pair, (100,), False),
     ("EMA", lambda b: EMA(0.1), normal, (100,), False),

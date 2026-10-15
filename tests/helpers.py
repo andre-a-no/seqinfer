@@ -25,6 +25,7 @@ from sequential_analysis.procedures import (
     EMA,
     SPRT,
     ABTest,
+    AnytimeLinearModel,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     BettingConfidenceSequence,
@@ -425,6 +426,15 @@ def cases():
             lambda: KeyJoin(("arm", "count", "exposure")),
             Delivery,
             record_stream(rate_rows(n, 41), ("arm", "count", "exposure")),
+            None,
+        ),
+        (
+            "anytime_linear_model",
+            lambda: AnytimeLinearModel(["x"], ["z"]),
+            lambda: KeyJoin(("x", "z", "y")),
+            Delivery,
+            record_stream([{"x": math.sin(i), "z": float(i % 2), "y": 0.5 * math.sin(i) + 0.3 * (i % 2)
+                            + math.cos(3.1 * i)} for i in range(n)], ("x", "z", "y")),
             None,
         ),
         (

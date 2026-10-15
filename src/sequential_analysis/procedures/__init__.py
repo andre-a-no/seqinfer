@@ -12,6 +12,7 @@ from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .group_sequential import GroupSequentialTest
 from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
 from .kalman import LocalLevelKalman
+from .linear_model import AnytimeLinearModel
 from .mixture import NormalMixtureSPRT
 from .online_fdr import OnlineFDR
 from .particle import BootstrapParticleFilter
@@ -41,6 +42,7 @@ __all__ = [
     "REJECT_H0",
     "SPRT",
     "ABTest",
+    "AnytimeLinearModel",
     "AsymptoticConfidenceSequence",
     "BayesianChangePoint",
     "Bernoulli",
