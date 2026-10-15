@@ -719,7 +719,7 @@ class StratifiedTests(unittest.TestCase):
         self.assertEqual(explicit.encode_state(explicit.initial_state()), default.encode_state(default.initial_state()))
         root = Path(__file__).resolve().parent.parent
         vectors = [v for v in json.loads((root / "conformance" / "procedures.json").read_text())
-                   if v["procedure"]["name"] == "anytime_logrank_test"]
+                   if v["procedure"]["name"] == "anytime_logrank_test" and "strata" not in v["procedure"]["config"]]
         self.assertGreaterEqual(len(vectors), 2)
         for v in vectors:
             proc = AnytimeLogRankTest(**v["procedure"]["config"], strata=1)
