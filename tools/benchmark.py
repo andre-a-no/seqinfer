@@ -30,6 +30,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from sequential_analysis import backend  # noqa: E402
 from sequential_analysis.procedures import (  # noqa: E402
+    ABTest,
+    MultipleTests,
+    SampleRatioMismatch,
+    TwoProportionTest,
     CUSUM,
     EMA,
     SPRT,
@@ -88,6 +92,12 @@ def two_d(rnd):
     return {"y": [rnd.gauss(0.0, 1.0), rnd.gauss(0.0, 1.0)]}
 
 
+def unit(rnd):
+    arm = rnd.randrange(3)
+    x = rnd.gauss(0.0, 1.0)
+    return {"arm": arm, "x": x, "y": int(rnd.random() < 0.1 + 0.02 * arm)}
+
+
 def four_states():
     f = tuple(tuple(1.0 if j in (i, i + 1) else 0.0 for j in range(4)) for i in range(4))
     q = tuple(tuple(0.01 if i == j else 0.0 for j in range(4)) for i in range(4))
@@ -133,6 +143,11 @@ CASES = [
                                                                 backend=b), observation, (100,), True),
     ("ParticleFilter, 20000 particles", lambda b: ParticleFilter(StochasticVolatilityModel(-1.0, 0.95, 0.3), 20000,
                                                                  backend=b), observation, (20,), True),
+    ("SampleRatioMismatch, 3 arms", lambda b: SampleRatioMismatch((1, 1, 1)), unit, (100,), False),
+    ("TwoProportionTest", lambda b: TwoProportionTest(alpha=1e-12), unit, (100,), False),
+    ("ABTest with covariate", lambda b: ABTest(covariate=True, start=10), unit, (100,), False),
+    ("MultipleTests, 2 arms vs control", lambda b: MultipleTests.versus_control([1, 2], 0, alpha=1e-12), unit,
+     (100,), False),
     ("MeanDifference", lambda b: MeanDifference(), pair, (100,), False),
     ("EMA", lambda b: EMA(0.1), normal, (100,), False),
 ]

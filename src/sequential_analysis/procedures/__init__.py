@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Reference procedures.  Each one is only a transition function and its state."""
+from .ab import ABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e_bh
 from .betting import BettingConfidenceSequence, BettingMeanTest, SequentialSignTest
 from .bocpd import BayesianChangePoint, BetaBernoulliModel, NormalGammaModel, PoissonGammaModel
 from .cusum import CUSUM
@@ -36,6 +37,7 @@ __all__ = [
     "EMA",
     "REJECT_H0",
     "SPRT",
+    "ABTest",
     "AsymptoticConfidenceSequence",
     "BayesianChangePoint",
     "Bernoulli",
@@ -56,6 +58,7 @@ __all__ = [
     "LinearGaussianModel",
     "LocalLevelKalman",
     "MeanDifference",
+    "MultipleTests",
     "NormalGammaModel",
     "NormalMixtureSPRT",
     "ParticleFilter",
@@ -66,12 +69,15 @@ __all__ = [
     "QuantileConfidenceSequence",
     "QuantileTest",
     "RobustKalmanFilter",
+    "SampleRatioMismatch",
     "SequentialSignTest",
     "ShiryaevRoberts",
     "StateSpaceModel",
     "StochasticVolatilityModel",
     "StudentTLocalLevel",
     "TMixtureSPRT",
+    "TwoProportionTest",
     "TwoSPRT",
+    "e_bh",
     "kiefer_weiss_point",
 ]

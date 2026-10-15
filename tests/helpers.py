@@ -10,6 +10,8 @@ from sequential_analysis import (
     Chain,
     Delivery,
     Independent,
+    KeyJoin,
+    Observation,
     PositionalPair,
     Recorder,
     Run,
@@ -20,6 +22,7 @@ from sequential_analysis.procedures import (
     CUSUM,
     EMA,
     SPRT,
+    ABTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     BettingConfidenceSequence,
@@ -34,6 +37,7 @@ from sequential_analysis.procedures import (
     KernelTwoSampleTest,
     LocalLevelKalman,
     MeanDifference,
+    MultipleTests,
     NormalGammaModel,
     NormalMixtureSPRT,
     ParticleFilter,
@@ -42,10 +46,12 @@ from sequential_analysis.procedures import (
     QuantileConfidenceSequence,
     QuantileTest,
     RobustKalmanFilter,
+    SampleRatioMismatch,
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
     TMixtureSPRT,
+    TwoProportionTest,
     TwoSPRT,
 )
 from sequential_analysis.sources import from_values, gaussian, interleave
@@ -92,6 +98,24 @@ def jittered_times(n: int, seed: int):
     tb = [i + rnd.uniform(-0.6, 0.6) for i in range(n)]
     tb.sort()
     return ta, tb
+
+
+def ab_units(n: int, seed: int, arms: int = 2):
+    """An A/B event stream: per unit, its arm and covariate at assignment, its outcome three units later."""
+    rnd = random.Random(seed)
+    units = []
+    for _ in range(n):
+        arm = rnd.randrange(arms)
+        x = rnd.gauss(0.0, 1.0)
+        y = int(rnd.random() < 0.2 + 0.1 * arm + 0.05 * (x > 0))
+        units.append((arm, x, y))
+    out = []
+    for i in range(n + 3):
+        if i < n:
+            out += [Observation("arm", units[i][0], seq=i, key=i), Observation("x", units[i][1], seq=i, key=i)]
+        if i >= 3:
+            out.append(Observation("y", units[i - 3][2], seq=i - 3, key=i - 3))
+    return out
 
 
 def chain_ema_cusum():
@@ -296,6 +320,31 @@ def cases():
             Delivery,
             list(gaussian("y", 0.0, 0.6, seed=36, n=n)),
             17,
+        ),
+        (
+            "ab_test_with_covariate",
+            lambda: ABTest(covariate=True, start=20, tuned_for=50),
+            lambda: KeyJoin(("arm", "y", "x")),
+            Delivery,
+            ab_units(n, seed=37),
+            None,
+        ),
+        (
+            "multiple_tests_versus_control",
+            lambda: MultipleTests({**MultipleTests.versus_control([1, 2], 0, alpha=0.2).tests_by_name(),
+                                   "srm": SampleRatioMismatch((1, 1, 1), 0.01)}, alpha=0.2),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            [o for o in ab_units(n, seed=38, arms=3) if o.input != "x"],
+            None,
+        ),
+        (
+            "two_proportion_one_sided",
+            lambda: TwoProportionTest(0.01, alternative="greater"),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            [o for o in ab_units(n, seed=39) if o.input != "x"],
+            None,
         ),
         (
             "betting_confidence_sequence",

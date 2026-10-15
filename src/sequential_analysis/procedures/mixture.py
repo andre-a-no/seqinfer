@@ -58,6 +58,7 @@ class MixtureOutput:
 
 class NormalMixtureSPRT(Procedure):
     name = "normal_mixture_sprt"
+    e_value_field = "log_lambda"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(

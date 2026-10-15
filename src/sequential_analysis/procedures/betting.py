@@ -138,6 +138,7 @@ class BettingMeanTest(_Betting):
     """
 
     name = "betting_mean_test"
+    e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(
@@ -198,6 +199,7 @@ class SequentialSignTest(_Betting):
     """
 
     name = "sequential_sign_test"
+    e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(

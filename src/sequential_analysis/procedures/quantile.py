@@ -154,6 +154,7 @@ class QuantileTest(Procedure):
     """
 
     name = "quantile_test"
+    e_value_field = "log_evidence"  # an e-process: usable by MultipleTests
     version = "1"
 
     def __init__(
