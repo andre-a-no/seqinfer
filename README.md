@@ -1,5 +1,19 @@
 # sequential-analysis
 
+[![PyPI](https://img.shields.io/pypi/v/sequential-analysis)](https://pypi.org/project/sequential-analysis/)
+[![Python](https://img.shields.io/pypi/pyversions/sequential-analysis)](https://pypi.org/project/sequential-analysis/)
+[![tests](https://github.com/andre-a-no/sequential-analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/andre-a-no/sequential-analysis/actions/workflows/tests.yml)
+[![License: AGPL v3 or commercial](https://img.shields.io/badge/license-AGPL--3.0%20%7C%20commercial-blue)](https://github.com/andre-a-no/sequential-analysis/blob/main/COMMERCIAL.md)
+
+**Sequential testing and online statistical inference in Python**: Wald's
+SPRT and Kiefer–Weiss optimal tests, anytime-valid A/B tests and confidence
+sequences (parametric and nonparametric: quantiles, two-sample tests,
+heavy-tailed and bounded means), group sequential designs for clinical
+trials, change-point detection (CUSUM, Shiryaev–Roberts, Bayesian online
+change points), and Kalman, particle and hidden Markov filters. Every
+procedure may be monitored after each observation and stopped at any time,
+and a run is checkpointed and resumed bit for bit.
+
 Sequential statistical inference, separated from the experimental runtime.
 
 > **Procedure infers; consumers act.**
