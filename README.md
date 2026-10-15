@@ -68,6 +68,8 @@ nonparametric monitoring, and a group sequential trial.
 
 ## Methods
 
+<!-- --8<-- [start:methods] -->
+
 | Kind | Procedures |
 |---|---|
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
@@ -181,6 +183,7 @@ with a name, a version and a configuration that the checkpoint records.
 
 Every statistical claim in the docstrings — error rates, coverage, run
 lengths, optimality — is checked by a test (`tests/test_methods.py`).
+<!-- --8<-- [end:methods] -->
 
 ## Guarantees
 
@@ -212,6 +215,8 @@ last checkpoint. After a restore they must come again from the sources; a
 source that cannot replay them has to be buffered by the application.
 
 ## Checkpoints and backends
+
+<!-- --8<-- [start:checkpoints] -->
 
 A checkpoint is a plain JSON value: the procedure's identity (name,
 version, configuration), its state, the 64-bit random state, topology
@@ -264,6 +269,7 @@ holds:
 - **Not part of the trajectory.** Wall-clock times in the provenance
   events and a run identifier generated when none is given differ from run
   to run; the history digest and every output do not.
+<!-- --8<-- [end:checkpoints] -->
 
 ## Speed
 

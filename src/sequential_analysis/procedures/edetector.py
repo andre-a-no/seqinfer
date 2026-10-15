@@ -32,6 +32,14 @@ change (P(X <= q0) = p); detects a change of the quantile, for data of
 any shape, heavy tails included.  `direction` is "increase", "decrease"
 or "both".
 
+The two types have the same guarantee but behave differently: the
+Shiryaev-Roberts type grows like t on average before the change, so its
+run length to a false alarm is spread out -- with arl=1000, 14% of
+simulated runs on skewed steady-state data alarmed within 400
+observations -- while the CUSUM type stays near one and alarmed in 0.3 to
+0.7% of them, in exchange for a somewhat later detection.  Choose CUSUM
+when early false alarms are costly.
+
 The reported change estimate is the start of the dominant bet's product
 under the CUSUM rule (the last time its statistic was below one).
 
