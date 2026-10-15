@@ -253,9 +253,11 @@ class GroupSequentialMonitor(Procedure):
     `from_design`.  They are non-binding, as in the design.
 
     Cost per analysis: a recursive numerical integration over the
-    analyses so far, about 10 ms per analysis at the third and 0.1 s at
-    the tenth (CPython); the state grows by three numbers per analysis,
-    at most `max_analyses`.
+    analyses so far, finer when they are close together: with twelve
+    equally spaced analyses, 80 ms at the fourth and 0.7 s at the
+    eleventh (CPython, PERFORMANCE.md); a grid of more than 20,000 points
+    is refused (NumericalError).  The state grows by three numbers per
+    analysis, at most `max_analyses`.
     """
 
     name = "group_sequential_monitor"
