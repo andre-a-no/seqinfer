@@ -36,6 +36,7 @@ from statistics import NormalDist
 from typing import Any
 
 from ._compat import pairwise, zip_strict
+from .errors import NumericalError
 
 _N = NormalDist()
 _SQRT2 = math.sqrt(2.0)
@@ -46,6 +47,7 @@ def _upper(x: float) -> float:
     return 0.5 * math.erfc(x / _SQRT2)
 _LOWER = -10.0  # B(t) / sqrt(t) below this is never reached in practice
 _NEVER = 40.0  # a boundary no path reaches: stands in for an infinite one in the recursion
+_MAX_GRID = 20_000  # grid points of one analysis; the next costs the product of two grids
 
 
 def spending_function(kind, alpha: float) -> Callable[[float], float]:
@@ -81,6 +83,11 @@ class _Recursion:
 
     def _grid(self, lo: float, hi: float, sd: float) -> list[float]:
         m = max(2, math.ceil((hi - lo) / sd * self.points))
+        if m > _MAX_GRID:
+            raise NumericalError(
+                f"group sequential integration: {m} grid points (more than {_MAX_GRID}); the analyses are too close "
+                f"together for their information ({(hi - lo) / sd:.0f} standard deviations of an increment apart)"
+            )
         m += m % 2  # Simpson needs an even number of intervals
         h = (hi - lo) / m
         return [lo + i * h for i in range(m + 1)]
@@ -119,7 +126,8 @@ class _Recursion:
         elif self.two_sided:
             lower = -upper
         else:
-            lower = min(_LOWER * math.sqrt(t) + self.drift * t, upper - 1.0)
+            # the same width in standard deviations at every scale: a fixed 1.0 made the grid grow as 1/sqrt(t)
+            lower = min(_LOWER * math.sqrt(t) + self.drift * t, upper - math.sqrt(t))
         ys = self._grid(lower, upper, sd)
         h = (ys[1] - ys[0]) / 3.0
         weights = _simpson(len(ys))

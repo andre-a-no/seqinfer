@@ -23,7 +23,7 @@ from enum import Enum
 from typing import Any
 
 from .backend import numpy_version
-from .canonical import canonical_json
+from .canonical import binary64, canonical_json
 from .consumers import Consumer, OutputEvent
 from .contracts import validate_input
 from .core import Observation, Procedure, StatInput, checked_step, envelope_problem, recording_problem, statistical_rng
@@ -551,6 +551,9 @@ class Run:
         exception class is recorded by name only, so that class has to be
         passed again as ``on_invalid``.
         """
+        # a checkpoint parsed with json.loads holds an int where an ECMAScript writer put a float of 2**53 or
+        # more (JSON.stringify writes 1e17 as 100000000000000000): read it as the binary64 number (SPEC 1)
+        checkpoint = binary64(checkpoint)
         validate_checkpoint(checkpoint)
         cid = checkpoint_id(checkpoint)  # validated: hashing cannot fail now
         if log is not FROM_CHECKPOINT and log is not None and not isinstance(log, ObservationLog):

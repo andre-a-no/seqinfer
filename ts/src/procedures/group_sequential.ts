@@ -135,6 +135,7 @@ register("group_sequential_test", "4", (c) => GroupSequentialTest.fromConfig(c))
 const SQRT2 = Math.SQRT2;
 const NEVER = 40.0; // a boundary no path reaches
 const LOWER = -10.0;
+const MAX_GRID = 20_000; // grid points of one analysis (group_sequential.py)
 
 /** 1 - Phi(x), through erfc. */
 const upperTail = (x: number): number => 0.5 * erfc(x / SQRT2);
@@ -206,6 +207,9 @@ class Recursion {
 
   private grid(lo: number, hi: number, sd: number): number[] {
     let m = pyMax(2, Math.ceil(((hi - lo) / sd) * this.points));
+    if (m > MAX_GRID)
+      throw new NumericalError(`group sequential integration: ${m} grid points (more than ${MAX_GRID}); the analyses are too close ` +
+        `together for their information (${((hi - lo) / sd).toFixed(0)} standard deviations of an increment apart)`);
     m += m % 2;
     const h = (hi - lo) / m;
     return Array.from({ length: m + 1 }, (_, i) => lo + i * h);
@@ -240,7 +244,7 @@ class Recursion {
     let lower: number;
     if (f !== null) lower = f * Math.sqrt(t);
     else if (this.twoSided) lower = -upper;
-    else lower = pyMin(LOWER * Math.sqrt(t) + this.drift * t, upper - 1.0);
+    else lower = pyMin(LOWER * Math.sqrt(t) + this.drift * t, upper - Math.sqrt(t));
     const ys = this.grid(lower, upper, sd);
     const h = (ys[1] - ys[0]) / 3.0;
     const weights = simpson(ys.length);

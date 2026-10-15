@@ -326,9 +326,17 @@ class Procedure(ABC, Generic[S, O]):
 
 
 def _finite(obj: Any) -> bool:
-    """No NaN or infinity anywhere in a JSON-like value."""
+    """No NaN or infinity, and no integer beyond 2**53, anywhere in a JSON-like value.
+
+    Either could be neither checkpointed (canonical JSON refuses them) nor
+    decoded exactly.  A count that outgrows 2**53 -- two units each with
+    2**53 events -- is a numerical failure of the step, not of the next
+    checkpoint.
+    """
     if isinstance(obj, float):
         return math.isfinite(obj)
+    if type(obj) is int:
+        return abs(obj) <= _MAX_EXACT
     if isinstance(obj, (list, tuple)):
         return all(_finite(v) for v in obj)
     if isinstance(obj, dict):
@@ -345,9 +353,9 @@ def checked_step(procedure: Procedure, state: Any, x: StatInput, rng: SplitMix64
     """procedure.step, with every numerical failure reported as NumericalError.
 
     Overflow or a math domain error inside the transition, and a new state
-    or output holding NaN or infinity -- which could be neither reported
-    nor checkpointed -- all become NumericalError, and nothing is returned
-    to commit.
+    or output holding NaN, infinity or an integer beyond 2**53 -- which
+    could be neither reported nor checkpointed -- all become
+    NumericalError, and nothing is returned to commit.
     """
     try:
         new_state, output = procedure.step(state, x, rng)
@@ -358,9 +366,11 @@ def checked_step(procedure: Procedure, state: Any, x: StatInput, rng: SplitMix64
             raise
         raise NumericalError(f"{procedure.name}: {error}") from error
     if not _finite(procedure.encode_state(new_state)):
-        raise NumericalError(f"{procedure.name}: the new state is not finite; nothing was committed")
+        raise NumericalError(f"{procedure.name}: the new state is not finite (or holds an integer beyond 2**53); "
+                             f"nothing was committed")
     if not _finite(procedure.encode_output(output)):
-        raise NumericalError(f"{procedure.name}: the output is not finite; nothing was committed")
+        raise NumericalError(f"{procedure.name}: the output is not finite (or holds an integer beyond 2**53); "
+                             f"nothing was committed")
     return new_state, output
 
 

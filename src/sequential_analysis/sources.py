@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from itertools import zip_longest
 from typing import Any, cast
 
+from .canonical import loads
 from .core import UNRECORDABLE, Observation, recording_problem
 from .delivery import Delivery
 from .errors import IncompatibleCheckpoint
@@ -331,7 +332,7 @@ class ObservationLog:
             with open(self.path, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        yield Observation.from_json(json.loads(line))
+                        yield Observation.from_json(loads(line))  # numbers as binary64 (SPEC 1)
 
 
 def replay(log) -> Iterator[Observation]:

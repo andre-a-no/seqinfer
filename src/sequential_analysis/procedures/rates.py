@@ -28,7 +28,11 @@ with rho_hat estimated from earlier pairs, has conditional mean exactly 1
 under H0, and the product over pairs is a test martingale: an exact
 anytime-valid test.  The confidence sequence for rho inverts the same
 e-processes over a log-spaced grid of rho0 (each excluded value stays
-excluded; the interval is intersected over time).
+excluded; the interval is intersected over time).  If every grid point is
+excluded, the least-excluded one says where rho is: beyond the top of the
+grid, the interval stays [top point, None); below the bottom, (None,
+bottom point]; inside the grid (a level-alpha event) it collapses onto
+that point and its neighbours, as in AnytimeLogRankTest.
 
 The counts must be Poisson given the exposure.  Overdispersed counts
 (negative binomial: some users order far more than others) break
@@ -175,10 +179,19 @@ class RateRatioTest(Procedure):
             return 0.0
         return _log_binomial_ratio(k_t, k, self.share(rho_hat, e_t, e_c), self.share(rho0, e_t, e_c))
 
-    def _interval(self, excluded: tuple[int, ...]) -> tuple[float | None, float | None]:
-        kept = [j for j, x in enumerate(excluded) if not x]
+    def _interval(self, state: RateRatioState) -> tuple[float | None, float | None]:
+        kept = [j for j, x in enumerate(state.excluded) if not x]
         if not kept:
-            return None, None
+            # Every point excluded.  The least-excluded point (the smallest e-value) tells where the ratio is:
+            # at an end of the grid, beyond it, and the interval keeps its last bound (it stays nested);
+            # inside, a level-alpha event, and the interval collapses onto that point and its neighbours.
+            least = min(range(self.grid), key=state.grid_log_e.__getitem__)
+            if least == self.grid - 1:
+                return self._points[-1], None
+            if least == 0:
+                return None, self._points[0]
+            return self._points[least - 1], self._points[least + 1]
+
         lo = None if kept[0] == 0 else self._points[kept[0] - 1]
         hi = None if kept[-1] == self.grid - 1 else self._points[kept[-1] + 1]
         return lo, hi
@@ -188,7 +201,7 @@ class RateRatioTest(Procedure):
         rt = kt / et if et > 0 else None
         rc = kc / ec if ec > 0 else None
         ratio = rt / rc if rt is not None and rc else None
-        lower, upper = self._interval(state.excluded) if self.grid else (None, None)
+        lower, upper = self._interval(state) if self.grid else (None, None)
         return RateRatioOutput(state.units[0] + state.units[1], (rt, rc), ratio, value,
                                min(1.0, math.exp(-state.max_log_e)), state.decision, lower, upper, state.pairs)
 

@@ -91,6 +91,32 @@ property-based tests; a guide to choosing a method.
   compensated from Python 3.12 on, and boundaries must not depend on the
   Python version.
 
+### Fixed (found by the property-based tests)
+- A step whose new state or output holds an integer beyond 2**53 (two
+  units with 2**53 events each in RateRatioTest) is a numerical failure,
+  and nothing is committed. Before, the step was committed and the next
+  checkpoint failed.
+- Integer literals beyond 2**53 in stored JSON are read as the binary64
+  numbers they denote, as `JSON.parse` reads them (SPEC 1). This applies
+  to checkpoints given to `Run.restore` or read by `load_checkpoint`, and
+  to observation logs. A run continued by the TypeScript executor comes
+  back to Python even when a number in its state is 1e17 or more.
+- `AnytimeLinearModel` restores its own checkpoints after a covariate
+  deviation below about 1e-154: the Cauchy–Schwarz check of the stored
+  cross products allows for products that underflowed.
+- Group sequential integration: the continuation region keeps the same
+  width in standard deviations at every scale. An analysis at an
+  information fraction of 1e-6 no longer builds a grid of millions of
+  points. A grid beyond 20,000 points is a NumericalError, not an
+  unbounded allocation.
+- `RateRatioTest`: once every grid point is excluded, the confidence
+  sequence keeps its last bound when the ratio lies beyond the grid, and
+  collapses onto the least-excluded point otherwise. It used to jump back
+  to (None, None).
+- `Delivery.skip_range` from the current position drops the numbers
+  delivered inside the range. Before, they stayed in the checkpoint for
+  ever.
+
 ### Documentation and packaging
 - "Which method?": from the question asked to the procedure, with how
   exact each guarantee is.

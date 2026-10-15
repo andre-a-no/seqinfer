@@ -9,6 +9,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from .canonical import loads
 from .errors import IncompatibleCheckpoint
 from .run import validate_checkpoint
 
@@ -44,7 +45,7 @@ def _fsync_directory(directory: Path) -> None:
 def load_checkpoint(path: str | os.PathLike) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
-            checkpoint: dict = json.load(f)
+            checkpoint: dict = loads(f.read())  # integers beyond 2**53 as binary64, as JSON.parse reads them
     except json.JSONDecodeError as error:
         raise IncompatibleCheckpoint(f"{path}: not valid JSON ({error})") from error
     try:

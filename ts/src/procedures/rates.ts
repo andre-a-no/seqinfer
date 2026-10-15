@@ -120,12 +120,19 @@ export class RateRatioTest extends BaseProcedure {
     return logBinomialRatio(kT, k, RateRatioTest.share(rhoHat, eT, eC), RateRatioTest.share(rho0, eT, eC));
   }
 
-  private interval(excluded: number[]): [number | null, number | null] {
+  private interval(s: RateRatioState): [number | null, number | null] {
     const kept: number[] = [];
-    excluded.forEach((x, j) => {
+    s.excluded.forEach((x, j) => {
       if (!x) kept.push(j);
     });
-    if (!kept.length) return [null, null];
+    if (!kept.length) {
+      // every point excluded: the least-excluded point (the first smallest e-value) says where the ratio is (rates.py)
+      let least = 0;
+      for (let j = 1; j < this.grid; j++) if (s.grid_log_e[j] < s.grid_log_e[least]) least = j;
+      if (least === this.grid - 1) return [this.points[this.grid - 1], null];
+      if (least === 0) return [null, this.points[0]];
+      return [this.points[least - 1], this.points[least + 1]];
+    }
     const lo = kept[0] === 0 ? null : this.points[kept[0] - 1];
     const hi = kept[kept.length - 1] === this.grid - 1 ? null : this.points[kept[kept.length - 1] + 1];
     return [lo, hi];
@@ -136,7 +143,7 @@ export class RateRatioTest extends BaseProcedure {
     const rt = et > 0 ? kt / et : null;
     const rc = ec > 0 ? kc / ec : null;
     const ratio = rt !== null && rc ? rt / rc : null;
-    const [lower, upper] = this.grid ? this.interval(s.excluded) : [null, null];
+    const [lower, upper] = this.grid ? this.interval(s) : [null, null];
     return {
       units: s.units[0] + s.units[1], rates: [rt, rc], rate_ratio: ratio, log_e_value: value,
       p_value: pyMin(1.0, Math.exp(-s.max_log_e)), decision: s.decision, lower, upper, pairs: s.pairs,
