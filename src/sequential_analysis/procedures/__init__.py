@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Reference procedures.  Each one is only a transition function and its state."""
-from .ab import ABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e_bh
+from .ab import ABTest, BoundedABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e_bh
 from .betting import BettingConfidenceSequence, BettingMeanTest, SequentialSignTest
 from .bocpd import BayesianChangePoint, BetaBernoulliModel, NormalGammaModel, PoissonGammaModel
 from .cusum import CUSUM
@@ -13,6 +13,7 @@ from .group_sequential import GroupSequentialTest
 from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
 from .kalman import LocalLevelKalman
 from .mixture import NormalMixtureSPRT
+from .online_fdr import OnlineFDR
 from .particle import BootstrapParticleFilter
 from .particle_filter import (
     LinearGaussianModel,
@@ -23,6 +24,7 @@ from .particle_filter import (
 )
 from .plan import PlanTest
 from .quantile import QuantileConfidenceSequence, QuantileTest
+from .rates import RateRatioTest
 from .robust_mean import AsymptoticConfidenceSequence, CatoniConfidenceSequence
 from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
@@ -46,6 +48,7 @@ __all__ = [
     "BettingConfidenceSequence",
     "BettingMeanTest",
     "BootstrapParticleFilter",
+    "BoundedABTest",
     "CategoricalEmission",
     "CatoniConfidenceSequence",
     "Exponential",
@@ -63,6 +66,7 @@ __all__ = [
     "MultipleTests",
     "NormalGammaModel",
     "NormalMixtureSPRT",
+    "OnlineFDR",
     "ParticleFilter",
     "PlanTest",
     "Poisson",
@@ -71,6 +75,7 @@ __all__ = [
     "QuantileConfidenceSequence",
     "QuantileEDetector",
     "QuantileTest",
+    "RateRatioTest",
     "RobustKalmanFilter",
     "SampleRatioMismatch",
     "SequentialSignTest",

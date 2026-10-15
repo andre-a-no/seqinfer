@@ -569,6 +569,166 @@ class ABTest(Procedure):
         return state
 
 
+# ---------------------------------------------------------------- bounded outcomes, exact
+
+
+@dataclass(frozen=True)
+class BoundedABState:
+    n: int
+    treated: int
+    sum_treated: float
+    sum_control: float
+    cs: Any  # the confidence sequence's state, over the scores
+    test: Any  # the test's state, over the scores
+
+
+@dataclass(frozen=True)
+class BoundedABOutput:
+    n: int
+    means: tuple[float | None, float | None]  # treatment, control (plain averages)
+    lower: float  # the exact confidence sequence for the effect
+    upper: float
+    log_e_value: float  # evidence against effect0
+    p_value: float
+    decision: str | None
+
+
+class BoundedABTest(Procedure):
+    """Exact anytime-valid confidence sequence and test for an effect on a bounded metric.
+
+    For outcomes y in [lower, upper] -- a conversion (0/1), a click-through
+    rate, a capped revenue, a score -- and units assigned to treatment with
+    known probability `allocation`, the scores
+
+        psi = (T / pi - C / (1 - pi)) (y - c),   c = (lower + upper) / 2,
+
+    have conditional mean E[y(T)] - E[y(C)] given the past, whatever the
+    distribution of y, and lie in [-B, B] with
+    B = (upper - lower) / 2 * max(1/pi, 1/(1 - pi)).  The confidence sequence
+    for their mean is the hedged-capital one of Waudby-Smith and Ramdas
+    (BettingConfidenceSequence) and the test of effect = effect0 the
+    betting test (BettingMeanTest): both exact for every distribution, at
+    every sample size, monitored after every unit -- unlike ABTest, whose
+    coverage is asymptotic.  The price is width: the scores' range grows as
+    the allocation moves away from 50/50.
+
+    The allocation must be the randomisation probability, the same for
+    every unit and independent of outcomes.  Units of other arms are
+    ignored.  `log_e_value` is an e-process (usable by MultipleTests).
+
+    Cost per step (PERFORMANCE.md): that of BettingConfidenceSequence on
+    `grid` points: 0.14 ms with numpy, 0.46 ms in Python for grid=1000.
+    """
+
+    name = "bounded_ab_test"
+    version = "1"
+    e_value_field = "log_e_value"
+
+    def __init__(self, lower: float = 0.0, upper: float = 1.0, allocation: float = 0.5, alpha: float = 0.05, *,
+                 effect0: float = 0.0, alternative: str = "two-sided", arms: tuple[int, int] = (1, 0),
+                 grid: int = 1000, backend: str = "auto", stop_on_reject: bool = False,
+                 arm_input: str = "arm", input: str = "y"):
+        from .betting import BettingConfidenceSequence, BettingMeanTest
+
+        if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
+            raise ValueError("need finite bounds lower < upper")
+        if not 0 < allocation < 1:
+            raise ValueError("allocation must lie in (0, 1)")
+        self.alpha = _check_alpha(alpha)
+        if len(arms) != 2 or any(type(a) is not int or a < 0 for a in arms) or arms[0] == arms[1]:
+            raise ValueError("arms must be two different non-negative integer labels")
+        if arm_input == input:
+            raise ValueError("the arm and the outcome need different names")
+        self.lower, self.upper, self.allocation = float(lower), float(upper), float(allocation)
+        self.center = (self.lower + self.upper) / 2.0
+        self.bound = (self.upper - self.lower) / 2.0 * max(1.0 / self.allocation, 1.0 / (1.0 - self.allocation))
+        if not -self.bound < effect0 < self.bound:
+            raise ValueError("effect0 must lie strictly inside the range of the scores")
+        self.effect0, self.arms = float(effect0), (arms[0], arms[1])
+        self.stop_on_reject, self.arm_input, self.input = stop_on_reject, arm_input, input
+        self._cs = BettingConfidenceSequence(-self.bound, self.bound, self.alpha, grid=grid, backend=backend,
+                                             input="psi")
+        self._test = BettingMeanTest(self.effect0, -self.bound, self.bound, self.alpha, alternative=alternative,
+                                     stop_on_reject=False, input="psi")
+        self.alternative, self.grid, self.backend = alternative, grid, self._cs.backend
+
+    def config(self) -> dict:
+        return {"lower": self.lower, "upper": self.upper, "allocation": self.allocation, "alpha": self.alpha,
+                "effect0": self.effect0, "alternative": self.alternative, "arms": list(self.arms),
+                "grid": self.grid, "backend": self.backend, "stop_on_reject": self.stop_on_reject,
+                "arm_input": self.arm_input, "input": self.input}
+
+    def inputs(self):
+        return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
+                self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
+
+    def initial_state(self) -> BoundedABState:
+        return BoundedABState(0, 0, 0.0, 0.0, self._cs.initial_state(), self._test.initial_state())
+
+    def score(self, treated: bool, y: float) -> float:
+        weight = 1.0 / self.allocation if treated else -1.0 / (1.0 - self.allocation)
+        # the bound can be exceeded only by rounding: clip to the declared range of the scores
+        return max(-self.bound, min(self.bound, weight * (y - self.center)))
+
+    def _output(self, state: BoundedABState, cs_out: Any, test_out: Any) -> BoundedABOutput:
+        control = state.n - state.treated
+        means = (state.sum_treated / state.treated if state.treated else None,
+                 state.sum_control / control if control else None)
+        lower = cs_out.lower if cs_out is not None else -self.bound
+        upper = cs_out.upper if cs_out is not None else self.bound
+        log_e = test_out.log_wealth if test_out is not None else 0.0
+        p_value = test_out.p_value if test_out is not None else 1.0
+        decision = test_out.decision if test_out is not None else None
+        return BoundedABOutput(state.n, means, lower, upper, log_e, p_value, decision)
+
+    def step(self, state: BoundedABState, x, rng=None):
+        label = x[self.arm_input]
+        if label not in self.arms:
+            if state.n == 0:
+                return state, self._output(state, None, None)
+            return state, self._last(state)
+        treated = label == self.arms[0]
+        y = x[self.input]
+        psi = self.score(treated, y)
+        cs_state, cs_out = self._cs.step(state.cs, {"psi": psi})
+        test_state, test_out = self._test.step(state.test, {"psi": psi})
+        new = BoundedABState(state.n + 1, state.treated + treated, state.sum_treated + (y if treated else 0.0),
+                             state.sum_control + (0.0 if treated else y), cs_state, test_state)
+        return new, self._output(new, cs_out, test_out)
+
+    def _last(self, state: BoundedABState) -> BoundedABOutput:
+        """The output for a step that changes nothing (a unit of another arm)."""
+        cs = state.cs
+        lower = -self.bound if cs.lower is None else cs.lower
+        upper = self.bound if cs.upper is None else cs.upper
+        t = state.test
+        log_e = self._test._log_wealth(t.log_up, t.log_down)
+        control = state.n - state.treated
+        means = (state.sum_treated / state.treated if state.treated else None,
+                 state.sum_control / control if control else None)
+        return BoundedABOutput(state.n, means, lower, upper, log_e, min(1.0, math.exp(-t.max_log_wealth)),
+                               t.decision)
+
+    def is_terminal(self, state: BoundedABState) -> bool:
+        return self.stop_on_reject and state.test.decision is not None
+
+    def encode_state(self, state: BoundedABState):
+        return {"n": state.n, "treated": state.treated, "sum_treated": state.sum_treated,
+                "sum_control": state.sum_control, "cs": self._cs.encode_state(state.cs),
+                "test": self._test.encode_state(state.test)}
+
+    def decode_state(self, data) -> BoundedABState:
+        require_state(isinstance(data, dict) and set(data) == {"n", "treated", "sum_treated", "sum_control", "cs",
+                                                               "test"}, "fields")
+        n, treated = data["n"], data["treated"]
+        require_state(type(n) is int and type(treated) is int and 0 <= treated <= n, "counts")
+        sums = (data["sum_treated"], data["sum_control"])
+        require_state(all(type(v) in (int, float) and math.isfinite(v) for v in sums), "sums")
+        cs, test = self._cs.decode_state(data["cs"]), self._test.decode_state(data["test"])
+        require_state(cs.n == n and test.n == n, "the inner states saw the same units")
+        return BoundedABState(n, treated, float(sums[0]), float(sums[1]), cs, test)
+
+
 # ---------------------------------------------------------------- many tests
 
 

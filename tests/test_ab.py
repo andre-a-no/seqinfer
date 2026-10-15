@@ -22,6 +22,7 @@ from sequential_analysis import KeyJoin, Run, run_sync
 from sequential_analysis._compat import zip_strict
 from sequential_analysis.procedures import (
     ABTest,
+    BoundedABTest,
     MultipleTests,
     NormalMixtureSPRT,
     SampleRatioMismatch,
@@ -337,6 +338,87 @@ class ABTestTests(unittest.TestCase):
                        {"tuned_for": 0.5}):
             with self.assertRaises(ValueError):
                 ABTest(**kwargs)
+
+
+class BoundedABTests(unittest.TestCase):
+    @staticmethod
+    def units(n, seed, allocation=0.5, treat=(2.0, 5.0), control=(2.0, 5.0)):
+        """Outcomes in [0, 1] from Beta distributions: skewed, not normal."""
+        rnd = random.Random(seed)
+        out = []
+        for _ in range(n):
+            t = rnd.random() < allocation
+            a, b = treat if t else control
+            out.append({"arm": int(t), "y": rnd.betavariate(a, b)})
+        return out
+
+    def test_scores_are_unbiased_for_the_effect(self):
+        # E[psi] = E[y(T)] - E[y(C)] exactly, by enumerating a discrete outcome distribution
+        for allocation in (0.5, 0.3, 0.8):
+            proc = BoundedABTest(0.0, 1.0, allocation)
+            values, pt, pc = (0.0, 0.25, 1.0), (0.2, 0.3, 0.5), (0.5, 0.4, 0.1)
+            expected = 0.0
+            for v, qt, qc in zip(values, pt, pc):
+                expected += allocation * qt * proc.score(True, v) + (1 - allocation) * qc * proc.score(False, v)
+            effect = sum(v * q for v, q in zip(values, pt)) - sum(v * q for v, q in zip(values, pc))
+            self.assertAlmostEqual(expected, effect, delta=1e-12)
+            self.assertLessEqual(max(abs(proc.score(t, v)) for t in (True, False) for v in values), proc.bound)
+
+    def test_coverage_uniformly_over_time_on_skewed_data(self):
+        runs, alpha = 100, 0.1
+        for allocation in (0.5, 0.3):
+            truth = 2.0 / 7.0 - 2.0 / 9.0  # Beta(2, 5) against Beta(2, 7)
+            missed = 0
+            for r in range(runs):
+                proc = BoundedABTest(0.0, 1.0, allocation, alpha, grid=200, backend="python")
+                _, outs = fold(proc, self.units(600, 100 + r, allocation, treat=(2.0, 5.0), control=(2.0, 7.0)))
+                missed += any(not o.lower <= truth <= o.upper for o in outs)
+            self.assertLessEqual(missed / runs, binomial_upper_bound(alpha, runs), allocation)
+
+    def test_level_with_equal_means_but_different_distributions(self):
+        runs, alpha = 200, 0.1
+        rejected = 0
+        for r in range(runs):
+            rnd = random.Random(700 + r)
+            proc = BoundedABTest(0.0, 1.0, 0.5, alpha, grid=50, backend="python")
+            state = proc.initial_state()
+            for _ in range(800):
+                t = rnd.random() < 0.5
+                y = float(rnd.random() < 0.5) if t else rnd.random()  # both have mean 1/2
+                state, _ = proc.step(state, {"arm": int(t), "y": y})
+            rejected += state.test.decision is not None
+        self.assertLessEqual(rejected / runs, binomial_upper_bound(alpha, runs))
+
+    def test_detects_a_lift_and_the_interval_shrinks(self):
+        proc = BoundedABTest(0.0, 1.0, 0.5, 0.05, grid=400, backend="python")
+        _, outs = fold(proc, self.units(4000, 3, treat=(3.0, 5.0), control=(2.0, 5.0)))
+        last = outs[-1]
+        truth = 3.0 / 8.0 - 2.0 / 7.0
+        self.assertEqual(last.decision, "reject_h0")
+        self.assertLess(last.lower, truth)
+        self.assertGreater(last.upper, truth)
+        self.assertLess(last.upper - last.lower, outs[200].upper - outs[200].lower)
+
+    def test_parts_equal_the_procedures_they_are_made_of(self):
+        from sequential_analysis.procedures import BettingMeanTest
+
+        units = self.units(300, 4, allocation=0.4)
+        proc = BoundedABTest(0.0, 1.0, 0.4, grid=100, backend="python")
+        state, outs = fold(proc, units)
+        test = BettingMeanTest(0.0, -proc.bound, proc.bound, proc.alpha, stop_on_reject=False, input="psi")
+        _, alone = fold(test, [{"psi": proc.score(u["arm"] == 1, u["y"])} for u in units])
+        self.assertEqual([o.log_e_value for o in outs], [o.log_wealth for o in alone])
+        self.assertEqual(proc.decode_state(proc.encode_state(state)), state)
+
+    def test_other_arms_and_arguments(self):
+        rows = [{"arm": 2, "y": 0.5}, *self.units(50, 5), {"arm": 2, "y": 0.1}]
+        proc = BoundedABTest(arms=(1, 0), grid=50, backend="python")
+        _, outs = fold(proc, rows)
+        self.assertEqual(outs[-1], outs[-2])
+        self.assertEqual((outs[0].n, outs[0].lower, outs[0].upper), (0, -proc.bound, proc.bound))
+        for kwargs in ({"lower": 1.0, "upper": 0.0}, {"allocation": 1.0}, {"effect0": 5.0}, {"arms": (1, 1)}):
+            with self.assertRaises(ValueError):
+                BoundedABTest(**kwargs)
 
 
 class EBHTests(unittest.TestCase):

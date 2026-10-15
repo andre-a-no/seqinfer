@@ -40,6 +40,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
+    BoundedABTest,
     CatoniConfidenceSequence,
     Gaussian,
     GaussianEmission,
@@ -53,11 +54,13 @@ from sequential_analysis.procedures import (  # noqa: E402
     MultipleTests,
     NormalGammaModel,
     NormalMixtureSPRT,
+    OnlineFDR,
     ParticleFilter,
     PlanTest,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
+    RateRatioTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -99,6 +102,18 @@ def unit(rnd):
     arm = rnd.randrange(3)
     x = rnd.gauss(0.0, 1.0)
     return {"arm": arm, "x": x, "y": int(rnd.random() < 0.1 + 0.02 * arm)}
+
+
+def bounded_unit(rnd):
+    return {"arm": rnd.randrange(2), "y": rnd.random()}
+
+
+def rate_unit(rnd):
+    return {"arm": rnd.randrange(2), "count": rnd.randrange(5), "exposure": rnd.uniform(0.5, 2.0)}
+
+
+def e_value(rnd):
+    return {"log_e": rnd.gauss(0.0, 2.0)}
 
 
 def four_states():
@@ -153,6 +168,9 @@ CASES = [
     ("ABTest with covariate", lambda b: ABTest(covariate=True, start=10), unit, (100,), False),
     ("MultipleTests, 2 arms vs control", lambda b: MultipleTests.versus_control([1, 2], 0, alpha=1e-12), unit,
      (100,), False),
+    ("BoundedABTest, grid 1000", lambda b: BoundedABTest(backend=b), bounded_unit, (100,), True),
+    ("RateRatioTest, grid 200", lambda b: RateRatioTest(alpha=1e-12), rate_unit, (100,), False),
+    ("OnlineFDR (e-LOND)", lambda b: OnlineFDR(), e_value, (100,), False),
     ("MeanDifference", lambda b: MeanDifference(), pair, (100,), False),
     ("EMA", lambda b: EMA(0.1), normal, (100,), False),
 ]
