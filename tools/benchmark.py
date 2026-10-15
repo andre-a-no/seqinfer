@@ -30,13 +30,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from sequential_analysis import backend  # noqa: E402
 from sequential_analysis.procedures import (  # noqa: E402
-    ABTest,
-    MultipleTests,
-    SampleRatioMismatch,
-    TwoProportionTest,
     CUSUM,
     EMA,
     SPRT,
+    ABTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     Bernoulli,
@@ -52,6 +49,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     KernelTwoSampleTest,
     LocalLevelKalman,
     MeanDifference,
+    MultipleTests,
     NormalGammaModel,
     NormalMixtureSPRT,
     ParticleFilter,
@@ -59,13 +57,16 @@ from sequential_analysis.procedures import (  # noqa: E402
     QuantileConfidenceSequence,
     QuantileTest,
     RobustKalmanFilter,
+    SampleRatioMismatch,
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
     TMixtureSPRT,
+    TwoProportionTest,
     TwoSPRT,
 )
 from sequential_analysis.rng import SplitMix64  # noqa: E402
+from sequential_analysis.smoothing import forward_backward, kalman_smoother, viterbi  # noqa: E402
 
 
 def normal(rnd):
@@ -153,6 +154,32 @@ CASES = [
 ]
 
 
+def three_state_hmm():
+    return HiddenMarkovFilter((0.4, 0.3, 0.3), ((0.9, 0.05, 0.05), (0.05, 0.9, 0.05), (0.05, 0.05, 0.9)),
+                              GaussianEmission((0.0, 1.0, 2.0), (1.0, 1.0, 1.0)))
+
+
+#: offline passes over a whole series: (name, function of a list of inputs, input generator)
+OFFLINE = [
+    ("kalman_smoother, local linear trend", lambda xs: kalman_smoother(KalmanFilter.local_linear_trend(0.1, 0.01, 1.0),
+                                                                        xs), observation),
+    ("forward_backward, 3 states", lambda xs: forward_backward(three_state_hmm(), xs), observation),
+    ("viterbi, 3 states", lambda xs: viterbi(three_state_hmm(), xs), observation),
+]
+
+
+def offline_rows(length: int = 5000):
+    for name, run, gen in OFFLINE:
+        rnd = random.Random(1)
+        xs = [gen(rnd) for _ in range(length)]
+        times = []
+        for _ in range(3):
+            start = time.perf_counter()
+            run(xs)
+            times.append(time.perf_counter() - start)
+        yield name, length, statistics.median(times) / length
+
+
 def measure(make, gen, n: int, randomized: bool, repeats: int = 30, warm=None) -> tuple[float, int]:
     """Median seconds of one step after n observations, and the size of the encoded state in bytes.
 
@@ -216,6 +243,11 @@ def main() -> None:
     lines = ["| Procedure | Backend | after n | time per step | checkpointed state |", "|---|---|---|---|---|"]
     for name, b, n, seconds, size in table:
         lines.append(f"| {name} | {b} | {n:,} | {human(seconds)} | {human_size(size)} |")
+    offline = list(offline_rows())
+    lines += ["", "Offline smoothing (sequential_analysis.smoothing), over a whole series:", "",
+              "| Function | series length | time per time point |", "|---|---|---|"]
+    for name, length, seconds in offline:
+        lines.append(f"| {name} | {length:,} | {human(seconds)} |")
     if args.markdown:
         text = (ROOT / "PERFORMANCE.md").read_text(encoding="utf-8") if (ROOT / "PERFORMANCE.md").exists() else ""
         head = text.split("<!-- table -->")[0] if "<!-- table -->" in text else "# Performance\n\n"
@@ -227,6 +259,7 @@ def main() -> None:
         print(machine)
         print("\n".join(lines))
     assert all(math.isfinite(s) for *_, s, _ in table)
+    assert all(math.isfinite(s) for *_, s in offline)
 
 
 if __name__ == "__main__":

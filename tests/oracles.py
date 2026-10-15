@@ -117,6 +117,54 @@ def gaussian_filter(F, H, Q, R, m0, P0, ys, B=None, us=None):
     return results
 
 
+def gaussian_smoother(F, H, Q, R, m0, P0, ys, B=None, us=None):
+    """(E[z_t | y_1..T], Cov[z_t | y_1..T]) for t = 1..T, by exact conditioning on all observations at once."""
+    F, H, Q, R, P0 = mat(F), mat(H), mat(Q), mat(R), mat(P0)
+    n, m = len(F), len(H)
+    T = len(ys)
+    ys = [[_q(v) for v in (y if isinstance(y, (list, tuple)) else [y])] for y in ys]
+    means, covs = [[[_q(v)] for v in m0]], [P0]
+    for t in range(1, T + 1):
+        mt = mul(F, means[-1])
+        if B is not None:
+            u = us[t - 1]
+            mt = madd(mt, mul(mat(B), [[_q(v)] for v in (u if isinstance(u, (list, tuple)) else [u])]))
+        means.append(mt)
+        covs.append(madd(mul(mul(F, covs[-1]), tr(F)), Q))
+    power = {0: [[Fraction(int(i == j)) for j in range(n)] for i in range(n)]}
+    for k in range(1, T + 1):
+        power[k] = mul(F, power[k - 1])
+
+    def cross(t, s):
+        return mul(power[t - s], covs[s]) if t >= s else tr(mul(power[s - t], covs[t]))
+
+    my = [row for s in range(1, T + 1) for row in mul(H, means[s])]
+    syy = [[None] * (T * m) for _ in range(T * m)]
+    for a in range(1, T + 1):
+        for b in range(1, T + 1):
+            block = mul(mul(H, cross(a, b)), tr(H))
+            if a == b:
+                block = madd(block, R)
+            for i in range(m):
+                for j in range(m):
+                    syy[(a - 1) * m + i][(b - 1) * m + j] = block[i][j]
+    resid = [[ys[s][i] - my[s * m + i][0]] for s in range(T) for i in range(m)]
+    sol, _ = solve(syy, [r[:] for r in resid])
+    out = []
+    for t in range(1, T + 1):
+        szy = [[None] * (T * m) for _ in range(n)]
+        for b in range(1, T + 1):
+            block = mul(cross(t, b), tr(H))
+            for i in range(n):
+                for j in range(m):
+                    szy[i][(b - 1) * m + j] = block[i][j]
+        cmean = madd(means[t], mul(szy, sol))
+        k, _ = solve(syy, tr(szy))
+        ccov = [[covs[t][i][j] - sum(szy[i][a] * k[a][j] for a in range(T * m)) for j in range(n)] for i in range(n)]
+        out.append(([float(v[0]) for v in cmean], [[float(v) for v in row] for row in ccov]))
+    return out
+
+
 # ---------------------------------------------------------------- hidden Markov models by enumeration
 
 def hmm_filter(initial, transition, emission, ys):
@@ -137,6 +185,36 @@ def hmm_filter(initial, transition, emission, ys):
             total += p
         out.append(([w / total for w in weights], math.log(total)))
     return out
+
+
+def _paths(initial, transition, emission, ys):
+    K = len(initial)
+    for path in itertools.product(range(K), repeat=len(ys)):
+        p = initial[path[0]] * emission(path[0], ys[0])
+        for s in range(1, len(ys)):
+            p *= transition[path[s - 1]][path[s]] * emission(path[s], ys[s])
+        yield path, p
+
+
+def hmm_smoother(initial, transition, emission, ys):
+    """P(z_t = k | y_1..T) for every t and k, summing over all K^T paths."""
+    K, T = len(initial), len(ys)
+    weights = [[0.0] * K for _ in range(T)]
+    total = 0.0
+    for path, p in _paths(initial, transition, emission, ys):
+        for t, k in enumerate(path):
+            weights[t][k] += p
+        total += p
+    return [[w / total for w in row] for row in weights]
+
+
+def hmm_most_probable_path(initial, transition, emission, ys):
+    """The path of largest joint probability (the first in lexicographic order among ties), and its log."""
+    best, best_p = None, -1.0
+    for path, p in _paths(initial, transition, emission, ys):
+        if p > best_p:
+            best, best_p = path, p
+    return best, math.log(best_p)
 
 
 # ---------------------------------------------------------------- product partitions by enumeration
