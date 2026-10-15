@@ -52,6 +52,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     GroupSequentialMonitor,
     GroupSequentialProportions,
     GroupSequentialTest,
+    GroupSequentialTwoMeans,
     HiddenMarkovFilter,
     KalmanFilter,
     KernelTwoSampleTest,
@@ -389,6 +390,12 @@ def cases():
         ("group_sequential_logrank_stratified", GroupSequentialLogRank([25, 50, 75], [3.7, 2.5, 2.0], strata=3,
                                                                        two_sided=True, alternative="greater"), None,
          stratified_survival_rows(300, 1.5, 3, 45)),
+        ("group_sequential_two_means_t", GroupSequentialTwoMeans.from_design(gs_futility, 160, None), None,
+         [{"arm": 2 if rnd.random() < 0.05 else i % 2, "y": rnd.gauss(0.6 if i % 2 else 0.0, 1.5)}
+          for i in range(170)]),
+        ("group_sequential_two_means_known", GroupSequentialTwoMeans(1.5, [30, 60, 90], [3.5, 2.6, 2.0],
+                                                                     two_sided=True, alternative="less"), None,
+         [{"arm": i % 2, "y": rnd.gauss(-0.4 if i % 2 else 0.0, 1.5)} for i in range(95)]),
     ]
     return existing + added + ported + later + round_four
 

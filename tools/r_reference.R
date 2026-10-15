@@ -8,7 +8,7 @@
 #             information fractions, sample sizes for means, rates and events;
 #   survival  log-rank statistics (the score test of a Cox model on counting-process data, so
 #             that late entry is handled), at interim analyses of a simulated trial;
-#   stats     the two-proportion chi-square test.
+#   stats     the two-proportion chi-square test and the pooled two-sample t-test.
 #
 #   Rscript tools/r_reference.R > tests/r_reference.json
 #
@@ -152,11 +152,22 @@ for (case in list(c(48, 400, 31, 400), c(12, 90, 25, 110), c(150, 1000, 120, 100
                                                  chisq = unname(t$statistic))
 }
 
+set.seed(20261017)
+two_means <- list()
+for (case in list(c(15, 25, 0.4), c(40, 40, 0), c(7, 31, -0.8))) {
+  y_t <- rnorm(case[1], case[3], 1.3)
+  y_c <- rnorm(case[2], 0, 1.3)
+  t <- t.test(y_t, y_c, var.equal = TRUE)
+  two_means[[length(two_means) + 1]] <- list(treatment = y_t, control = y_c, t = unname(t$statistic),
+                                             df = unname(t$parameter))
+}
+
 cat(toJSON(list(
   generated_by = "tools/r_reference.R",
   versions = list(R = paste(R.version$major, R.version$minor, sep = "."),
                   rpact = as.character(packageVersion("rpact")),
                   survival = as.character(packageVersion("survival"))),
-  designs = designs, realised = realised, sample_sizes = sizes, logrank = logrank, proportions = proportions
+  designs = designs, realised = realised, sample_sizes = sizes, logrank = logrank, proportions = proportions,
+  two_means = two_means
 ), auto_unbox = TRUE, digits = NA, null = "null", pretty = TRUE))
 cat("\n")

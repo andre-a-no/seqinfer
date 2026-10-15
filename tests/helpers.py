@@ -40,6 +40,7 @@ from sequential_analysis.procedures import (
     GroupSequentialMonitor,
     GroupSequentialProportions,
     GroupSequentialTest,
+    GroupSequentialTwoMeans,
     HiddenMarkovFilter,
     KalmanFilter,
     KernelTwoSampleTest,
@@ -468,6 +469,15 @@ def cases():
             lambda: KeyJoin(("arm", "y")),
             Delivery,
             record_stream([{"arm": i % 3, "y": int((i * 7) % 5 < 2 + (i % 3 == 1))} for i in range(n)], ("arm", "y")),
+            None,
+        ),
+        (
+            "group_sequential_two_means",
+            lambda: GroupSequentialTwoMeans(None, [10, 20, 30], [3.6, 2.6, 2.1]),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            record_stream([{"arm": i % 3, "y": math.sin(1.7 * i) + 0.3 * (i % 3 == 1)} for i in range(n)],
+                          ("arm", "y")),
             None,
         ),
         (

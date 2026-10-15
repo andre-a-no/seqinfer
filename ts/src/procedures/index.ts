@@ -11,7 +11,8 @@ export { MeanEDetector, QuantileEDetector } from "./edetector.js";
 export { EMA } from "./ema.js";
 export { Bernoulli, Exponential, type Family, familyFromSpec, Gaussian, Poisson } from "./families.js";
 export {
-  efficacyBounds, futilityBounds, GroupSequentialLogRank, GroupSequentialMonitor, GroupSequentialProportions, GroupSequentialTest, normalInvCdf,
+  efficacyBounds, futilityBounds, GroupSequentialLogRank, GroupSequentialMonitor, GroupSequentialProportions, GroupSequentialTest,
+  GroupSequentialTwoMeans, normalInvCdf,
   spendingFunction,
 } from "./group_sequential.js";
 export { CategoricalEmission, type Emission, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, PoissonEmission } from "./hmm.js";

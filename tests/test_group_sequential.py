@@ -22,6 +22,7 @@ from sequential_analysis.procedures.group_sequential import (
     GroupSequentialLogRank,
     GroupSequentialMonitor,
     GroupSequentialProportions,
+    GroupSequentialTwoMeans,
 )
 from sequential_analysis.procedures.sprt import ACCEPT_H0, REJECT_H0
 
@@ -167,6 +168,56 @@ class Proportions(unittest.TestCase):
             GroupSequentialProportions([10, 5], [2.0, 2.0])
         with self.assertRaises(ValueError):
             GroupSequentialProportions([10], [2.0], alternative="two-sided")
+
+
+def means_trial(proc, effect, rnd, sd=2.0):
+    state, n = proc.initial_state(), 0
+    while True:
+        arm = n % 2
+        state, out = proc.step(state, {"arm": arm, "y": rnd.gauss(effect if arm == 1 else 0.0, sd)})
+        n += 1
+        if out.decision:
+            return out
+
+
+class TwoMeans(unittest.TestCase):
+    def test_level_and_power(self):
+        design = group_sequential_design(0.025, [0.25, 0.5, 0.75, 1.0], "obrien-fleming", futility="pocock",
+                                         power=0.9)
+        n_max = design.max_sample_size_two_means(effect=1.0, sigma=2.0)
+        n_max += n_max % 2
+        rnd, reps = random.Random(17), 1500
+        for sigma in (2.0, None):  # known, and estimated (t boundaries)
+            proc = GroupSequentialTwoMeans.from_design(design, n_max, sigma)
+            level = sum(means_trial(proc, 0.0, rnd).decision == REJECT_H0 for _ in range(reps)) / reps
+            within(self, level, 0.025, reps, f"level, sigma={sigma}")
+            power = sum(means_trial(proc, 1.0, rnd).decision == REJECT_H0 for _ in range(reps)) / reps
+            within(self, power, 0.9, reps, f"power, sigma={sigma}")
+
+    def test_statistics(self):
+        known = GroupSequentialTwoMeans(2.0, [4], [40.0])
+        estimated = GroupSequentialTwoMeans(None, [4], [40.0], alternative="less")
+        data = ((1, 3.0), (0, 1.0), (1, 5.0), (0, 2.0))
+        for proc in (known, estimated):
+            state = proc.initial_state()
+            for arm, y in data:
+                state, out = proc.step(state, {"arm": arm, "y": y})
+            if proc is known:
+                self.assertAlmostEqual(out.z, 2.5 / (2.0 * math.sqrt(1.0)), places=14)
+            else:  # pooled sd sqrt((2 + 0.5) / 2); "less" reverses the sign
+                self.assertAlmostEqual(out.z, -2.5 / (math.sqrt(1.25) * 1.0), places=14)
+        # t boundaries: the same one-sided level with n - 2 degrees of freedom
+        proc = GroupSequentialTwoMeans(None, [12, 24], [2.5, 2.0])
+        from sequential_analysis.distributions import t_cdf
+
+        self.assertAlmostEqual(1 - t_cdf(proc.bound_at(0), 10), 0.5 * math.erfc(2.5 / math.sqrt(2)), delta=1e-14)
+        with self.assertRaises(ValueError):
+            GroupSequentialTwoMeans(None, [2, 4], [2.5, 2.0])  # no variance at two units
+        constant = GroupSequentialTwoMeans(None, [4], [3.0])
+        state = constant.initial_state()
+        for arm, y in ((1, 1.0), (0, 0.0), (1, 1.0), (0, 0.0)):
+            state, out = constant.step(state, {"arm": arm, "y": y})
+        self.assertEqual((out.z, out.decision), (None, REJECT_H0))  # an infinite t: a certain difference
 
 
 def survival_trial(proc, hazard_ratio, rnd, n, *, strata_hazards=(0.05,), entry_span=12.0):

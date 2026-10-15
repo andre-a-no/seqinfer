@@ -638,3 +638,114 @@ export class GroupSequentialLogRank extends TwoArm {
 }
 
 register("group_sequential_logrank", "1", (c) => new GroupSequentialLogRank(c));
+
+type MeansState = {
+  n_treatment: number; mean_treatment: number; m2_treatment: number; n_control: number; mean_control: number; m2_control: number;
+  analysis: number; decision: Decision;
+};
+
+/** Two means, known or estimated variance; mirrors GroupSequentialTwoMeans (version 1). */
+export class GroupSequentialTwoMeans extends TwoArm {
+  readonly name = "group_sequential_two_means";
+  readonly version = "1";
+  private readonly c: Config;
+  readonly sigma: number | null;
+  private readonly convertedBounds: number[];
+  private readonly convertedFutility: number[] | null;
+
+  constructor(c: Config) {
+    super(c);
+    this.c = c;
+    this.sigma = optNum(c, "sigma");
+    if (this.sigma !== null && !(Number.isFinite(this.sigma) && this.sigma > 0)) invalid("sigma must be positive and finite, or None");
+    if (this.sigma === null && this.analyses[0] < 3) invalid("with an estimated variance the first analysis needs at least three units");
+    this.convertedBounds = this.bounds.map((b, i) => this.converted(b, this.analyses[i]));
+    this.convertedFutility = this.futility === null ? null : this.futility.map((f, i) => this.converted(f, this.analyses[i]));
+  }
+
+  private converted(z: number, n: number): number {
+    if (this.sigma !== null || z >= NEVER) return z;
+    return copysign(tIsfLog(logNormalUpper(Math.abs(z)), n - 2), z);
+  }
+
+  boundAt(k: number): number {
+    return this.convertedBounds[k];
+  }
+
+  config(): Config {
+    return { ...this.common(this.c), sigma: this.sigma };
+  }
+
+  inputs(): Record<string, InputContract> {
+    const arm = str(this.c, "arm_input"), y = str(this.c, "input");
+    return { [arm]: new InputContract(arm, "integer", [], 0), [y]: new InputContract(y) };
+  }
+
+  initialState(): MeansState {
+    return { n_treatment: 0, mean_treatment: 0.0, m2_treatment: 0.0, n_control: 0, mean_control: 0.0, m2_control: 0.0, analysis: 0, decision: null };
+  }
+
+  statistic(s: MeansState): number {
+    const nT = s.n_treatment, nC = s.n_control;
+    if (nT === 0 || nC === 0) return 0.0;
+    const diff = s.mean_treatment - s.mean_control;
+    let scale: number;
+    if (this.sigma !== null) scale = this.sigma;
+    else {
+      if (nT + nC < 3) return 0.0;
+      scale = Math.sqrt((s.m2_treatment + s.m2_control) / (nT + nC - 2));
+      if (scale === 0.0) return diff === 0.0 ? 0.0 : copysign(Infinity, this.c.alternative === "greater" ? diff : -diff);
+    }
+    const z = diff / (scale * Math.sqrt(1.0 / nT + 1.0 / nC));
+    return this.c.alternative === "less" ? -z : z;
+  }
+
+  step(state: State, x: StatInput): [MeansState, State] {
+    refuseTerminal(this, state);
+    let s = state as MeansState;
+    const label = x[str(this.c, "arm_input")] as number;
+    const known = label === this.arms[0] || label === this.arms[1];
+    if (known) {
+      const y = x[str(this.c, "input")] as number;
+      if (label === this.arms[0]) {
+        const n = s.n_treatment + 1;
+        const delta = y - s.mean_treatment;
+        const mean = requireFinite(s.mean_treatment + delta / n, "running mean");
+        const m2 = requireFinite(s.m2_treatment + delta * (y - mean), "sum of squared deviations");
+        s = { ...s, n_treatment: n, mean_treatment: mean, m2_treatment: m2, decision: null };
+      } else {
+        const n = s.n_control + 1;
+        const delta = y - s.mean_control;
+        const mean = requireFinite(s.mean_control + delta / n, "running mean");
+        const m2 = requireFinite(s.m2_control + delta * (y - mean), "sum of squared deviations");
+        s = { ...s, n_control: n, mean_control: mean, m2_control: m2, decision: null };
+      }
+    }
+    const total = s.n_treatment + s.n_control;
+    const meanT = s.n_treatment ? s.mean_treatment : null, meanC = s.n_control ? s.mean_control : null;
+    const k = s.analysis;
+    if (!known || total !== this.analyses[k])
+      return [s, { n: total, mean_treatment: meanT, mean_control: meanC, analysis: null, z: null, bound: null, decision: null }];
+    const z = this.statistic(s);
+    const b = this.convertedBounds[k];
+    const crossed = bool(this.c, "two_sided") ? Math.abs(z) >= b : z >= b;
+    const futile = this.convertedFutility !== null && z <= this.convertedFutility[k];
+    const decision: Decision = crossed ? REJECT_H0 : futile || k + 1 === this.analyses.length ? ACCEPT_H0 : null;
+    const next = { ...s, analysis: k + 1, decision };
+    return [next, {
+      n: total, mean_treatment: meanT, mean_control: meanC, analysis: k + 1, z: Number.isFinite(z) ? z : null, bound: b, decision,
+    }];
+  }
+
+  decodeState(data: Json): MeansState {
+    const s = decodeFields({
+      n_treatment: "count", mean_treatment: "number", m2_treatment: "number", n_control: "count", mean_control: "number",
+      m2_control: "number", analysis: "count", decision: "decision",
+    }, data) as MeansState;
+    requireState(s.m2_treatment >= 0 && s.m2_control >= 0, "negative sum of squares");
+    requireState(s.analysis <= this.analyses.length, "more analyses than planned");
+    return s;
+  }
+}
+
+register("group_sequential_two_means", "1", (c) => new GroupSequentialTwoMeans(c));

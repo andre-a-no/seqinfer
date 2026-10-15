@@ -14,6 +14,7 @@ from .group_sequential import (
     GroupSequentialMonitor,
     GroupSequentialProportions,
     GroupSequentialTest,
+    GroupSequentialTwoMeans,
 )
 from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
 from .kalman import LocalLevelKalman
@@ -68,6 +69,7 @@ __all__ = [
     "GroupSequentialMonitor",
     "GroupSequentialProportions",
     "GroupSequentialTest",
+    "GroupSequentialTwoMeans",
     "HiddenMarkovFilter",
     "KalmanFilter",
     "KernelTwoSampleTest",

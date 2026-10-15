@@ -159,7 +159,11 @@ for patient in range(n_max):
 ```
 
 Z is the pooled two-proportion statistic. Its square is the chi-square
-test without continuity correction. The sample size uses the method of
+test without continuity correction. For a continuous endpoint in two
+arms, `GroupSequentialTwoMeans` works the same way. It uses a known
+standard deviation, or the pooled t statistic, which the tests check
+against R's `t.test`. Its sample size comes from
+`max_sample_size_two_means`. The sample size uses the method of
 rpact's `getSampleSizeRates`. The tests check it against rpact for 18
 combinations of rates, allocation ratios and designs.
 

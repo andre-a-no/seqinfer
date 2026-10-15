@@ -561,6 +561,153 @@ class GroupSequentialProportions(_TwoArmGroupSequential):
         return state
 
 
+@dataclass(frozen=True)
+class GroupSequentialTwoMeansState:
+    n_treatment: int = 0
+    mean_treatment: float = 0.0
+    m2_treatment: float = 0.0  # sum of squared deviations (Welford)
+    n_control: int = 0
+    mean_control: float = 0.0
+    m2_control: float = 0.0
+    analysis: int = 0
+    decision: str | None = None
+
+
+@dataclass(frozen=True)
+class GroupSequentialTwoMeansOutput:
+    n: int
+    mean_treatment: float | None
+    mean_control: float | None
+    analysis: int | None  # 1-based index if this unit completed an analysis
+    z: float | None  # Z, or the pooled t statistic when the variance is estimated
+    bound: float | None  # the boundary for that statistic
+    decision: str | None
+
+
+class GroupSequentialTwoMeans(_TwoArmGroupSequential):
+    """Group sequential comparison of two means: the most common trial, a continuous endpoint in two arms.
+
+    Each input is one unit: its arm and its outcome.  At analysis k (after
+    n_k units of both arms together)
+
+        Z_k = (mean_T - mean_C) / (sigma sqrt(1/n_T + 1/n_C))
+
+    with a known `sigma`; with sigma=None the pooled two-sample t
+    statistic (Student's, n - 2 degrees of freedom; checked against R's
+    t.test in the tests) is compared with the boundary of the same
+    one-sided significance level, as GroupSequentialTest does for one
+    mean (Jennison and Turnbull 2000, sec. 11.4: approximately the
+    design's type I error).  alternative="greater" rejects for a large
+    mean_T - mean_C, "less" for a small one; a two-sided design compares
+    |Z|.  While an arm is empty (or, with an estimated variance, fewer
+    than three units are in), Z = 0.  Units of other arms are ignored.
+    `GroupSequentialDesign.max_sample_size_two_means` gives the maximum
+    sample size.
+
+    Cost per step: a Welford update; the state is eight numbers.
+    """
+
+    name = "group_sequential_two_means"
+    version = "1"
+
+    def __init__(self, sigma: float | None, analyses: Sequence[int], bounds: Sequence[float], *,
+                 futility: Sequence[float] | None = None, two_sided: bool = False, alternative: str = "greater",
+                 arms: tuple[int, int] = (1, 0), arm_input: str = "arm", input: str = "y", label: str = ""):
+        if sigma is not None and (type(sigma) not in (int, float) or not (math.isfinite(sigma) and sigma > 0)):
+            raise ValueError("sigma must be positive and finite, or None to estimate it")
+        self._setup(analyses, bounds, futility, two_sided, alternative, arms, arm_input, input, label)
+        if sigma is None and self.analyses[0] < 3:
+            raise ValueError("with an estimated variance the first analysis needs at least three units")
+        self.sigma = None if sigma is None else float(sigma)
+        self._bounds = tuple(self._converted(b, n) for b, n in zip_strict(self.bounds, self.analyses))
+        self._futility = (None if self.futility is None
+                          else tuple(self._converted(f, n) for f, n in zip_strict(self.futility, self.analyses)))
+
+    @classmethod
+    def from_design(cls, design: GroupSequentialDesign, n_max: int, sigma: float | None, *,
+                    analyses: Sequence[int] | None = None, **kwargs) -> GroupSequentialTwoMeans:
+        """Analyses at the design's fractions of n_max units, or at the counts `analyses` (boundaries recomputed)."""
+        counts, bounds, futility = _analyses_and_bounds(design, n_max, analyses)
+        return cls(sigma, counts, bounds, futility=futility, two_sided=design.two_sided, **kwargs)
+
+    def config(self) -> dict:
+        return {**self._common_config(), "sigma": self.sigma}
+
+    def inputs(self):
+        return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
+                self.input: InputContract(self.input)}
+
+    def initial_state(self) -> GroupSequentialTwoMeansState:
+        return GroupSequentialTwoMeansState()
+
+    def _converted(self, z: float, n: int) -> float:
+        """A boundary for Z as a boundary for the statistic used at n units: t with n - 2 degrees of freedom."""
+        if self.sigma is not None or z >= _NEVER:
+            return z
+        return math.copysign(t_isf_log(_log_normal_upper(abs(z)), n - 2), z)
+
+    def bound_at(self, k: int) -> float:
+        """Efficacy boundary for the statistic at analysis k (0-based)."""
+        return self._bounds[k]
+
+    def statistic(self, state: GroupSequentialTwoMeansState) -> float:
+        n_t, n_c = state.n_treatment, state.n_control
+        if n_t == 0 or n_c == 0:
+            return 0.0
+        diff = state.mean_treatment - state.mean_control
+        if self.sigma is not None:
+            scale = self.sigma
+        else:
+            if n_t + n_c < 3:
+                return 0.0
+            scale = math.sqrt((state.m2_treatment + state.m2_control) / (n_t + n_c - 2))
+            if scale == 0.0:  # every outcome equal within the arms: the difference is certain, or none
+                return 0.0 if diff == 0.0 else math.copysign(math.inf, diff if self.alternative == "greater" else -diff)
+        z = diff / (scale * math.sqrt(1.0 / n_t + 1.0 / n_c))
+        return -z if self.alternative == "less" else z
+
+    def step(self, state: GroupSequentialTwoMeansState, x, rng=None):
+        refuse_terminal(self, state)
+        label = x[self.arm_input]
+        if label in self.arms:
+            y = x[self.input]
+            if label == self.arms[0]:
+                n = state.n_treatment + 1
+                delta = y - state.mean_treatment
+                mean = require_finite(state.mean_treatment + delta / n, "running mean")
+                m2 = require_finite(state.m2_treatment + delta * (y - mean), "sum of squared deviations")
+                state = GroupSequentialTwoMeansState(n, mean, m2, state.n_control, state.mean_control,
+                                                     state.m2_control, state.analysis)
+            else:
+                n = state.n_control + 1
+                delta = y - state.mean_control
+                mean = require_finite(state.mean_control + delta / n, "running mean")
+                m2 = require_finite(state.m2_control + delta * (y - mean), "sum of squared deviations")
+                state = GroupSequentialTwoMeansState(state.n_treatment, state.mean_treatment, state.m2_treatment,
+                                                     n, mean, m2, state.analysis)
+        total = state.n_treatment + state.n_control
+        means = (state.mean_treatment if state.n_treatment else None,
+                 state.mean_control if state.n_control else None)
+        k = state.analysis
+        if label not in self.arms or total != self.analyses[k]:
+            return state, GroupSequentialTwoMeansOutput(total, *means, None, None, None, None)
+        z = self.statistic(state)
+        b = self._bounds[k]
+        crossed = abs(z) >= b if self.two_sided else z >= b
+        futile = self._futility is not None and z <= self._futility[k]
+        decision = REJECT_H0 if crossed else ACCEPT_H0 if futile or k + 1 == len(self.analyses) else None
+        new = GroupSequentialTwoMeansState(state.n_treatment, state.mean_treatment, state.m2_treatment,
+                                           state.n_control, state.mean_control, state.m2_control, k + 1, decision)
+        reported = z if math.isfinite(z) else None  # JSON has no infinity; the decision says it all
+        return new, GroupSequentialTwoMeansOutput(total, *means, k + 1, reported, b, decision)
+
+    def decode_state(self, data) -> GroupSequentialTwoMeansState:
+        state = decode_fields(GroupSequentialTwoMeansState, data)
+        require_state(state.m2_treatment >= 0 and state.m2_control >= 0, "negative sum of squares")
+        require_state(state.analysis <= len(self.analyses), "more analyses than planned")
+        return state
+
+
 ENTER, EVENT, CENSOR = 0, 1, 2
 _MAX_STRATA = 10_000
 

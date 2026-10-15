@@ -13,7 +13,8 @@
 * survival: the log-rank statistic at four interim analyses of a trial
   with staggered entry, as the score test of a Cox model on (entry, exit]
   data, and Peto's estimate against the Cox estimate.
-* stats: the two-proportion chi-square test.
+* stats: the two-proportion chi-square test and the pooled two-sample
+  t-test.
 
 The reference file is tests/r_reference.json.  CI regenerates it with R
 and runs these tests against the fresh file (job "r-reference"); set
@@ -29,6 +30,7 @@ from sequential_analysis.procedures.group_sequential import (
     GroupSequentialLogRank,
     GroupSequentialMonitor,
     GroupSequentialProportions,
+    GroupSequentialTwoMeans,
 )
 
 _PATH = os.environ.get("R_REFERENCE") or os.path.join(os.path.dirname(__file__), "r_reference.json")
@@ -157,6 +159,18 @@ class ChiSquare(unittest.TestCase):
                 for i in range(n):
                     state, out = proc.step(state, {"arm": arm, "y": int(i < successes)})
             self.assertAlmostEqual(out.z**2, case["chisq"], delta=1e-12 * case["chisq"])
+
+    def test_pooled_t_is_students(self):
+        for case in REF["two_means"]:
+            treatment, control = case["treatment"], case["control"]
+            n = len(treatment) + len(control)
+            proc = GroupSequentialTwoMeans(None, [n], [40.0])
+            state = proc.initial_state()
+            for arm, values in ((1, treatment), (0, control)):
+                for y in values:
+                    state, out = proc.step(state, {"arm": arm, "y": y})
+            self.assertAlmostEqual(out.z, case["t"], delta=1e-12 * abs(case["t"]) + 1e-14)
+            self.assertEqual(n - 2, case["df"])
 
 
 if __name__ == "__main__":
