@@ -12,9 +12,11 @@ specified in SPEC.md:
 ## Agreement with the Python library
 
 * **History digests and random states** are identical.
-* **Outputs and states** are identical for 13 of the 23 conformance
-  cases. For the others they agree to 7e-15 relative: V8 rounds `Math.log`,
-  `exp` and `cos` differently from the C library.
+* **Outputs and states** are identical for 18 of the 45 conformance
+  cases. For the others they agree to 5e-14 relative, and to 2.2e-13 in
+  two cases (a log-evidence near zero that is a difference of large
+  log-gamma terms; bounds found by a root search): V8 rounds `Math.log`,
+  `log1p`, `exp` and `cos` differently from the C library.
 * **Decisions** never differ.
 * **Round trip.** A run checkpointed in Python, continued here and
   restored in Python again ends with the digest of the uninterrupted
@@ -44,14 +46,27 @@ The executor has two parts:
 
 * **The run.** Delivery, topologies, contracts, the history digest,
   checkpoints and the observation log.
-* **Procedures.** The procedures listed by `procedures`:
+* **Procedures.** Every procedure of the Python library, as listed by
+  `procedures`:
   * SPRT, 2-SPRT and plans;
-  * CUSUM, Shiryaev–Roberts and the e-detectors;
-  * the mixture SPRTs and the betting and sign tests;
+  * CUSUM, Shiryaev–Roberts, the e-detectors and Bayesian online
+    change-point detection (normal-gamma, Poisson-gamma and
+    beta-Bernoulli models);
+  * the mixture SPRTs, the betting and sign tests, the quantile test and
+    the kernel two-sample test;
+  * confidence sequences: betting, quantile, Catoni and asymptotic;
   * group sequential tests;
-  * the A/B tests;
-  * the local-level Kalman filter, the bootstrap particle filter, EMA and
-    the mean difference.
+  * the A/B tests, and several tests with e-BH (`MultipleTests`);
+  * the local-level and general Kalman filters, the robust (Student t)
+    Kalman filter, the hidden Markov filter (categorical, Gaussian and
+    Poisson emissions), the bootstrap particle filters (local level;
+    linear Gaussian, stochastic volatility and Student t local level),
+    EMA and the mean difference.
+
+  Procedures that offer a numpy backend are continued here only when the
+  run used `backend="python"`: numpy's `exp`, `log` and sums are not
+  specified to the last bit. A checkpoint with `backend="numpy"` is
+  refused.
 
 Designs, such as optimal plans and group sequential boundaries, are
 computed in Python. They reach this executor as part of the

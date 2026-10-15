@@ -360,10 +360,16 @@ Sums and products are reproduced exactly when they are evaluated in the
 reference order. Every procedure's sums are left-to-right or
 Neumaier-compensated, never pairwise. Decisions are compared exactly.
 
-In the TypeScript executor, 13 of the 23 cases agree bit for bit. The
-others differ in the last bits only, by at most 7e-15 relative. Every
-such difference was traced to `Math.log`, `exp` or `cos` rounding
-differently from the C library. No decision differs.
+In the TypeScript executor, 18 of the 45 cases agree bit for bit. The
+others differ in the last bits only: by at most 5e-14 relative, except
+in two cases. Every such difference was traced to `Math.log`, `log1p`,
+`exp` or `cos` rounding differently from the C library. In
+`quantile_test` (1.6e-13) the log-evidence is a difference of
+log-gamma terms of a few hundred, so a last-bit difference in them is
+large relative to a log-evidence near zero. In
+`catoni_confidence_sequence` (2.1e-13) the bounds are roots found to a
+relative 1e-12, and the search stops at a slightly different point. No
+decision differs.
 
 The TypeScript executor implements the procedures listed by
 `sequential-analysis procedures` (`ts/`). Its tests:

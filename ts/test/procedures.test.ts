@@ -24,7 +24,9 @@ interface Vector {
 const vectors = JSON.parse(readFileSync(new URL("../../../conformance/procedures.json", import.meta.url), "utf8")) as Vector[];
 
 /** Compensation fields of a state and the running sums they belong to. */
-const PARTNERS: Record<string, string[]> = { comp: ["llr", "total", "log_bf", "log_marginal"], c0: ["l0"], c1: ["l1"] };
+const PARTNERS: Record<string, string[]> = {
+  comp: ["llr", "total", "log_bf", "log_marginal", "log_sum", "log_likelihood", "log_evidence"], c0: ["l0"], c1: ["l1"],
+};
 
 /** Largest relative difference of two JSON values; throws if they differ in anything but numbers. */
 function difference(a: Json, b: Json, path: string): number {

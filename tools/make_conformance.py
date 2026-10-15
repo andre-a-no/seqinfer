@@ -32,22 +32,43 @@ from sequential_analysis.procedures import (  # noqa: E402
     EMA,
     SPRT,
     ABTest,
+    AsymptoticConfidenceSequence,
+    BayesianChangePoint,
     Bernoulli,
+    BetaBernoulliModel,
+    BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
+    CategoricalEmission,
+    CatoniConfidenceSequence,
     Exponential,
     Gaussian,
+    GaussianEmission,
     GroupSequentialTest,
+    HiddenMarkovFilter,
+    KalmanFilter,
+    KernelTwoSampleTest,
+    LinearGaussianModel,
     LocalLevelKalman,
     MeanDifference,
     MeanEDetector,
+    MultipleTests,
+    NormalGammaModel,
     NormalMixtureSPRT,
+    ParticleFilter,
     PlanTest,
     Poisson,
+    PoissonEmission,
+    PoissonGammaModel,
+    QuantileConfidenceSequence,
     QuantileEDetector,
+    QuantileTest,
+    RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
     ShiryaevRoberts,
+    StochasticVolatilityModel,
+    StudentTLocalLevel,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
@@ -154,7 +175,88 @@ def cases():
         ("two_proportion_blocks_2_1", TwoProportionTest(0.05, block=(2, 1)), None,
          arm_rows(120, (0.3, 0.55, 0.9), weights=(0.3, 0.6, 0.1))),
     ]
-    return existing + added
+    # The procedures ported to the TypeScript executor later; their data are drawn after all of the above.
+
+    def pairs(n, sd_b):
+        return [{"a": rnd.gauss(0.0, 1.0), "b": rnd.gauss(0.0, sd_b)} for _ in range(n)]
+
+    def level_rows(n, drift, noise, outliers=0.0):
+        rows, z = [], 0.0
+        for _ in range(n):
+            z += drift + rnd.gauss(0.0, 0.1)
+            y = z + rnd.gauss(0.0, noise)
+            if outliers and rnd.random() < outliers:
+                y += rnd.choice([-1.0, 1.0]) * 15.0
+            rows.append({"y": y})
+        return rows
+
+    def regimes(n, emit, stay=0.9):
+        rows, k = [], 0
+        for _ in range(n):
+            if rnd.random() > stay:
+                k = 1 - k
+            rows.append({"y": emit(k)})
+        return rows
+
+    def sv_rows(n):
+        rows, h = [], 0.0
+        for _ in range(n):
+            h = 0.95 * h + 0.3 * rnd.gauss(0.0, 1.0)
+            rows.append({"y": math.exp(h / 2) * rnd.gauss(0.0, 1.0)})
+        return rows
+
+    trend = level_rows(80, 0.05, 1.0)
+    robust = [{"y": [r["y"], r["y"] + rnd.gauss(0.0, 0.5)], "u": 0.1} for r in level_rows(60, 0.0, 1.0, outliers=0.1)]
+    ported = [
+        ("quantile_test", QuantileTest(0.0, alpha=0.05, tuned_for=100.0, stop_on_reject=False), None, cauchy(0.8, 100)),
+        ("quantile_test_greater_ties",
+         QuantileTest(2.0, p=0.3, alternative="greater", tuned_for=50.0, stop_on_reject=False), None, poisson(3.0, 80)),
+        ("quantile_confidence_sequence", QuantileConfidenceSequence(0.5, tuned_for=50.0), None, cauchy(1.0, 100)),
+        ("kernel_two_sample", KernelTwoSampleTest(0.05, burn_in=10, stop_on_reject=False, backend="python"), None,
+         pairs(100, 2.0)),
+        ("kernel_two_sample_bandwidth", KernelTwoSampleTest(0.05, bandwidth=1.0, burn_in=0, backend="python"), None,
+         pairs(60, 1.0)),
+        ("betting_confidence_sequence", BettingConfidenceSequence(0.0, 2.0, grid=50, backend="python"), None,
+         [{"x": 2.0 * rnd.betavariate(2.0, 3.0)} for _ in range(80)]),
+        ("catoni_confidence_sequence", CatoniConfidenceSequence(2.0, mean0=0.0, backend="python"), None,
+         normal(0.5, 60, sd=1.5)),
+        ("asymptotic_confidence_sequence", AsymptoticConfidenceSequence(mean0=0.0, start=20, tuned_for=100.0), None,
+         normal(0.3, 100)),
+        ("kalman_filter_trend", KalmanFilter.local_linear_trend(0.01, 0.001, 1.0), None, trend),
+        ("robust_kalman_filter", RobustKalmanFilter(((1.0, 0.0), (0.0, 1.0)), ((1.0, 0.0), (1.0, 1.0)),
+                                                    ((0.01, 0.0), (0.0, 0.001)), ((1.0, 0.2), (0.2, 0.5)),
+                                                    (0.0, 0.0), ((10.0, 0.0), (0.0, 1.0)), control=((1.0,), (0.0,)),
+                                                    df=4.0), None, robust),
+        ("hmm_categorical", HiddenMarkovFilter((0.5, 0.5), ((0.9, 0.1), (0.2, 0.8)),
+                                               CategoricalEmission(((0.7, 0.2, 0.1), (0.1, 0.3, 0.6)))), None,
+         regimes(60, lambda k: int(rnd.random() < (0.3 if k else 0.8)) + (k if rnd.random() < 0.5 else 0))),
+        ("hmm_gaussian", HiddenMarkovFilter((0.6, 0.3, 0.1), ((0.9, 0.05, 0.05), (0.1, 0.8, 0.1), (0.0, 0.2, 0.8)),
+                                            GaussianEmission((0.0, 2.0, -1.0), (1.0, 0.5, 3.0))), None,
+         regimes(80, lambda k: rnd.gauss(2.0 * k, 1.0 if k == 0 else 0.5))),
+        ("hmm_poisson", HiddenMarkovFilter((0.5, 0.5), ((0.95, 0.05), (0.1, 0.9)), PoissonEmission((1.0, 6.0))), None,
+         [{"y": r["x"]} for r in poisson(1.0, 30) + poisson(6.0, 30)]),
+        ("bocpd_normal_gamma", BayesianChangePoint(NormalGammaModel(0.0, 0.1, 2.0, 2.0), 0.02), None,
+         normal(0.0, 40) + normal(3.0, 40, sd=0.5)),
+        ("bocpd_poisson_gamma", BayesianChangePoint(PoissonGammaModel(2.0, 1.0), 0.05, alarm_probability=0.9,
+                                                    max_hypotheses=20), None, poisson(1.0, 40) + poisson(5.0, 40)),
+        ("bocpd_beta_bernoulli", BayesianChangePoint(BetaBernoulliModel(1.0, 1.0), 0.02, prune=1e-6), None,
+         bernoulli(0.2, 50) + bernoulli(0.8, 50)),
+        ("particle_filter_linear_gaussian",
+         ParticleFilter(LinearGaussianModel(0.9, 0.1, 1.0), 64, backend="python"), 11,
+         [{"y": r["y"]} for r in level_rows(50, 0.0, 1.0)]),
+        ("particle_filter_stochastic_volatility",
+         ParticleFilter(StochasticVolatilityModel(0.0, 0.95, 0.3), 64, backend="python"), 12, sv_rows(60)),
+        ("particle_filter_student_t",
+         ParticleFilter(StudentTLocalLevel(0.01, 1.0, 3.0), 64, resample_threshold=1.0, backend="python"), 13,
+         level_rows(40, 0.02, 1.0, outliers=0.1)),
+        ("multiple_tests", MultipleTests({
+            "mean": NormalMixtureSPRT(1.0, 0.5),
+            "sign": SequentialSignTest(0.0, alpha=0.01, stop_on_reject=False),
+            "t": TMixtureSPRT(1.0, 0.5, stop_on_reject=False),
+            "bounded": BettingMeanTest(0.0, -4.0, 4.0, stop_on_reject=False),
+        }, alpha=0.1), None, [{"x": max(-4.0, min(4.0, r["x"]))} for r in normal(0.35, 100)]),
+    ]
+    return existing + added + ported
 
 
 def vector(label, procedure, seed, inputs):

@@ -78,3 +78,16 @@ export abstract class BaseProcedure implements Procedure {
 
 /** Python dataclass equality of two states (0.0 == -0.0, 1 == 1.0). */
 export const sameState = (a: unknown, b: unknown): boolean => sameJson(a, b);
+
+/**
+ * The arithmetic backend of a configuration, which must be "python": with "numpy" the
+ * last bits of exp, log and sums are numpy's, which no other implementation can repeat.
+ */
+export function pythonBackend(c: Config, name: string): "python" {
+  const backend = str(c, "backend");
+  if (backend === "numpy")
+    invalid(`${name}: backend "numpy" cannot be continued here: numpy's exp, log and sums are not specified to the last bit; ` +
+      `run it with backend="python" to move it between executors`);
+  if (backend !== "python") invalid(`${name}: backend must be "python", got ${JSON.stringify(backend)}`);
+  return "python";
+}
