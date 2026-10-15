@@ -807,8 +807,11 @@ class GroupSequentialLogRank(_TwoArmGroupSequential):
         return -z if self.alternative == "greater" else z
 
     def _output(self, state: GroupSequentialLogRankState, analysis, z, bound, decision):
-        at_risk = state.at_risk
-        totals = (sum(at_risk[0::2]), sum(at_risk[1::2]))
+        treatment = control = 0  # counts: a loop, as everywhere on the inference path (no builtin sum)
+        for i in range(0, len(state.at_risk), 2):
+            treatment += state.at_risk[i]
+            control += state.at_risk[i + 1]
+        totals = (treatment, control)
         estimate = math.exp((state.observed - state.expected) / state.variance) if state.variance > 0 else None
         info = state.variance if analysis is not None else None
         return GroupSequentialLogRankOutput(state.events, totals, analysis, z, info, estimate, bound, decision)

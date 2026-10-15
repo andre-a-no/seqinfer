@@ -47,7 +47,7 @@ A version cannot be uploaded to PyPI twice, so rehearse first:
 
 The smoke test can be run by hand against any installation:
 
-    python tools/smoke_test.py 0.3.0
+    python tools/smoke_test.py 0.4.0
 
 After the real upload the workflow installs the package from PyPI and runs the
 smoke test again.

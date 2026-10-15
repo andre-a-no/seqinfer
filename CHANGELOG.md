@@ -6,6 +6,68 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## 0.4.0 — 2026-10-16
+
+Group sequential trials for any endpoint, checked against rpact and R's
+survival package; ratio metrics; stratified log-rank tests; plots;
+property-based tests; a guide to choosing a method.
+
+### Added: group sequential trials for any endpoint
+- `GroupSequentialTwoMeans` (continuous endpoint in two arms, known
+  standard deviation or pooled t), `GroupSequentialProportions` (pooled
+  two-proportion Z) and `GroupSequentialLogRank` (log-rank statistic with
+  late entry, optionally stratified), analysed at unit or event counts.
+- `GroupSequentialMonitor`: alpha spending at the information actually
+  reached, one record (Z, information) per analysis, for any statistic
+  computed elsewhere; under- and over-running; optional non-binding
+  futility from the design.
+- `GroupSequentialDesign.at(fractions)`: the boundaries recomputed for
+  analyses that did not happen as planned (Lan–DeMets); boundaries of
+  analyses already done never move.
+- Sample sizes: `inflation_factor`, `max_sample_size_two_means`,
+  `max_sample_size_two_proportions` (rpact's method), `max_events`
+  (Schoenfeld).
+
+### Added: plotting
+- `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
+  or later): `plot_e_process`, `plot_confidence_sequence`,
+  `plot_group_sequential_design`, `plot_detection`, `plot_filter`,
+  `plot_stopping_times`. Each takes a Recorder, output events, outputs or
+  trajectory pairs and returns the matplotlib Axes. Importing the module
+  does not need matplotlib.
+- A documentation page, "Plotting runs, designs and plans", whose
+  pictures are drawn by its own code (`python tools/make_plots.py`);
+  tested on matplotlib 3.3.0 with Python 3.8 and on 3.11 with Python 3.13.
+
+### Checked against R
+- `tools/r_reference.R` computes reference values with rpact 3.4.0 and
+  survival 3.5.8; `tests/test_r_reference.py` compares: 56 designs
+  (boundaries to 2·10⁻⁷, futility boundaries, drift, crossing and futility
+  probabilities, expected sample sizes, inflation factors), boundaries at
+  realised information including under- and over-running, 44 sample
+  sizes, the log-rank statistic at four interim analyses of a trial with
+  staggered entry (to 10⁻¹²), the chi-square and pooled t tests. A CI job
+  installs R, regenerates the references and repeats the comparison.
+
+### Changed
+- The power of a two-sided group sequential design counts rejections in
+  the direction of the effect, as rpact and gsDesign do (sample sizes of
+  two-sided Pocock-type designs fall by up to 6·10⁻⁵ relative).
+- `drift_for_power` solves by the Illinois method: a few evaluations of
+  the power instead of fifty.
+- The recursive integration sums in plain loops: `sum()` of floats is
+  compensated from Python 3.12 on, and boundaries must not depend on the
+  Python version.
+
+### Documentation and packaging
+- "Which method?": from the question asked to the procedure, with how
+  exact each guarantee is.
+- The group sequential tutorial covers binary and survival endpoints and
+  analyses that move.
+- A conda-forge recipe (`packaging/conda-forge/meta.yaml`) and a paper for
+  the Journal of Open Source Software (`paper/joss/`); RELEASING.md says
+  how to submit both.
+
 ## 0.3.0 — 2026-10-15
 
 Filters and smoothers, A/B tests, nonparametric change detection, data

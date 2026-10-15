@@ -53,6 +53,7 @@ nav:
   - Guides:
       - Checkpoints, logs and backends: checkpoints.md
       - Data sources: adapters.md
+      - Plotting runs, designs and plans: plotting.md
       - TypeScript executor: typescript.md
   - Reference:
       - Methods: methods.md

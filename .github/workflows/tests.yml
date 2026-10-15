@@ -60,7 +60,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # numpy is optional: the design module uses it when present, and the tests
       # check that numpy values are rejected with a conversion hint
-      - run: python -m pip install . numpy
+      # matplotlib and hypothesis are optional too: with them the plotting and property-based tests run
+      - run: python -m pip install . numpy matplotlib hypothesis
       - run: python -W error::ResourceWarning -m unittest discover -s tests -t . -v
       - name: examples
         run: |

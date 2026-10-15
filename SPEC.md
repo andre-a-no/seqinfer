@@ -2,7 +2,7 @@
 
 Version 2 of the formats (`sequential-analysis.checkpoint/2`,
 `sequential-analysis.history/2`, `sequential-analysis.log/2`), as written
-by sequential-analysis 0.3.0 and its TypeScript executor (`ts/`).
+by sequential-analysis 0.4.0 and its TypeScript executor (`ts/`).
 
 This document is what another implementation needs to continue a run
 started by this one, or to hand one back: the shape of every stored value

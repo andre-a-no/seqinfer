@@ -48,6 +48,7 @@ Python is enough (see "Minimum versions" in CONTRIBUTING.md).
 pip install sequential-analysis          # from PyPI
 pip install .                            # from a checkout
 pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
+pip install "sequential-analysis[plot]"  # with matplotlib: plots of runs, designs and plans
 ```
 
 The package is imported as `sequential_analysis`.
@@ -280,6 +281,22 @@ holds:
   events and a run identifier generated when none is given differ from run
   to run; the history digest and every output do not.
 <!-- --8<-- [end:checkpoints] -->
+
+## Plotting
+
+`sequential_analysis.plotting` draws:
+
+* a run's e-process with its 1/α threshold and the stop;
+* a confidence sequence as a band;
+* group sequential boundaries with the observed path;
+* a change detector's statistic and alarm;
+* a filter's mean with ±2 sd, and the smoother's;
+* the distribution of stopping times from `planning.simulate`.
+
+Each function takes a `Recorder` (or the outputs) and returns the
+matplotlib Axes. matplotlib is needed only when a function is called.
+See the
+[plotting guide](https://andre-a-no.github.io/sequential-analysis/plotting/).
 
 ## Speed
 
