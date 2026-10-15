@@ -9,10 +9,15 @@
 SPRT and Kiefer–Weiss optimal tests, anytime-valid A/B tests and confidence
 sequences (parametric and nonparametric: quantiles, two-sample tests,
 heavy-tailed and bounded means), group sequential designs for clinical
-trials, change-point detection (CUSUM, Shiryaev–Roberts, Bayesian online
-change points), and Kalman, particle and hidden Markov filters. Every
-procedure may be monitored after each observation and stopped at any time,
-and a run is checkpointed and resumed bit for bit.
+trials, A/B testing (exact conversion tests, sample ratio mismatch,
+covariate adjustment, many metrics with false discovery rate control),
+change-point detection (CUSUM, Shiryaev–Roberts, nonparametric
+e-detectors, Bayesian online change points), and Kalman, particle and
+hidden Markov filters with smoothing. Every procedure may be monitored
+after each observation and stopped at any time, and a run is checkpointed
+and resumed bit for bit, in Python or in the TypeScript executor.
+
+Documentation and tutorials: https://andre-a-no.github.io/sequential-analysis/
 
 Sequential statistical inference, separated from the experimental runtime.
 
@@ -77,8 +82,10 @@ nonparametric monitoring, and a group sequential trial.
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
 | Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
 | Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
-| Change-point detection | `CUSUM`, `ShiryaevRoberts` |
+| A/B tests | `TwoProportionTest` (exact for any n and any allocation, one- or two-sided), `SampleRatioMismatch` (is the traffic split as intended?), `ABTest` (difference of means with a pre-experiment covariate, CUPED-like, confidence sequence), `MultipleTests` and `e_bh` (many metrics or arms, false discovery rate at any stopping time), `MultipleTests.versus_control` |
+| Change-point detection | `CUSUM`, `ShiryaevRoberts`; `MeanEDetector`, `QuantileEDetector` (nonparametric e-detectors: average run length to a false alarm at least the target for every distribution with the given mean or quantile) |
 | Filtering and estimation | `KalmanFilter` (any linear Gaussian state-space model: trends, autoregressions, tracking, control input; exact likelihood), `RobustKalmanFilter` (Student-t observation noise: outliers discounted), `HiddenMarkovFilter` (which hidden regime now; categorical, Gaussian or Poisson observations), `ParticleFilter` (any model you can simulate: stochastic volatility, heavy tails; unbiased likelihood), `LocalLevelKalman`, `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
+| Smoothing (offline) | `sequential_analysis.smoothing`: `kalman_smoother` (Rauch–Tung–Striebel), `forward_backward` and `viterbi` for hidden Markov models |
 | Bayesian change points | `BayesianChangePoint` (Adams–MacKay run-length posterior; unknown parameters before and after the change; normal, Poisson, 0/1 data) |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),

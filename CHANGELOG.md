@@ -8,8 +8,42 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 
 ## 0.3.0 — 2026-10-15
 
-Filters, a numpy backend for the array-heavy procedures, and the speed and
-checkpoint behaviour measured and documented.
+Filters and smoothers, A/B tests, nonparametric change detection, data
+source adapters, a numpy backend, a specification of the formats with a
+TypeScript executor, and a documentation site.
+
+### Added: A/B tests
+- `TwoProportionTest`: exact anytime-valid comparison of conversion rates by
+  sequential universal inference; any allocation rule; one- or two-sided.
+- `SampleRatioMismatch`: Dirichlet-multinomial test of the traffic split.
+- `ABTest`: difference of means by inverse-propensity scores with a
+  predictable regression on a pre-experiment covariate (CUPED without its
+  in-sample bias), asymptotic confidence sequence, reported variance ratio.
+- `e_bh` and `MultipleTests`: e-BH false discovery rate control over every
+  procedure with an e-process (`e_value_field`); `versus_control` for
+  multi-arm experiments.
+
+### Added: change detection and smoothing
+- `MeanEDetector`, `QuantileEDetector`: e-detectors (Shin, Ramdas and
+  Rinaldo), Shiryaev–Roberts or CUSUM type, average run length at least
+  `arl` for every distribution with the given mean or quantile.
+- `sequential_analysis.smoothing`: Rauch–Tung–Striebel smoother,
+  forward-backward and Viterbi, checked against exact conditioning and
+  enumeration.
+
+### Added: data sources
+- `sequential_analysis.adapters`: `from_dataframe` (pandas, polars),
+  `from_sql` (DB-API), `from_kafka` (kafka-python, confluent-kafka), with
+  `next_position` and `kafka_offsets` to resume from a checkpoint.
+- `Delivery.skip_range`: sequence numbers that do not exist (Kafka offset
+  gaps, skipped missing values) no longer accumulate in checkpoints.
+
+### Added: specification, TypeScript executor, documentation
+- `SPEC.md`: the formats and semantics another implementation needs.
+- `ts/`: a TypeScript executor that reproduces the 23 conformance vectors
+  and continues runs started in Python (and hands them back).
+- Seven conformance vectors for the new procedures.
+- A documentation site (mkdocs) with tutorials whose code runs in the tests.
 
 ### Added: filters
 - `KalmanFilter`: any linear Gaussian state-space model in matrix form, with

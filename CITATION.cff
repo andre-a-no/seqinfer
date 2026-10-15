@@ -19,8 +19,10 @@ abstract: >-
   Sequential testing and online statistical inference in Python: Wald's
   SPRT and Kiefer-Weiss optimal tests, anytime-valid A/B tests and
   confidence sequences (parametric and nonparametric), group sequential
-  designs, change-point detection (CUSUM, Shiryaev-Roberts, Bayesian online
-  change points), and Kalman, particle and hidden Markov filters. Each
+  designs, A/B tests with false discovery rate control, change-point
+  detection (CUSUM, Shiryaev-Roberts, nonparametric e-detectors, Bayesian
+  online change points), and Kalman, particle and hidden Markov filters
+  with smoothing; a TypeScript executor continues the same runs. Each
   procedure is a state-transition function F(S, X, R) -> (S', O, R'),
   separated from a reproducible runtime with checkpoints, replay and
   conformance vectors. Dual-licensed: GNU AGPL v3, or a commercial license
