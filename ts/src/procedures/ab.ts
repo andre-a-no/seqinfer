@@ -2,13 +2,14 @@
 // Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 // Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 // Continuously monitored A/B tests; mirrors procedures/ab.py (SampleRatioMismatch, TwoProportionTest, ABTest,
-// e_bh and MultipleTests).
+// e_bh, MultipleTests and BoundedABTest).
 import type { Json } from "../canonical.js";
 import { InputContract, type StatInput } from "../contracts.js";
 import { neumaierAdd, requireFinite } from "../numerics.js";
 import { decodeFields, fromIdentity, type Identity, identity, type Procedure, register, requireState, type State } from "../procedure.js";
 import type { SplitMix64 } from "../rng.js";
-import { BaseProcedure, bool, type Config, type Decision, int, invalid, num, nums, pyMax, pyMin, REJECT_H0, str } from "./util.js";
+import { BettingConfidenceSequence, BettingMeanTest } from "./betting.js";
+import { BaseProcedure, bool, type Config, type Decision, int, invalid, num, nums, pyMax, pyMin, pythonBackend, REJECT_H0, str } from "./util.js";
 
 const ALTERNATIVES = ["two-sided", "greater", "less"];
 
@@ -602,3 +603,141 @@ export class MultipleTests extends BaseProcedure {
 }
 
 register("multiple_tests", "1", (c) => MultipleTests.fromConfig(c));
+
+// ---------------------------------------------------------------- bounded outcomes, exact
+
+type BoundedABState = { n: number; treated: number; sum_treated: number; sum_control: number; cs: State; test: State };
+
+/** Exact anytime-valid confidence sequence and test for an effect on a bounded metric (Python's BoundedABTest). */
+export class BoundedABTest extends BaseProcedure {
+  readonly name = "bounded_ab_test";
+  readonly version = "1";
+  readonly eValueField = "log_e_value";
+  readonly backend = "python";
+  readonly arms: [number, number];
+  readonly center: number;
+  readonly bound: number;
+  private readonly cs: BettingConfidenceSequence;
+  private readonly test: BettingMeanTest;
+
+  constructor(
+    readonly lower = 0.0,
+    readonly upper = 1.0,
+    readonly allocation = 0.5,
+    readonly alpha = 0.05,
+    readonly effect0 = 0.0,
+    readonly alternative = "two-sided",
+    arms: number[] = [1, 0],
+    readonly grid = 1000,
+    readonly stopOnReject = false,
+    readonly armInput = "arm",
+    readonly input = "y",
+  ) {
+    super();
+    if (!(Number.isFinite(lower) && Number.isFinite(upper) && lower < upper)) invalid("need finite bounds lower < upper");
+    if (!(0 < allocation && allocation < 1)) invalid("allocation must lie in (0, 1)");
+    checkAlpha(alpha);
+    this.arms = checkArms(arms);
+    if (armInput === input) invalid("the arm and the outcome need different names");
+    this.center = (lower + upper) / 2.0;
+    this.bound = ((upper - lower) / 2.0) * pyMax(1.0 / allocation, 1.0 / (1.0 - allocation));
+    if (!(-this.bound < effect0 && effect0 < this.bound)) invalid("effect0 must lie strictly inside the range of the scores");
+    this.cs = new BettingConfidenceSequence(-this.bound, this.bound, alpha, grid, "psi");
+    this.test = new BettingMeanTest(effect0, -this.bound, this.bound, alpha, alternative, false, "psi");
+  }
+
+  static fromConfig(c: Config): BoundedABTest {
+    pythonBackend(c, "bounded_ab_test");
+    return new BoundedABTest(num(c, "lower"), num(c, "upper"), num(c, "allocation"), num(c, "alpha"), num(c, "effect0"),
+      str(c, "alternative"), nums(c, "arms"), int(c, "grid"), bool(c, "stop_on_reject"), str(c, "arm_input"), str(c, "input"));
+  }
+
+  config(): Config {
+    return {
+      lower: this.lower, upper: this.upper, allocation: this.allocation, alpha: this.alpha, effect0: this.effect0,
+      alternative: this.alternative, arms: [...this.arms], grid: this.grid, backend: this.backend, stop_on_reject: this.stopOnReject,
+      arm_input: this.armInput, input: this.input,
+    };
+  }
+
+  inputs(): Record<string, InputContract> {
+    return {
+      [this.armInput]: new InputContract(this.armInput, "integer", [], 0),
+      [this.input]: new InputContract(this.input, "real", [], this.lower, this.upper),
+    };
+  }
+
+  initialState(): BoundedABState {
+    return { n: 0, treated: 0, sum_treated: 0.0, sum_control: 0.0, cs: this.cs.initialState(), test: this.test.initialState() };
+  }
+
+  score(treated: boolean, y: number): number {
+    const weight = treated ? 1.0 / this.allocation : -1.0 / (1.0 - this.allocation);
+    // the bound can be exceeded only by rounding: clip to the declared range of the scores
+    return pyMax(-this.bound, pyMin(this.bound, weight * (y - this.center)));
+  }
+
+  private means(s: BoundedABState): [number | null, number | null] {
+    const control = s.n - s.treated;
+    return [s.treated ? s.sum_treated / s.treated : null, control ? s.sum_control / control : null];
+  }
+
+  private output(s: BoundedABState, csOut: State | null, testOut: State | null): State {
+    return {
+      n: s.n, means: this.means(s),
+      lower: csOut !== null ? csOut.lower : -this.bound,
+      upper: csOut !== null ? csOut.upper : this.bound,
+      log_e_value: testOut !== null ? testOut.log_wealth : 0.0,
+      p_value: testOut !== null ? testOut.p_value : 1.0,
+      decision: testOut !== null ? testOut.decision : null,
+    };
+  }
+
+  /** The output for a step that changes nothing (a unit of another arm). */
+  private last(s: BoundedABState): State {
+    const cs = s.cs, t = s.test;
+    const logE = this.test["logWealth"](t.log_up as number, t.log_down as number);
+    return {
+      n: s.n, means: this.means(s),
+      lower: cs.lower === null ? -this.bound : cs.lower,
+      upper: cs.upper === null ? this.bound : cs.upper,
+      log_e_value: logE, p_value: pyMin(1.0, Math.exp(-(t.max_log_wealth as number))), decision: t.decision,
+    };
+  }
+
+  step(state: State, x: StatInput): [BoundedABState, State] {
+    const s = state as BoundedABState;
+    const label = x[this.armInput] as number;
+    if (!this.arms.includes(label)) return [s, s.n === 0 ? this.output(s, null, null) : this.last(s)];
+    const treated = label === this.arms[0];
+    const y = x[this.input] as number;
+    const psi = this.score(treated, y);
+    const [csState, csOut] = this.cs.step(s.cs, { psi });
+    const [testState, testOut] = this.test.step(s.test, { psi });
+    const next: BoundedABState = {
+      n: s.n + 1, treated: s.treated + (treated ? 1 : 0), sum_treated: s.sum_treated + (treated ? y : 0.0),
+      sum_control: s.sum_control + (treated ? 0.0 : y), cs: csState, test: testState,
+    };
+    return [next, this.output(next, csOut, testOut)];
+  }
+
+  override isTerminal(state: State): boolean {
+    return this.stopOnReject && (state as BoundedABState).test.decision !== null;
+  }
+
+  decodeState(data: Json): BoundedABState {
+    requireState(data !== null && typeof data === "object" && !Array.isArray(data)
+      && Object.keys(data).sort().join(",") === "cs,n,sum_control,sum_treated,test,treated", "fields");
+    const d = data as { [key: string]: Json };
+    const n = d.n, treated = d.treated;
+    requireState(typeof n === "number" && Number.isInteger(n) && typeof treated === "number" && Number.isInteger(treated)
+      && 0 <= treated && treated <= n, "counts");
+    const sums = [d.sum_treated, d.sum_control];
+    requireState(sums.every((v) => typeof v === "number" && Number.isFinite(v)), "sums");
+    const cs = this.cs.decodeState(d.cs), test = this.test.decodeState(d.test);
+    requireState(cs.n === n && test.n === n, "the inner states saw the same units");
+    return { n: n as number, treated: treated as number, sum_treated: sums[0] as number, sum_control: sums[1] as number, cs, test };
+  }
+}
+
+register("bounded_ab_test", "1", (c) => BoundedABTest.fromConfig(c));
