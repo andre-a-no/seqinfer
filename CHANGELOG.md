@@ -6,28 +6,6 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
-## Unreleased (0.4.0)
-
-### Changed
-- `TwoProportionTest` version 2: by default (`method="grow"`) units are
-  grouped into blocks (`block=(1, 1)`, or the allocation ratio) and the
-  blocks' e-values of Turner, Ly and Grünwald multiply. Exact for every
-  common rate (checked by enumerating every outcome of a block); by
-  simulation it needs 1.3 to 1.6 times the units of the asymptotic test,
-  against 2.3 to 3 times before. `method="universal"` keeps the previous
-  test, which needs no blocks and is exact under outcome-adaptive
-  allocation. Checkpoints of version 1 are refused.
-
-### Added
-- The TypeScript executor implements every procedure of the library (31;
-  those with a numpy backend with the Python backend), reproducing all 45
-  conformance vectors: 18 bit for bit, the others to 2.2e-13.
-- API reference on the documentation site, generated from the docstrings.
-- Release workflow: the TypeScript executor is published to npm (with the
-  `NPM_TOKEN` secret); the release is tested on Python 3.8 and 3.9 too, and
-  refuses a TypeScript package with another version.
-- Pages deployment actions v5.
-
 ## 0.3.0 — 2026-10-15
 
 Filters and smoothers, A/B tests, nonparametric change detection, data
@@ -35,8 +13,14 @@ source adapters, a numpy backend, a specification of the formats with a
 TypeScript executor, and a documentation site.
 
 ### Added: A/B tests
-- `TwoProportionTest`: exact anytime-valid comparison of conversion rates by
-  sequential universal inference; any allocation rule; one- or two-sided.
+- `TwoProportionTest`: exact anytime-valid comparison of conversion rates,
+  one- or two-sided. By default (`method="grow"`) units are grouped into
+  blocks (`block=(1, 1)`, or the allocation ratio) and the blocks' e-values
+  of Turner, Ly and Grünwald multiply: exact for every common rate (checked
+  by enumerating every outcome of a block), and by simulation 1.3 to 1.6
+  times the units of the asymptotic test. `method="universal"` (sequential
+  universal inference) needs no blocks and stays exact under
+  outcome-adaptive allocation, at 2.3 to 3 times.
 - `SampleRatioMismatch`: Dirichlet-multinomial test of the traffic split.
 - `ABTest`: difference of means by inverse-propensity scores with a
   predictable regression on a pre-experiment covariate (CUPED without its
@@ -62,10 +46,16 @@ TypeScript executor, and a documentation site.
 
 ### Added: specification, TypeScript executor, documentation
 - `SPEC.md`: the formats and semantics another implementation needs.
-- `ts/`: a TypeScript executor that reproduces the 23 conformance vectors
-  and continues runs started in Python (and hands them back).
-- Seven conformance vectors for the new procedures.
-- A documentation site (mkdocs) with tutorials whose code runs in the tests.
+- `ts/`: a TypeScript executor of every procedure of the library (31;
+  those with a numpy backend with the Python backend). It reproduces all 45
+  conformance vectors -- 18 bit for bit, the others to 2.2e-13 -- and
+  continues runs started in Python (and hands them back).
+- 29 conformance vectors for the new procedures.
+- A documentation site (mkdocs, GitHub Pages) with tutorials whose code
+  runs in the tests, and an API reference generated from the docstrings.
+- Release workflow: tested on Python 3.8 to 3.14; the TypeScript executor
+  is published to npm (with the `NPM_TOKEN` secret) and must carry the
+  same version.
 
 ### Added: filters
 - `KalmanFilter`: any linear Gaussian state-space model in matrix form, with

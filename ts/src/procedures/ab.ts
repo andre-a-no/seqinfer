@@ -139,7 +139,7 @@ type TPState = {
 
 export class TwoProportionTest extends BaseProcedure {
   readonly name = "two_proportion_test";
-  readonly version = "2";
+  readonly version = "1";
   readonly eValueField = "log_e_value";
   readonly arms: [number, number];
   readonly prior: [number, number];
@@ -464,7 +464,7 @@ export class ABTest extends BaseProcedure {
 }
 
 register("sample_ratio_mismatch", "1", (c) => SampleRatioMismatch.fromConfig(c));
-register("two_proportion_test", "2", (c) => TwoProportionTest.fromConfig(c));
+register("two_proportion_test", "1", (c) => TwoProportionTest.fromConfig(c));
 register("ab_test", "1", (c) => ABTest.fromConfig(c));
 
 // ---------------------------------------------------------------- many tests

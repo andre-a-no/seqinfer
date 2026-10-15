@@ -252,7 +252,7 @@ class TwoProportionTest(Procedure):
     """
 
     name = "two_proportion_test"
-    version = "2"
+    version = "1"
     e_value_field = "log_e_value"
 
     def __init__(self, alpha: float = 0.05, *, alternative: str = "two-sided", method: str = "grow",
