@@ -6,6 +6,38 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## Unreleased
+
+### Added: filters
+- `KalmanFilter`: any linear Gaussian state-space model in matrix form, with
+  control input, Joseph-form covariance update and the exact likelihood;
+  constructors for local linear trends and autoregressions.
+- `RobustKalmanFilter`: Student-t observation noise by variational Bayes
+  (Piché, Särkkä and Hartikainen 2012).
+- `HiddenMarkovFilter`: the forward algorithm with categorical, Gaussian
+  and Poisson emissions.
+- `BayesianChangePoint` (Adams and MacKay 2007) with normal-gamma,
+  Poisson-gamma and beta-Bernoulli models, pruning and an alarm.
+- `ParticleFilter` for any `StateSpaceModel`: adaptive systematic
+  resampling, unbiased likelihood; linear Gaussian, stochastic volatility
+  and Student-t local level models.
+- Tests against independent references: exact rational Gaussian
+  conditioning, enumeration of paths and partitions, grid filters.
+
+### Added: speed
+- numpy backend (`backend="auto" | "python" | "numpy"`) for
+  `ParticleFilter`, `KernelTwoSampleTest`, `BettingConfidenceSequence` and
+  `CatoniConfidenceSequence`, 2 to 12 times faster; part of the
+  procedure's identity, so checkpoints never switch backend. The numpy
+  draws are exactly those of the run's SplitMix64 generator.
+- `tools/benchmark.py`, `PERFORMANCE.md`, a CI benchmark job; README
+  sections "Checkpoints and backends" and "Speed". The provenance records
+  the numpy version; restoring under another one is reported.
+
+### Changed
+- The four procedures above have a `backend` entry in their
+  configuration, so their checkpoints from 0.2.0 are refused.
+
 ## 0.2.0 — 2026-10-13
 
 Methods that do not assume normal data, and the fixes of a line-by-line

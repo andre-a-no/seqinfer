@@ -62,10 +62,18 @@ nonparametric monitoring, and a group sequential trial.
 | Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
 | Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts` |
-| Filtering and estimation | `LocalLevelKalman` (with control input), `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
+| Filtering and estimation | `KalmanFilter` (any linear Gaussian state-space model: trends, autoregressions, tracking, control input; exact likelihood), `RobustKalmanFilter` (Student-t observation noise: outliers discounted), `HiddenMarkovFilter` (which hidden regime now; categorical, Gaussian or Poisson observations), `ParticleFilter` (any model you can simulate: stochastic volatility, heavy tails; unbiased likelihood), `LocalLevelKalman`, `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
+| Bayesian change points | `BayesianChangePoint` (Adams–MacKay run-length posterior; unknown parameters before and after the change; normal, Poisson, 0/1 data) |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),
 `Bernoulli`, `Poisson`, `Exponential`.
+
+**Filters are checked against exact references.** The Kalman filter
+agrees with exact Gaussian conditioning computed in rational arithmetic to
+2·10⁻¹⁵; the hidden Markov filter and the change-point posterior agree with
+enumeration of every hidden path or segmentation to 10⁻¹⁵; the particle
+filter converges to the Kalman filter and to a filter by numerical
+integration, and its likelihood estimate is unbiased (`tests/test_filters.py`).
 
 **Which method for data that are not normal?** For a median or another
 quantile — latencies, revenue per user, anything heavy-tailed — use the
