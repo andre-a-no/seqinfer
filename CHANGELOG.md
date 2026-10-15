@@ -19,6 +19,9 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
   allocation. Checkpoints of version 1 are refused.
 
 ### Added
+- The TypeScript executor implements every procedure of the library (31;
+  those with a numpy backend with the Python backend), reproducing all 45
+  conformance vectors: 18 bit for bit, the others to 2.2e-13.
 - API reference on the documentation site, generated from the docstrings.
 - Release workflow: the TypeScript executor is published to npm (with the
   `NPM_TOKEN` secret); the release is tested on Python 3.8 and 3.9 too, and
