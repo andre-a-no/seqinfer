@@ -63,6 +63,33 @@ class ELOND(unittest.TestCase):
     def test_false_discovery_rate_dependent(self):
         self.assertLessEqual(self.check_fdr(True), 0.2)
 
+    def test_planned_horizon(self):
+        proc = OnlineFDR(0.1, horizon=4)
+        outs = stream(proc, [3.0, 4.0, 4.0, 2.0])
+        for out, expected in zip(outs, [0.025, 0.025, 0.05, 0.075]):  # 0.1/4 times (D+1)
+            self.assertAlmostEqual(out.level, expected, delta=1e-15)
+        self.assertEqual([o.rejected for o in outs], [False, True, True, False])
+        state = proc.initial_state()
+        for v in (0.0,) * 4:
+            state, _ = proc.step(state, {"log_e": v})
+        self.assertTrue(proc.is_terminal(state))
+        from sequential_analysis.errors import LifecycleError
+
+        with self.assertRaises(LifecycleError):
+            proc.step(state, {"log_e": 9.0})
+
+    def test_false_discovery_rate_with_a_horizon(self):
+        rnd = random.Random(4)
+        alpha, runs, total = 0.2, 2000, 0.0
+        for _ in range(runs):
+            truth = [rnd.random() < 0.3 for _ in range(40)]
+            logs = [3.0 * (rnd.gauss(0, 1) + (3.0 if real else 0.0)) - 4.5 for real in truth]
+            outs = stream(OnlineFDR(alpha, horizon=40), logs)
+            found = [i for i, o in enumerate(outs) if o.rejected]
+            if found:
+                total += sum(not truth[i] for i in found) / len(found)
+        self.assertLessEqual(total / runs, alpha)
+
     def test_state_and_arguments(self):
         proc = OnlineFDR()
         state = proc.initial_state()
@@ -72,6 +99,8 @@ class ELOND(unittest.TestCase):
             proc.decode_state({"t": 1, "discoveries": 2})
         with self.assertRaises(ValueError):
             OnlineFDR(1.0)
+        with self.assertRaises(ValueError):
+            OnlineFDR(horizon=0)
 
 
 if __name__ == "__main__":
