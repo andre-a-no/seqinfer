@@ -127,3 +127,136 @@ except IncompatibleCheckpoint as error:
 The checkpoint records the boundaries as part of the procedure's
 identity. An analysis run with boundaries other than the planned ones
 cannot pass for the planned trial.
+
+## 5. A binary endpoint: two proportions
+
+Most trials do not measure a normal mean. Take a response rate of 10%
+under control, and a treatment worth detecting at 12%. The same kind of
+design gives the boundaries; the sample size comes from the two
+proportions:
+
+```python
+from sequential_analysis.procedures import GroupSequentialProportions
+
+binary = group_sequential_design(0.025, [1 / 3, 2 / 3, 1.0], spending="obrien-fleming")
+n_max = binary.max_sample_size_two_proportions(p_control=0.10, p_treatment=0.12, power=0.8)
+print(f"patients in both arms together: {n_max} "
+      f"({binary.inflation_factor(0.8):.3f} times a single analysis)")
+
+import random
+rnd = random.Random(3)
+test = GroupSequentialProportions.from_design(binary, n_max)
+state = test.initial_state()
+for patient in range(n_max):
+    arm = patient % 2                                       # 1 treatment, 0 control
+    response = int(rnd.random() < (0.12 if arm == 1 else 0.10))
+    state, out = test.step(state, {"arm": arm, "y": response})
+    if out.analysis:
+        print(f"analysis {out.analysis} after {out.n} patients: Z = {out.z:.2f}, bound {out.bound:.2f}")
+    if out.decision:
+        print("decision:", out.decision)
+        break
+```
+
+Z is the pooled two-proportion statistic. Its square is the chi-square
+test without continuity correction. The sample size uses the method of
+rpact's `getSampleSizeRates`. The tests check it against rpact for 18
+combinations of rates, allocation ratios and designs.
+
+## 6. A survival endpoint: events, not patients
+
+In a survival trial the information is in the events. The design asks
+for a number of events (Schoenfeld's formula). The analyses happen after
+a third, two thirds and all of them:
+
+```python
+from sequential_analysis.procedures import GroupSequentialLogRank
+
+events = binary.max_events(hazard_ratio=0.7, power=0.8)
+print("events needed:", events)
+
+def trial(n, hazard_ratio, seed):
+    """Entries, events and censorings of a trial in calendar order."""
+    rnd = random.Random(seed)
+    happenings = []
+    for patient in range(n):
+        arm = patient % 2
+        entry = rnd.uniform(0.0, 12.0)
+        event = entry + rnd.expovariate(0.05 * (hazard_ratio if arm == 1 else 1.0))
+        end = min(event, entry + rnd.expovariate(0.01), 48.0)
+        happenings += [(entry, arm, 0), (end, arm, 1 if end == event else 2)]
+    return [{"arm": arm, "kind": kind} for _, arm, kind in sorted(happenings)]
+
+logrank = GroupSequentialLogRank.from_design(binary, events)
+state = logrank.initial_state()
+for record in trial(400, 0.7, seed=8):
+    state, out = logrank.step(state, record)
+    if out.analysis:
+        print(f"analysis {out.analysis} after {out.events} events: Z = {out.z:.2f}, bound {out.bound:.2f}, "
+              f"hazard ratio about {out.hazard_ratio_estimate:.2f}")
+    if out.decision:
+        print("decision:", out.decision)
+        break
+```
+
+The records are those of `AnytimeLogRankTest`: a patient enters (0),
+has the event (1) or is censored (2). Z is the log-rank statistic with
+late entry. The tests check it against the score test of a Cox model in
+R's survival package, at four interim analyses, to 1e-12. With
+`strata=` the test is stratified: by centre, by a prognostic factor, or
+by entry cohort.
+
+## 7. When the meetings move
+
+A committee rarely meets exactly at a third of the events. Alpha
+spending lets the analyses happen whenever they do. The spending
+function is evaluated at the information actually reached, and the
+boundaries already used never change. A trial that ends early
+(under-running) or late (over-running) spends what is left at its final
+analysis.
+
+`GroupSequentialMonitor` takes one record per analysis: the statistic Z
+and its information. It works for any endpoint whose statistic you
+compute yourself, such as a Cox model with covariates, a mixed model or
+a ratio of means. For a log-rank statistic the information is about a
+quarter of the events:
+
+```python
+from sequential_analysis.procedures import GroupSequentialMonitor
+
+monitor = GroupSequentialMonitor.from_design(binary, max_information=events / 4, final_input="final")
+state = monitor.initial_state()
+meetings = [(0.9, 70), (1.8, 150), (2.3, 230)]              # (Z, events) at three meetings
+for k, (z, d) in enumerate(meetings):
+    state, out = monitor.step(state, {"z": z, "information": d / 4, "final": int(k == len(meetings) - 1)})
+    print(f"meeting {out.analysis} at {out.fraction:.0%} of the information: bound {out.bound:.3f}, "
+          f"alpha spent {out.spent:.2g}, decision {out.decision}")
+```
+
+The last meeting comes at 230 of the planned 250 events, and is declared
+final. It spends all the alpha left. The boundaries are those of
+`binary.at([0.28, 0.6, 0.92])`. The tests check them against rpact,
+including under- and over-running.
+
+## 8. Checked against rpact
+
+`tools/r_reference.R` computes reference values with rpact and R's
+survival package, and `tests/test_r_reference.py` compares with them.
+The comparison covers 56 designs, combining:
+
+* O'Brien–Fleming, Pocock and power spending;
+* one- and two-sided tests;
+* two to five analyses;
+* with and without futility boundaries.
+
+The comparison includes:
+
+* the boundaries;
+* the drift for the power;
+* the crossing and futility probabilities;
+* the expected sample size and the inflation factors;
+* boundaries at realised information;
+* 44 sample sizes for means, rates and events.
+
+They agree to 2e-7 or better. A CI job regenerates the references with
+R and repeats the comparison on every change.

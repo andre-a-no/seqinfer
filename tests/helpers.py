@@ -36,6 +36,9 @@ from sequential_analysis.procedures import (
     CatoniConfidenceSequence,
     Gaussian,
     GaussianEmission,
+    GroupSequentialLogRank,
+    GroupSequentialMonitor,
+    GroupSequentialProportions,
     GroupSequentialTest,
     HiddenMarkovFilter,
     KalmanFilter,
@@ -447,6 +450,35 @@ def cases():
             record_stream([{"arm": i % 2, "kind": 0} for i in range(40)]
                           + [{"arm": (i // 3) % 2 if i < 36 else i % 2, "kind": 1 if i % 4 else 2} for i in range(40)],
                           ("arm", "kind")),
+            None,
+        ),
+        (
+            "group_sequential_monitor",
+            lambda: GroupSequentialMonitor(0.025, 100.0, "pocock", max_analyses=6),
+            lambda: KeyJoin(("z", "information")),
+            Delivery,
+            # many small analyses: the trial continues to the sixth, which is final
+            record_stream([{"z": 0.3 * math.sin(i), "information": 2.0 + 3.0 * i} for i in range(6)],
+                          ("z", "information")),
+            None,
+        ),
+        (
+            "group_sequential_proportions",
+            lambda: GroupSequentialProportions([20, 40, 60, 80], [4.0, 3.0, 2.6, 2.2], futility=[-1.0, 0.0, 1.0, 2.2]),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            record_stream([{"arm": i % 3, "y": int((i * 7) % 5 < 2 + (i % 3 == 1))} for i in range(n)], ("arm", "y")),
+            None,
+        ),
+        (
+            "group_sequential_logrank",
+            lambda: GroupSequentialLogRank([10, 20, 30], [3.5, 2.7, 2.2], strata=2),
+            lambda: KeyJoin(("arm", "kind", "stratum")),
+            Delivery,
+            # 40 patients enter, 20 per stratum and 10 per arm in each, then events and censorings
+            record_stream([{"arm": i % 2, "kind": 0, "stratum": (i // 2) % 2} for i in range(40)]
+                          + [{"arm": i % 2, "kind": 1 if i % 5 else 2, "stratum": (i // 2) % 2} for i in range(40)],
+                          ("arm", "kind", "stratum")),
             None,
         ),
         (

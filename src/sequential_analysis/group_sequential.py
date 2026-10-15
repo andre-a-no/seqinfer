@@ -104,7 +104,10 @@ class _Recursion:
         sd = math.sqrt(t - self.t)
         mu = self.drift * (t - self.t)
         lower = f * math.sqrt(t)
-        return float(sum(m * _upper((x + mu - lower) / sd) for x, m in zip_strict(self.xs, self.mass)))
+        p = 0.0
+        for x, m in zip_strict(self.xs, self.mass):  # a plain loop: sum() of floats is compensated from 3.12 on
+            p += m * _upper((x + mu - lower) / sd)
+        return p
 
     def advance(self, t: float, b: float, f: float | None = None) -> None:
         """Move to t, keeping only paths that crossed neither boundary."""
@@ -237,7 +240,7 @@ class GroupSequentialDesign:
         effect it was powered for; rpact and gsDesign count power the same
         way.  `sum(crossing(drift))` counts both sides.
         """
-        return sum(self._walk(drift, 24, True, upper_only=True)[0])
+        return math.fsum(self._walk(drift, 24, True, upper_only=True)[0])
 
     def expected_fraction(self, drift: float) -> float:
         """Expected information at stopping, as a fraction of the maximum (futility obeyed)."""
