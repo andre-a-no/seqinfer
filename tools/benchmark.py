@@ -46,7 +46,11 @@ from sequential_analysis.procedures import (  # noqa: E402
     CatoniConfidenceSequence,
     Gaussian,
     GaussianEmission,
+    GroupSequentialLogRank,
+    GroupSequentialMonitor,
+    GroupSequentialProportions,
     GroupSequentialTest,
+    GroupSequentialTwoMeans,
     HiddenMarkovFilter,
     KalmanFilter,
     KernelTwoSampleTest,
@@ -133,6 +137,13 @@ def survival_record(rnd):
     return {"arm": arm, "kind": kind}
 
 
+def analysis_record(rnd):
+    """One analysis of a monitor: Z and an information that grows by one each time (counted on the generator)."""
+    k = rnd.__dict__.setdefault("analyses", [0])
+    k[0] += 1
+    return {"z": rnd.gauss(0.0, 1.0), "information": float(k[0])}
+
+
 def four_states():
     f = tuple(tuple(1.0 if j in (i, i + 1) else 0.0 for j in range(4)) for i in range(4))
     q = tuple(tuple(0.01 if i == j else 0.0 for j in range(4)) for i in range(4))
@@ -148,6 +159,16 @@ CASES = [
     ("PlanTest", lambda b: PlanTest([(-50.0, 50.0)] * 100_000 + [(0.0, 0.0)]), normal, (100,), False),
     ("GroupSequentialTest", lambda b: GroupSequentialTest(1.0, list(range(100, 100_001, 100)), [3.0] * 1000),
      normal, (100,), False),
+    ("GroupSequentialTwoMeans, estimated variance",
+     lambda b: GroupSequentialTwoMeans(None, list(range(10_000, 1_000_001, 10_000)), [3.0] * 100), bounded_unit,
+     (100,), False),
+    ("GroupSequentialProportions",
+     lambda b: GroupSequentialProportions(list(range(10_000, 1_000_001, 10_000)), [3.0] * 100), unit, (100,), False),
+    ("GroupSequentialLogRank",
+     lambda b: GroupSequentialLogRank(list(range(10_000, 1_000_001, 10_000)), [3.0] * 100), survival_record,
+     (100,), False),
+    ("GroupSequentialMonitor, one analysis", lambda b: GroupSequentialMonitor(0.025, 12.0, max_analyses=100),
+     analysis_record, (3, 10), False),
     ("NormalMixtureSPRT", lambda b: NormalMixtureSPRT(1.0, 0.5, stop_on_reject=False), normal, (100,), False),
     ("TMixtureSPRT", lambda b: TMixtureSPRT(0.0, stop_on_reject=False), normal, (100,), False),
     ("BettingMeanTest", lambda b: BettingMeanTest(0.5, stop_on_reject=False), bounded, (100,), False),
