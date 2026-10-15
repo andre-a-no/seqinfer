@@ -378,7 +378,8 @@ class GroupSequentialMonitor(Procedure):
         state = decode_fields(GroupSequentialMonitorState, data)
         k = len(state.fractions)
         require_state(len(state.bounds) == k and len(state.futility) in (0, k), "one boundary per analysis")
-        require_state(all(b > a for a, b in pairwise((0.0,) + state.fractions)), "fractions must grow")
+        steps = (0.0, *state.fractions)
+        require_state(all(b > a for a, b in pairwise(steps)), "fractions must grow")
         require_state(k <= self.max_analyses, "more analyses than max_analyses")
         return state
 

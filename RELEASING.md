@@ -72,6 +72,21 @@ the source distribution, runs the test suite against the installed wheel
 npm. A version cannot be uploaded twice; fix mistakes with a new
 version.
 
+4. conda-forge (optional). The recipe is
+   `packaging/conda-forge/meta.yaml`. For the first conda release, set its
+   version, put in the sha256 of the source distribution now on PyPI (the
+   recipe's comment has the command), and open a pull request to
+   https://github.com/conda-forge/staged-recipes adding it as
+   `recipes/sequential-analysis/meta.yaml`. Once that is merged,
+   conda-forge creates a feedstock repository whose bot opens a pull
+   request for every later PyPI release. Then `conda install -c conda-forge
+   sequential-analysis` works.
+5. JOSS (once). The short paper for the Journal of Open Source Software
+   is `paper/joss/paper.md` with `paper/joss/paper.bib`. Submit it at
+   https://joss.theoj.org/papers/new with the repository URL, the version
+   and the paper path `paper/joss/paper.md`, after a release that Zenodo
+   has archived; the review takes place on GitHub.
+
 ## Russian summary / Кратко по-русски
 
 Выпуск — это GitHub-релиз с тегом версии: при его публикации workflow
@@ -85,3 +100,10 @@ version.
 тег `vX.Y.Z` → **Publish release** (не *Save draft*) и одобрить загрузку на
 PyPI. Пакет TypeScript уходит в npm, если в секретах репозитория есть
 `NPM_TOKEN`; без него этот шаг пропускается.
+
+conda-forge (по желанию): рецепт лежит в `packaging/conda-forge/meta.yaml`.
+Для первого выпуска в него вписывают версию и sha256 архива с исходниками с
+PyPI, затем открывают PR в `conda-forge/staged-recipes`; дальше новые версии
+подхватывает бот. JOSS (один раз): статья лежит в `paper/joss/paper.md`; её
+подают на https://joss.theoj.org/papers/new после релиза, заархивированного
+в Zenodo.
