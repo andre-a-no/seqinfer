@@ -1813,17 +1813,21 @@ e-detectors~\cite{shin2024edetectors}, which mix Shiryaev--Roberts or CUSUM
 recursions over a grid of bets and keep the average run length to a false
 alarm above its target for every distribution with a given mean of bounded
 data or a given quantile. For A/B tests: an exact comparison of two
-conversion rates by sequential universal inference~\cite{wasserman2020}
-(Beta marginal likelihoods over the null supremum, valid for any
-allocation rule), a test of the traffic split by a Dirichlet-multinomial
+conversion rates that multiplies, over blocks of treatment and control
+units, the e-values of Turner, Ly and Gr\"unwald~\cite{turner2024}: the
+rates fitted on earlier blocks against their projection onto the null,
+valid for every common rate (verified by enumerating every outcome of a
+block); by simulation it needs 1.3 to 1.6 times the units of the
+asymptotic test, against 2.3 to 3 times for sequential universal
+inference~\cite{wasserman2020}, which remains available for
+outcome-adaptive allocation; a test of the traffic split by a Dirichlet-multinomial
 mixture~\cite{lindon2022}, a confidence sequence for a difference of
 means from inverse-propensity scores with a regression on a
 pre-experiment covariate fitted on past units only, in the manner of
 CUPED~\cite{deng2013} but without its in-sample bias, and the e-BH
 procedure~\cite{wang2022ebh} over any set of procedures with an
 e-process, which controls the false discovery rate at the stopping time.
-By simulation, the exact conversion test needs about 2.5 times the users
-of the asymptotic one: the price of validity at every sample size. For filtering and
+For filtering and
 estimation: the Kalman filter~\cite{kalman1960} of any linear Gaussian
 state-space model, with control input and the exact likelihood, and a
 variant with Student-$t$ observation noise by variational

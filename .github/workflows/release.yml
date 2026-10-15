@@ -1,6 +1,7 @@
 name: release
 
-# A version tag (v0.1.0, ...) publishes to PyPI. Run by hand (Actions -> release ->
+# A version tag (v0.1.0, ...) publishes to PyPI, and the TypeScript executor (ts/)
+# to npm when the repository has an NPM_TOKEN secret. Run by hand (Actions -> release ->
 # Run workflow) it is a rehearsal: "none" builds and tests the release without
 # publishing anything, "testpypi" also uploads it to test.pypi.org and installs it
 # from there. Uploads use trusted publishing: no token is stored anywhere (see
@@ -36,6 +37,9 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
           fi
+      - name: the TypeScript executor carries the same version
+        run: |
+          grep -q "\"version\": \"${{ steps.version.outputs.version }}\"" ts/package.json
       - name: the changelog has a dated section for this version
         run: grep -q "^## ${{ steps.version.outputs.version }} — [0-9]" CHANGELOG.md
       - name: CITATION.cff names this version and the changelog's date (Zenodo takes the metadata from it)
@@ -82,8 +86,35 @@ jobs:
           /tmp/venv/bin/python tools/smoke_test.py "${{ needs.build.outputs.version }}"
           /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
 
+  test-oldest:
+    # the declared minimum: Python 3.8 with numpy 1.22.0, and 3.9 without numpy
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.8"
+            extra: "numpy==1.22.0"
+          - python: "3.9"
+            extra: ""
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist/
+      - run: uv venv --python ${{ matrix.python }} /tmp/venv && uv pip install --python /tmp/venv/bin/python dist/*.whl ${{ matrix.extra }}
+      - name: test suite and smoke test from outside the checkout
+        run: |
+          mkdir /tmp/outside && cp -r tests conformance tools /tmp/outside/
+          cd /tmp/outside
+          /tmp/venv/bin/python tools/smoke_test.py "${{ needs.build.outputs.version }}"
+          /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
+
   testpypi:
-    needs: [build, test]
+    needs: [build, test, test-oldest]
     if: github.event_name == 'workflow_dispatch' && inputs.publish_to == 'testpypi'
     runs-on: ubuntu-24.04
     environment:
@@ -123,7 +154,7 @@ jobs:
           cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"
 
   pypi:
-    needs: [build, test]
+    needs: [build, test, test-oldest]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     environment:
@@ -157,3 +188,26 @@ jobs:
           done
           test -n "$installed" || { echo "could not install the package from PyPI"; exit 1; }
           cd /tmp && /tmp/venv/bin/python "$GITHUB_WORKSPACE/tools/smoke_test.py" "${{ needs.build.outputs.version }}"
+
+  npm:
+    # the TypeScript executor, after the Python package: the same version, the same formats
+    needs: [build, pypi]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write  # npm provenance
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - name: build, test and publish (skipped without the NPM_TOKEN secret)
+        working-directory: ts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::notice::NPM_TOKEN is not set: the npm package is not published"; exit 0; fi
+          npm ci
+          npm test
+          npm publish --provenance --access public

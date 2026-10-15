@@ -6,6 +6,25 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## Unreleased (0.4.0)
+
+### Changed
+- `TwoProportionTest` version 2: by default (`method="grow"`) units are
+  grouped into blocks (`block=(1, 1)`, or the allocation ratio) and the
+  blocks' e-values of Turner, Ly and Grünwald multiply. Exact for every
+  common rate (checked by enumerating every outcome of a block); by
+  simulation it needs 1.3 to 1.6 times the units of the asymptotic test,
+  against 2.3 to 3 times before. `method="universal"` keeps the previous
+  test, which needs no blocks and is exact under outcome-adaptive
+  allocation. Checkpoints of version 1 are refused.
+
+### Added
+- API reference on the documentation site, generated from the docstrings.
+- Release workflow: the TypeScript executor is published to npm (with the
+  `NPM_TOKEN` secret); the release is tested on Python 3.8 and 3.9 too, and
+  refuses a TypeScript package with another version.
+- Pages deployment actions v5.
+
 ## 0.3.0 — 2026-10-15
 
 Filters and smoothers, A/B tests, nonparametric change detection, data

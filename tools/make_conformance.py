@@ -148,6 +148,12 @@ def cases():
         ("group_sequential_t", GroupSequentialTest(None, [10, 20, 30], [3.71, 2.51, 1.99]), None,
          normal(0.4, 30, sd=1.5)),
     ]
+    added += [
+        ("two_proportion_universal", TwoProportionTest(0.05, method="universal"), None,
+         arm_rows(120, (0.25, 0.6, 0.9))),
+        ("two_proportion_blocks_2_1", TwoProportionTest(0.05, block=(2, 1)), None,
+         arm_rows(120, (0.3, 0.55, 0.9), weights=(0.3, 0.6, 0.1))),
+    ]
     return existing + added
 
 

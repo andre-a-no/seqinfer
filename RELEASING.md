@@ -20,6 +20,12 @@ publishing").
    repository on. Zenodo archives every GitHub release published after that
    — releases, not bare tags — and takes the authors, title and license from
    `CITATION.cff`.
+4. For the TypeScript executor on npm (optional): an account on
+   https://www.npmjs.com with two-factor authentication, an *automation*
+   access token (*Access Tokens → Generate New Token*), stored on GitHub as
+   the repository secret `NPM_TOKEN` (*Settings → Secrets and variables →
+   Actions*). Without it the npm step is skipped and the Python release is
+   unaffected.
 
 ## Rehearsal before a release
 
@@ -51,9 +57,9 @@ smoke test again.
 1. Set the version in `src/sequential_analysis/version.py` (the only place
    it is written; `pyproject.toml` reads it from there), add a section
    `## X.Y.Z — YYYY-MM-DD` to `CHANGELOG.md`, and set `version` and
-   `date-released` in `CITATION.cff` to the same version and date. The
-   workflow refuses a release whose changelog or citation file names
-   another version.
+   `date-released` in `CITATION.cff` to the same version and date, and
+   `version` in `ts/package.json`. The workflow refuses a release whose
+   changelog, citation file or TypeScript package names another version.
 2. Merge to `main` with CI green.
 3. *Releases → Draft a new release*: tag `vX.Y.Z` ("Create new tag on
    publish"), target `main`, title `sequential-analysis X.Y.Z`, the
@@ -61,8 +67,9 @@ smoke test again.
    *Save draft*: a draft creates no tag and starts nothing).
 
 The workflow checks that the tag matches the version, builds the wheel and
-the source distribution, runs the test suite against the installed wheel and
-publishes. A version cannot be uploaded twice; fix mistakes with a new
+the source distribution, runs the test suite against the installed wheel
+(Python 3.8 to 3.14) and publishes to PyPI, then the TypeScript executor to
+npm. A version cannot be uploaded twice; fix mistakes with a new
 version.
 
 ## Russian summary / Кратко по-русски
@@ -73,6 +80,8 @@ version.
 Перед выпуском — репетиция: Actions → release → Run workflow, `none`
 (сборка и тесты установленного пакета). Каждый выпуск: поднять версию в
 `version.py`, добавить датированный раздел в `CHANGELOG.md`, обновить
-`version` и `date-released` в `CITATION.cff`, влить в `main`, затем Releases
-→ Draft a new release → тег `vX.Y.Z` → **Publish release** (не *Save draft*)
-и одобрить загрузку на PyPI.
+`version` и `date-released` в `CITATION.cff` и `version` в
+`ts/package.json`, влить в `main`, затем Releases → Draft a new release →
+тег `vX.Y.Z` → **Publish release** (не *Save draft*) и одобрить загрузку на
+PyPI. Пакет TypeScript уходит в npm, если в секретах репозитория есть
+`NPM_TOKEN`; без него этот шаг пропускается.

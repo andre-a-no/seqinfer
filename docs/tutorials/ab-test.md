@@ -93,14 +93,24 @@ The decision `reject_h0` means conversion differs, at an error rate of
 at most 5%, even though the test was looked at after every user.
 
 **What exactness costs.** Valid at every sample size, the exact test
-pays a price in users. By simulation, a 10% → 13% conversion lift is
-detected after a median of about 10,500 users. The asymptotic test below
-needs about 4,000, and a fixed-sample test planned for 80% power needs
-3,500, but that test may be looked at only once.
+pays a price in users. It works on blocks of one treatment and one
+control user. Use `block=(2, 1)` for a 2:1 split.
 
-For a 10% → 12% lift the medians are 22,000 against 9,500 users, about
-2.5 times. The extra cost of exactness is a logarithmic penalty for
-estimating both conversion rates.
+By simulation, the median number of users before a decision is:
+
+| Lift | Exact test (`method="grow"`, the default) | Asymptotic test (below) | Universal inference (`method="universal"`) |
+|---|---|---|---|
+| 10% → 15% | 2,000 | 1,500 | 4,800 |
+| 10% → 13% | 6,200 | 4,000 | 10,500 |
+| 10% → 12% | 14,000 | 9,500 | 22,000 |
+
+So the default exact test needs 1.3 to 1.6 times the users of the
+asymptotic test. A fixed-sample test planned for 80% power at 10% → 13%
+needs 3,500 users, but it may be looked at only once.
+
+`method="universal"` is for allocation that adapts to the outcomes, as a
+bandit's does. It needs no blocks and stays exact under any allocation
+rule, at the price shown in the last column.
 
 When thousands of users arrive anyway, the asymptotic confidence
 sequence of section 3 also works for a 0/1 outcome, and gives an

@@ -11,8 +11,10 @@
   "engines": { "node": ">=16" },
   "scripts": {
     "build": "tsc -p .",
+    "prepublishOnly": "tsc -p .",
     "test": "tsc -p . && node --test dist/test/*.test.js"
   },
+  "homepage": "https://andre-a-no.github.io/sequential-analysis/typescript/",
   "repository": { "type": "git", "url": "https://github.com/andre-a-no/sequential-analysis" },
   "keywords": ["sequential analysis", "SPRT", "anytime-valid", "A/B testing", "change detection", "checkpoint"],
   "devDependencies": {

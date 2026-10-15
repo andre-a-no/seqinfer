@@ -124,7 +124,7 @@ class TwoProportionTests(unittest.TestCase):
 
     def test_numerator_is_the_exact_beta_binomial_marginal(self):
         data = self.data(80, {0: 0.3, 1: 0.6}, 1)
-        proc = TwoProportionTest()
+        proc = TwoProportionTest(method="universal")
         state, _ = fold(proc, data)
         half = Fraction(1, 2)
         exact = Fraction(1)
@@ -132,14 +132,14 @@ class TwoProportionTests(unittest.TestCase):
             ys = [x["y"] for x in data if x["arm"] == k]
             s, n = sum(ys), len(ys)
             exact *= rising(half, s) * rising(half, n - s) / rising(Fraction(1), n)
-        self.assertAlmostEqual(state.log_marginal + state.comp, math.log(exact), delta=1e-12 * abs(math.log(exact)))
+        self.assertAlmostEqual(state.log_sum + state.comp, math.log(exact), delta=1e-12 * abs(math.log(exact)))
 
     def test_denominator_is_the_supremum_over_the_null(self):
         grid = [i / 2000 for i in range(2001)]
         for seed, rates in ((2, {0: 0.3, 1: 0.6}), (3, {0: 0.6, 1: 0.3}), (4, {0: 0.0, 1: 0.2})):
             data = self.data(60, rates, seed)
             for alternative in ("two-sided", "greater", "less"):
-                proc = TwoProportionTest(alternative=alternative)
+                proc = TwoProportionTest(alternative=alternative, method="universal")
                 state, _ = fold(proc, data)
                 (st, sc), (nt, nc) = state.successes, state.trials
                 sup = proc.log_null_likelihood(state.successes, state.trials)
@@ -157,7 +157,7 @@ class TwoProportionTests(unittest.TestCase):
         rejected = 0
         for r in range(runs):
             rnd = random.Random(1000 + r)
-            proc = TwoProportionTest(alpha)
+            proc = TwoProportionTest(alpha, method="universal")
             state = proc.initial_state()
             for _ in range(1000):
                 # the allocation depends on the past: still exact
@@ -167,23 +167,86 @@ class TwoProportionTests(unittest.TestCase):
             rejected += state.decision is not None
         self.assertLessEqual(rejected / runs, binomial_upper_bound(alpha, runs))
 
-    def test_one_sided_level_at_the_boundary_and_inside_the_null(self):
-        runs, alpha = 200, 0.05
-        for rates in ({1: 0.2, 0: 0.2}, {1: 0.15, 0: 0.25}):
+    def test_block_e_value_is_valid_for_every_common_rate(self):
+        # E_p[E_block] <= 1 for every rate p, by enumerating every outcome of a block, for any plug-in (a, b)
+        pts = [i / 23 for i in range(1, 23)]
+        for block in ((1, 1), (2, 1), (1, 3), (3, 2)):
+            kt, kc = block
+            proc = TwoProportionTest(block=block)
+            worst = 0.0
+            for a in pts:
+                for b in pts:
+                    pbar = (kt * a + kc * b) / (kt + kc)
+                    for r in [i / 200 for i in range(1, 200)] + [pbar]:
+                        expected = 0.0
+                        for st in range(kt + 1):
+                            for sc in range(kc + 1):
+                                ways = math.comb(kt, st) * math.comb(kc, sc)
+                                prob = ways * r ** (st + sc) * (1 - r) ** (kt + kc - st - sc)
+                                treated, control = [1] * st + [0] * (kt - st), [1] * sc + [0] * (kc - sc)
+                                expected += prob * math.exp(proc.block_log_e(a, b, pbar, treated, control))
+                        worst = max(worst, expected)
+            self.assertLessEqual(worst, 1 + 1e-12, block)
+            self.assertGreater(worst, 1 - 1e-12, block)  # attained at r = pbar: no slack left
+
+    def test_level_under_the_null_with_blocks(self):
+        runs, alpha = 300, 0.05
+        for block, share in (((1, 1), 0.5), ((2, 1), 2 / 3)):
             rejected = 0
             for r in range(runs):
-                data = self.data(800, rates, 5000 + r)
-                state, _ = fold(TwoProportionTest(alpha, alternative="greater"), data)
+                rnd = random.Random(3000 + r)
+                proc = TwoProportionTest(alpha, block=block)
+                state = proc.initial_state()
+                for _ in range(1500):
+                    state, _ = proc.step(state, {"arm": int(rnd.random() < share), "y": int(rnd.random() < 0.1)})
                 rejected += state.decision is not None
-            self.assertLessEqual(rejected / runs, binomial_upper_bound(alpha, runs), rates)
+            self.assertLessEqual(rejected / runs, binomial_upper_bound(alpha, runs), block)
+
+    def test_one_sided_level_at_the_boundary_and_inside_the_null(self):
+        runs, alpha = 200, 0.05
+        for method in ("grow", "universal"):
+            for rates in ({1: 0.2, 0: 0.2}, {1: 0.15, 0: 0.25}):
+                rejected = 0
+                for r in range(runs):
+                    data = self.data(800, rates, 5000 + r)
+                    state, _ = fold(TwoProportionTest(alpha, alternative="greater", method=method), data)
+                    rejected += state.decision is not None
+                self.assertLessEqual(rejected / runs, binomial_upper_bound(alpha, runs), (method, rates))
+
+    def test_grow_needs_fewer_units_than_universal_inference(self):
+        def units_to_decide(method, seed):
+            rnd = random.Random(seed)
+            proc = TwoProportionTest(0.05, method=method)
+            state = proc.initial_state()
+            for n in range(1, 30_001):
+                arm = int(rnd.random() < 0.5)
+                state, out = proc.step(state, {"arm": arm, "y": int(rnd.random() < (0.15 if arm else 0.10))})
+                if out.decision:
+                    return n
+            return 30_000
+
+        grow = sorted(units_to_decide("grow", 9000 + r) for r in range(15))
+        universal = sorted(units_to_decide("universal", 9000 + r) for r in range(15))
+        self.assertLess(grow[7], 0.6 * universal[7])  # medians: about 2,000 against 4,800
 
     def test_power(self):
         hits = 0
         for r in range(20):
-            data = self.data(6000, {1: 0.15, 0: 0.10}, 9000 + r)
+            data = self.data(4000, {1: 0.15, 0: 0.10}, 9000 + r)
             state, _ = fold(TwoProportionTest(0.05, alternative="greater"), data)
             hits += state.decision is not None
         self.assertGreaterEqual(hits, 17)
+
+    def test_blocks_wait_for_their_units(self):
+        proc = TwoProportionTest(block=(2, 1))
+        state, outs = fold(proc, [{"arm": 1, "y": 1}, {"arm": 1, "y": 0}, {"arm": 1, "y": 1}])
+        self.assertEqual((state.pending_treatment, outs[-1].blocks), ((1, 0, 1), 0))
+        state, out = proc.step(state, {"arm": 0, "y": 0})
+        self.assertEqual((state.pending_treatment, state.pending_control, out.blocks), ((1,), (), 1))
+        self.assertEqual(proc.decode_state(proc.encode_state(state)), state)
+        broken = {**proc.encode_state(state), "pending_treatment": []}
+        with self.assertRaises(ValueError):
+            proc.decode_state(broken)
 
     def test_other_arms_are_ignored(self):
         data = self.data(300, {0: 0.2, 1: 0.3, 2: 0.9}, 11, arms=(0, 1, 2))
@@ -193,7 +256,7 @@ class TwoProportionTests(unittest.TestCase):
 
     def test_arguments(self):
         for kwargs in ({"arms": (1, 1)}, {"arms": (1, -1)}, {"prior": (0.0, 1.0)}, {"alternative": "both"},
-                       {"arm_input": "y"}):
+                       {"arm_input": "y"}, {"method": "lrt"}, {"block": (0, 1)}, {"block": (1, 1.5)}):
             with self.assertRaises(ValueError):
                 TwoProportionTest(**kwargs)
 
