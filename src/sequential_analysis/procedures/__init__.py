@@ -6,6 +6,7 @@ from .ab import ABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e
 from .betting import BettingConfidenceSequence, BettingMeanTest, SequentialSignTest
 from .bocpd import BayesianChangePoint, BetaBernoulliModel, NormalGammaModel, PoissonGammaModel
 from .cusum import CUSUM
+from .edetector import MeanEDetector, QuantileEDetector
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
 from .group_sequential import GroupSequentialTest
@@ -58,6 +59,7 @@ __all__ = [
     "LinearGaussianModel",
     "LocalLevelKalman",
     "MeanDifference",
+    "MeanEDetector",
     "MultipleTests",
     "NormalGammaModel",
     "NormalMixtureSPRT",
@@ -67,6 +69,7 @@ __all__ = [
     "PoissonEmission",
     "PoissonGammaModel",
     "QuantileConfidenceSequence",
+    "QuantileEDetector",
     "QuantileTest",
     "RobustKalmanFilter",
     "SampleRatioMismatch",
