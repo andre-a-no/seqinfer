@@ -12,9 +12,12 @@ specified in SPEC.md:
 ## Agreement with the Python library
 
 * **History digests and random states** are identical.
-* **Outputs and states** are identical for 13 of the 23 conformance
-  cases. For the others they agree to 7e-15 relative: V8 rounds `Math.log`,
-  `exp` and `cos` differently from the C library.
+* **Outputs and states** are identical for 19 of the 53 conformance
+  cases. For the others they agree to 5e-14 relative, and to 3.6e-13 in
+  four cases (a log-evidence or log e-value near zero that is a
+  difference of much larger terms, in three; bounds found by a root
+  search, in one): V8 rounds `Math.log`, `log1p`, `exp`, `expm1` and
+  `cos` differently from the C library.
 * **Decisions** never differ.
 * **Round trip.** A run checkpointed in Python, continued here and
   restored in Python again ends with the digest of the uninterrupted
@@ -44,14 +47,32 @@ The executor has two parts:
 
 * **The run.** Delivery, topologies, contracts, the history digest,
   checkpoints and the observation log.
-* **Procedures.** The procedures listed by `procedures`:
+* **Procedures.** Every procedure of the Python library, as listed by
+  `procedures`:
   * SPRT, 2-SPRT and plans;
-  * CUSUM, Shiryaev–Roberts and the e-detectors;
-  * the mixture SPRTs and the betting and sign tests;
+  * CUSUM, Shiryaev–Roberts, the e-detectors and Bayesian online
+    change-point detection (normal-gamma, Poisson-gamma and
+    beta-Bernoulli models);
+  * the mixture SPRTs, the betting and sign tests, the quantile test and
+    the kernel two-sample test;
+  * confidence sequences: betting, quantile, Catoni and asymptotic;
   * group sequential tests;
-  * the A/B tests;
-  * the local-level Kalman filter, the bootstrap particle filter, EMA and
-    the mean difference.
+  * the A/B tests (including the exact bounded-metric test and the
+    rate-ratio test), several tests with e-BH (`MultipleTests`), and
+    online FDR control over a series of experiments (e-LOND);
+  * the anytime-valid linear model (tests and confidence sequences for
+    regression coefficients) and the anytime-valid log-rank test with
+    its hazard-ratio confidence sequence;
+  * the local-level and general Kalman filters, the robust (Student t)
+    Kalman filter, the hidden Markov filter (categorical, Gaussian and
+    Poisson emissions), the bootstrap particle filters (local level;
+    linear Gaussian, stochastic volatility and Student t local level),
+    EMA and the mean difference.
+
+  Procedures that offer a numpy backend are continued here only when the
+  run used `backend="python"`: numpy's `exp`, `log` and sums are not
+  specified to the last bit. A checkpoint with `backend="numpy"` is
+  refused.
 
 Designs, such as optimal plans and group sequential boundaries, are
 computed in Python. They reach this executor as part of the

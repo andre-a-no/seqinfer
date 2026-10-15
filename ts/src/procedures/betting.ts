@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 // Commercial licenses for use outside the AGPL: see COMMERCIAL.md
-// Nonparametric anytime-valid tests by betting; mirrors procedures/betting.py (class _Betting and its two tests).
+// Nonparametric anytime-valid tests by betting; mirrors procedures/betting.py (class _Betting, its two tests,
+// and BettingConfidenceSequence with backend "python").
 import type { Json } from "../canonical.js";
 import { InputContract, type StatInput } from "../contracts.js";
 import { requireFinite } from "../numerics.js";
 import { decodeFields, register, requireState, type State } from "../procedure.js";
-import { BaseProcedure, bool, type Config, type Decision, invalid, num, pyMax, pyMin, REJECT_H0, str } from "./util.js";
+import { BaseProcedure, bool, type Config, type Decision, int, invalid, num, pyMax, pyMin, pythonBackend, REJECT_H0, str } from "./util.js";
 
 const ALTERNATIVES = ["two-sided", "greater", "less"];
 const TRUNCATION = 0.5;
@@ -165,5 +166,96 @@ export class SequentialSignTest extends Betting {
   }
 }
 
+// ---------------------------------------------------------------- confidence sequence
+
+type BettingCSState = {
+  n: number; total: number; squares: number; log_up: number[]; log_down: number[]; lower: number | null; upper: number | null;
+};
+
+/** Confidence sequence for the mean of observations bounded in [lower, upper] (Waudby-Smith and Ramdas 2024). */
+export class BettingConfidenceSequence extends BaseProcedure {
+  readonly name = "betting_confidence_sequence";
+  readonly version = "1";
+  readonly backend = "python";
+  private readonly points: number[];
+  private readonly logLevel: number;
+  private readonly c: number;
+
+  constructor(readonly lower = 0.0, readonly upper = 1.0, readonly alpha = 0.05, readonly grid = 1000, readonly input = "x") {
+    super();
+    if (!(Number.isFinite(lower) && Number.isFinite(upper) && lower < upper)) invalid("need finite bounds lower < upper");
+    if (!(0 < alpha && alpha < 1)) invalid("alpha must lie in (0, 1)");
+    if (!Number.isInteger(grid) || grid < 10) invalid("grid must be an int, at least 10");
+    this.points = [];
+    for (let j = 0; j < grid; j++) this.points.push((j + 0.5) / grid);
+    this.logLevel = Math.log(1.0 / alpha);
+    this.c = Math.log(2.0 / alpha);
+  }
+
+  static fromConfig(c: Config): BettingConfidenceSequence {
+    pythonBackend(c, "betting_confidence_sequence");
+    return new BettingConfidenceSequence(num(c, "lower"), num(c, "upper"), num(c, "alpha"), int(c, "grid"), str(c, "input"));
+  }
+
+  config(): Config {
+    return { lower: this.lower, upper: this.upper, alpha: this.alpha, grid: this.grid, backend: this.backend, input: this.input };
+  }
+
+  inputs(): Record<string, InputContract> {
+    return { [this.input]: new InputContract(this.input, "real", [], this.lower, this.upper) };
+  }
+
+  initialState(): BettingCSState {
+    const zeros = this.points.map(() => 0.0);
+    return { n: 0, total: 0.0, squares: 0.0, log_up: zeros, log_down: [...zeros], lower: null, upper: null };
+  }
+
+  private scale(y: number): number {
+    return this.lower + y * (this.upper - this.lower);
+  }
+
+  step(state: State, x: StatInput): [BettingCSState, State] {
+    const s = state as BettingCSState;
+    const y = ((x[this.input] as number) - this.lower) / (this.upper - this.lower);
+    const i = s.n + 1;
+    const mu = (0.5 + s.total) / i;
+    const s2 = (0.25 + s.squares) / i;
+    const stake = Math.sqrt((2.0 * this.c) / (s2 * i * Math.log1p(i)));
+    const logUp: number[] = [], logDown: number[] = [], kept: number[] = [];
+    this.points.forEach((mj, j) => {
+      const up = s.log_up[j] + Math.log1p(pyMin(stake, TRUNCATION / mj) * (y - mj));
+      const down = s.log_down[j] + Math.log1p(-pyMin(stake, TRUNCATION / (1.0 - mj)) * (y - mj));
+      logUp.push(up);
+      logDown.push(down);
+      if (logAdd(up, down) - LOG2 < this.logLevel) kept.push(mj);
+    });
+    const stepSize = 1.0 / this.grid;
+    let lo = kept.length ? pyMax(0.0, kept[0] - stepSize) : mu;
+    let hi = kept.length ? pyMin(1.0, kept[kept.length - 1] + stepSize) : mu;
+    lo = this.scale(lo);
+    hi = this.scale(hi);
+    if (s.lower !== null && s.upper !== null) {
+      lo = pyMax(lo, s.lower);
+      hi = pyMin(hi, s.upper);
+    }
+    const total = s.total + y;
+    const d = y - mu;
+    return [
+      { n: i, total, squares: s.squares + d * d, log_up: logUp, log_down: logDown, lower: lo, upper: hi },
+      { n: i, mean: this.scale(total / i), lower: lo, upper: hi },
+    ];
+  }
+
+  decodeState(data: Json): BettingCSState {
+    const s = decodeFields({
+      n: "count", total: "number", squares: "number", log_up: "numbers", log_down: "numbers", lower: "number?", upper: "number?",
+    }, data) as BettingCSState;
+    requireState(s.log_up.length === this.grid && s.log_down.length === this.grid, "one wealth per grid point");
+    requireState(s.squares >= 0 && 0 <= s.total && s.total <= s.n, "running sums out of range");
+    return s;
+  }
+}
+
 register("betting_mean_test", "1", (c) => BettingMeanTest.fromConfig(c));
 register("sequential_sign_test", "1", (c) => SequentialSignTest.fromConfig(c));
+register("betting_confidence_sequence", "1", (c) => BettingConfidenceSequence.fromConfig(c));

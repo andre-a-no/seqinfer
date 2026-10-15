@@ -20,17 +20,31 @@ SampleRatioMismatch -- is traffic split in the intended proportions?
     experiment can be trusted; run it alongside every A/B test.
 
 TwoProportionTest -- do two conversion rates differ?  Exact, any n.
-    H0: p_T = p_C (or p_T <= p_C, p_T >= p_C), the common rate unknown.  The
-    e-process is sequential universal inference (Wasserman, Ramdas and
-    Balakrishnan 2020):
+    H0: p_T = p_C (or p_T <= p_C, p_T >= p_C), the common rate unknown.
+    By default (method="grow") units are grouped, in arrival order, into
+    blocks of k_T treatment and k_C control units, and each block
+    contributes the e-value of Turner, Ly and Grunwald (2024),
 
-        E_n = m_T(y_T) m_C(y_C) / sup_{(p_T, p_C) in H0} L(p_T, p_C),
+        E_block = prod q_a(y_T) prod q_b(y_C) / prod q_pbar(y),
+        pbar = (k_T a + k_C b) / (k_T + k_C),
 
-    where m_k is the Beta(a, b) marginal likelihood of arm k's outcomes.
-    For every rate in H0, m_T m_C / L is a test martingale (whatever
-    rule, using the past, assigns the arms), and E_n is no larger, so
-    Ville's inequality gives P(sup_n E_n >= 1/alpha) <= alpha.  No normal
-    approximation and no minimum sample size are involved.
+    q_r being the Bernoulli(r) likelihood and (a, b) the rates estimated
+    from the earlier blocks.  pbar is the projection of (a, b) onto H0
+    that makes E_block an e-value for every common rate at once (checked
+    in the tests by enumerating every outcome of a block), so the product
+    over blocks is a test supermartingale under H0 and Ville's inequality
+    gives P(sup E >= 1/alpha) <= alpha.  This needs an allocation that does
+    not look at outcomes -- randomised, or a fixed schedule, as in an A/B
+    test: a later block's estimates use units that arrived after some of
+    its own, which is harmless only when the assignment ignores outcomes.
+    Estimation errors in the common rate cancel between numerator and
+    denominator; by simulation it needs 1.3 to 1.6 times the units of the
+    asymptotic test, against 2.3 to 3 times for method="universal".
+
+    method="universal" is sequential universal inference (Wasserman,
+    Ramdas and Balakrishnan 2020), E_n = m_T(y_T) m_C(y_C) / sup_H0 L, with
+    Beta marginal likelihoods m_k: no blocks, valid for any allocation
+    rule, adaptive ones included, at the price of more units.
 
 ABTest -- difference of means, optionally adjusted by a covariate.
     With units assigned to treatment with known probability pi (the
@@ -187,13 +201,19 @@ class SampleRatioMismatch(Procedure):
 
 # ---------------------------------------------------------------- two proportions
 
+METHODS = ("grow", "universal")
+
 
 @dataclass(frozen=True)
 class TwoProportionState:
-    successes: tuple[int, int] = (0, 0)  # treatment, control
+    successes: tuple[int, int] = (0, 0)  # every unit seen: treatment, control
     trials: tuple[int, int] = (0, 0)
-    log_marginal: float = 0.0  # log m_T + log m_C
+    log_sum: float = 0.0  # grow: log E over the completed blocks; universal: log m_T + log m_C
     comp: float = 0.0
+    pending_treatment: tuple[int, ...] = ()  # grow: outcomes waiting for their block, oldest first
+    pending_control: tuple[int, ...] = ()
+    block_successes: tuple[int, int] = (0, 0)  # grow: units in completed blocks (the plug-in estimates)
+    block_trials: tuple[int, int] = (0, 0)
     max_log_e: float = 0.0
     decision: str | None = None
 
@@ -206,6 +226,7 @@ class TwoProportionOutput:
     log_e_value: float
     p_value: float
     decision: str | None
+    blocks: int  # grow: completed blocks; universal: 0
 
 
 class TwoProportionTest(Procedure):
@@ -215,20 +236,36 @@ class TwoProportionTest(Procedure):
     outcome (`input`, 0 or 1).  `arms` = (treatment label, control label);
     units of other arms are ignored, so several tests can share one stream
     of a multi-arm experiment.  `alternative` "greater" tests H0: p_T <= p_C
-    against p_T > p_C.  `prior` = (a, b) of the Beta mixture; the default
-    (1/2, 1/2) is the Krichevsky-Trofimov mixture.
+    against p_T > p_C.
+
+    method="grow" (the default) groups units into blocks of `block` =
+    (treatment units, control units) in arrival order and multiplies the
+    blocks' e-values; choose `block` in the proportion of the allocation,
+    (1, 1) for 50/50, (2, 1) for 2:1.  Units wait for their block, so the
+    state holds the unmatched outcomes: with random allocation in that
+    proportion their number grows like the square root of n.
+    method="universal" needs no blocks and is valid for any allocation
+    rule, outcome-adaptive ones (bandits) included, but needs about twice
+    as many units.
+    `prior` = (a, b) is the Beta prior of the plug-in estimates (grow) or of
+    the mixture (universal); (1/2, 1/2) by default.
     """
 
     name = "two_proportion_test"
     version = "1"
     e_value_field = "log_e_value"
 
-    def __init__(self, alpha: float = 0.05, *, alternative: str = "two-sided", arms: tuple[int, int] = (1, 0),
+    def __init__(self, alpha: float = 0.05, *, alternative: str = "two-sided", method: str = "grow",
+                 block: tuple[int, int] = (1, 1), arms: tuple[int, int] = (1, 0),
                  prior: tuple[float, float] = (0.5, 0.5), stop_on_reject: bool = False,
                  arm_input: str = "arm", input: str = "y"):
         self.alpha = _check_alpha(alpha)
         if alternative not in ALTERNATIVES:
             raise ValueError(f"alternative must be one of {ALTERNATIVES}")
+        if method not in METHODS:
+            raise ValueError(f"method must be one of {METHODS}")
+        if len(block) != 2 or any(type(k) is not int or not 1 <= k <= 100 for k in block):
+            raise ValueError("block must be two ints in [1, 100]: treatment and control units per block")
         if len(arms) != 2 or any(type(a) is not int or a < 0 for a in arms) or arms[0] == arms[1]:
             raise ValueError("arms must be two different non-negative integer labels")
         a, b = (float(v) for v in prior)
@@ -236,14 +273,15 @@ class TwoProportionTest(Procedure):
             raise ValueError("prior must be two positive numbers")
         if arm_input == input:
             raise ValueError("the arm and the outcome need different names")
-        self.alternative, self.arms, self.prior = alternative, (arms[0], arms[1]), (a, b)
+        self.alternative, self.method, self.block = alternative, method, (block[0], block[1])
+        self.arms, self.prior = (arms[0], arms[1]), (a, b)
         self.stop_on_reject, self.arm_input, self.input = stop_on_reject, arm_input, input
         self._log_level = -math.log(self.alpha)
 
     def config(self) -> dict:
-        return {"alpha": self.alpha, "alternative": self.alternative, "arms": list(self.arms),
-                "prior": list(self.prior), "stop_on_reject": self.stop_on_reject,
-                "arm_input": self.arm_input, "input": self.input}
+        return {"alpha": self.alpha, "alternative": self.alternative, "method": self.method,
+                "block": list(self.block), "arms": list(self.arms), "prior": list(self.prior),
+                "stop_on_reject": self.stop_on_reject, "arm_input": self.arm_input, "input": self.input}
 
     def inputs(self):
         return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
@@ -252,8 +290,10 @@ class TwoProportionTest(Procedure):
     def initial_state(self) -> TwoProportionState:
         return TwoProportionState()
 
+    # ------------------------------------------------------------ universal inference
+
     def log_null_likelihood(self, successes: tuple[int, int], trials: tuple[int, int]) -> float:
-        """log sup of the likelihood over H0."""
+        """log sup of the likelihood over H0 (method="universal")."""
         (st, sc), (nt, nc) = successes, trials
 
         def arm(s: int, n: int) -> float:
@@ -267,35 +307,85 @@ class TwoProportionTest(Procedure):
                 return arm(st, nt) + arm(sc, nc)
         return arm(st + sc, nt + nc)
 
+    # ------------------------------------------------------------ GROW blocks
+
+    def plug_in(self, successes: tuple[int, int], trials: tuple[int, int]) -> tuple[float, float, float]:
+        """(a, b, p): the alternative fitted on completed blocks, and its projection on H0.
+
+        For a one-sided test an estimate on the null side is not bet on:
+        a = b = p, and the block's e-value is 1.
+        """
+        pa, pb = self.prior
+        a = (successes[0] + pa) / (trials[0] + pa + pb)
+        b = (successes[1] + pa) / (trials[1] + pa + pb)
+        kt, kc = self.block
+        if (self.alternative == "greater" and a <= b) or (self.alternative == "less" and a >= b):
+            p = (kt * a + kc * b) / (kt + kc)
+            return p, p, p
+        return a, b, (kt * a + kc * b) / (kt + kc)
+
+    def block_log_e(self, a: float, b: float, p: float, treated: Sequence[int], control: Sequence[int]) -> float:
+        """log of one block's e-value: prod q_a(y_T) prod q_b(y_C) / prod q_p(y)."""
+        if a == b == p:
+            return 0.0
+        out = 0.0
+        for y in treated:
+            out += math.log(a / p) if y else math.log1p(-a) - math.log1p(-p)
+        for y in control:
+            out += math.log(b / p) if y else math.log1p(-b) - math.log1p(-p)
+        return out
+
+    # ------------------------------------------------------------ the step
+
     def log_e_value(self, state: TwoProportionState) -> float:
-        return state.log_marginal + state.comp - self.log_null_likelihood(state.successes, state.trials)
+        if self.method == "grow":
+            return state.log_sum + state.comp
+        return state.log_sum + state.comp - self.log_null_likelihood(state.successes, state.trials)
 
     def _output(self, state: TwoProportionState, value: float) -> TwoProportionOutput:
         (st, sc), (nt, nc) = state.successes, state.trials
         rt = st / nt if nt else None
         rc = sc / nc if nc else None
         diff = None if rt is None or rc is None else rt - rc
+        blocks = state.block_trials[0] // self.block[0] if self.method == "grow" else 0
         return TwoProportionOutput(nt + nc, (rt, rc), diff, value, min(1.0, math.exp(-state.max_log_e)),
-                                   state.decision)
+                                   state.decision, blocks)
 
     def step(self, state: TwoProportionState, x, rng=None):
         label = x[self.arm_input]
         if label not in self.arms:
             return state, self._output(state, self.log_e_value(state))
         k = self.arms.index(label)
-        y = x[self.input]
-        a, b = self.prior
-        s, n = state.successes[k], state.trials[k]
-        term = math.log((a + s if y else b + n - s) / (a + b + n))
-        log_marginal, comp = neumaier_add(state.log_marginal, state.comp, term)
+        y = int(x[self.input])
         successes = list(state.successes)
         trials = list(state.trials)
-        successes[k] += int(y)
+        successes[k] += y
         trials[k] += 1
-        new = TwoProportionState((successes[0], successes[1]), (trials[0], trials[1]), log_marginal, comp)
+        log_sum, comp = state.log_sum, state.comp
+        pending_t, pending_c = state.pending_treatment, state.pending_control
+        block_s, block_n = state.block_successes, state.block_trials
+        if self.method == "universal":
+            pa, pb = self.prior
+            s, n = state.successes[k], state.trials[k]
+            log_sum, comp = neumaier_add(log_sum, comp, math.log((pa + s if y else pb + n - s) / (pa + pb + n)))
+        else:
+            if k == 0:
+                pending_t = (*pending_t, y)
+            else:
+                pending_c = (*pending_c, y)
+            kt, kc = self.block
+            while len(pending_t) >= kt and len(pending_c) >= kc:
+                treated, control = pending_t[:kt], pending_c[:kc]
+                pending_t, pending_c = pending_t[kt:], pending_c[kc:]
+                a, b, p = self.plug_in(block_s, block_n)
+                log_sum, comp = neumaier_add(log_sum, comp, self.block_log_e(a, b, p, treated, control))
+                block_s = (block_s[0] + treated.count(1), block_s[1] + control.count(1))
+                block_n = (block_n[0] + kt, block_n[1] + kc)
+        new = TwoProportionState((successes[0], successes[1]), (trials[0], trials[1]), log_sum, comp,
+                                 pending_t, pending_c, block_s, block_n)
         value = require_finite(self.log_e_value(new), "log e-value")
         decision = state.decision or (REJECT_H0 if value >= self._log_level else None)
-        new = TwoProportionState(new.successes, new.trials, log_marginal, comp, max(state.max_log_e, value), decision)
+        new = replace(new, max_log_e=max(state.max_log_e, value), decision=decision)
         return new, self._output(new, value)
 
     def is_terminal(self, state: TwoProportionState) -> bool:
@@ -303,9 +393,23 @@ class TwoProportionTest(Procedure):
 
     def decode_state(self, data) -> TwoProportionState:
         state = decode_fields(TwoProportionState, data)
-        require_state(len(state.successes) == 2 and len(state.trials) == 2, "two arms")
-        require_state(all(0 <= s <= n for s, n in zip_strict(state.successes, state.trials)),
+        pairs = (state.successes, state.trials, state.block_successes, state.block_trials)
+        require_state(all(len(v) == 2 for v in pairs), "two arms")
+        require_state(all(0 <= s <= n for s, n in zip_strict(state.successes + state.block_successes,
+                                                              state.trials + state.block_trials)),
                       "successes out of range")
+        require_state(all(y in (0, 1) for y in state.pending_treatment + state.pending_control),
+                      "pending outcomes are 0 or 1")
+        if self.method == "grow":
+            kt, kc = self.block
+            require_state(state.block_trials[0] * kc == state.block_trials[1] * kt
+                          and state.block_trials[0] % kt == 0, "completed blocks")
+            require_state(state.block_trials[0] + len(state.pending_treatment) == state.trials[0]
+                          and state.block_trials[1] + len(state.pending_control) == state.trials[1],
+                          "every unit is in a block or waiting for one")
+        else:
+            require_state(not state.pending_treatment and not state.pending_control
+                          and state.block_trials == (0, 0), "universal inference has no blocks")
         return state
 
 
@@ -463,6 +567,166 @@ class ABTest(Procedure):
         require_state(0 <= state.treated <= state.n, "treated count out of range")
         require_state(state.sxx >= 0 and state.psi_m2 >= 0 and state.plain_m2 >= 0, "negative sum of squares")
         return state
+
+
+# ---------------------------------------------------------------- bounded outcomes, exact
+
+
+@dataclass(frozen=True)
+class BoundedABState:
+    n: int
+    treated: int
+    sum_treated: float
+    sum_control: float
+    cs: Any  # the confidence sequence's state, over the scores
+    test: Any  # the test's state, over the scores
+
+
+@dataclass(frozen=True)
+class BoundedABOutput:
+    n: int
+    means: tuple[float | None, float | None]  # treatment, control (plain averages)
+    lower: float  # the exact confidence sequence for the effect
+    upper: float
+    log_e_value: float  # evidence against effect0
+    p_value: float
+    decision: str | None
+
+
+class BoundedABTest(Procedure):
+    """Exact anytime-valid confidence sequence and test for an effect on a bounded metric.
+
+    For outcomes y in [lower, upper] -- a conversion (0/1), a click-through
+    rate, a capped revenue, a score -- and units assigned to treatment with
+    known probability `allocation`, the scores
+
+        psi = (T / pi - C / (1 - pi)) (y - c),   c = (lower + upper) / 2,
+
+    have conditional mean E[y(T)] - E[y(C)] given the past, whatever the
+    distribution of y, and lie in [-B, B] with
+    B = (upper - lower) / 2 * max(1/pi, 1/(1 - pi)).  The confidence sequence
+    for their mean is the hedged-capital one of Waudby-Smith and Ramdas
+    (BettingConfidenceSequence) and the test of effect = effect0 the
+    betting test (BettingMeanTest): both exact for every distribution, at
+    every sample size, monitored after every unit -- unlike ABTest, whose
+    coverage is asymptotic.  The price is width: the scores' range grows as
+    the allocation moves away from 50/50.
+
+    The allocation must be the randomisation probability, the same for
+    every unit and independent of outcomes.  Units of other arms are
+    ignored.  `log_e_value` is an e-process (usable by MultipleTests).
+
+    Cost per step (PERFORMANCE.md): that of BettingConfidenceSequence on
+    `grid` points: 0.14 ms with numpy, 0.5 to 0.7 ms in Python for grid=1000.
+    """
+
+    name = "bounded_ab_test"
+    version = "1"
+    e_value_field = "log_e_value"
+
+    def __init__(self, lower: float = 0.0, upper: float = 1.0, allocation: float = 0.5, alpha: float = 0.05, *,
+                 effect0: float = 0.0, alternative: str = "two-sided", arms: tuple[int, int] = (1, 0),
+                 grid: int = 1000, backend: str = "auto", stop_on_reject: bool = False,
+                 arm_input: str = "arm", input: str = "y"):
+        from .betting import BettingConfidenceSequence, BettingMeanTest
+
+        if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
+            raise ValueError("need finite bounds lower < upper")
+        if not 0 < allocation < 1:
+            raise ValueError("allocation must lie in (0, 1)")
+        self.alpha = _check_alpha(alpha)
+        if len(arms) != 2 or any(type(a) is not int or a < 0 for a in arms) or arms[0] == arms[1]:
+            raise ValueError("arms must be two different non-negative integer labels")
+        if arm_input == input:
+            raise ValueError("the arm and the outcome need different names")
+        self.lower, self.upper, self.allocation = float(lower), float(upper), float(allocation)
+        self.center = (self.lower + self.upper) / 2.0
+        self.bound = (self.upper - self.lower) / 2.0 * max(1.0 / self.allocation, 1.0 / (1.0 - self.allocation))
+        if not -self.bound < effect0 < self.bound:
+            raise ValueError("effect0 must lie strictly inside the range of the scores")
+        self.effect0, self.arms = float(effect0), (arms[0], arms[1])
+        self.stop_on_reject, self.arm_input, self.input = stop_on_reject, arm_input, input
+        self._cs = BettingConfidenceSequence(-self.bound, self.bound, self.alpha, grid=grid, backend=backend,
+                                             input="psi")
+        self._test = BettingMeanTest(self.effect0, -self.bound, self.bound, self.alpha, alternative=alternative,
+                                     stop_on_reject=False, input="psi")
+        self.alternative, self.grid, self.backend = alternative, grid, self._cs.backend
+
+    def config(self) -> dict:
+        return {"lower": self.lower, "upper": self.upper, "allocation": self.allocation, "alpha": self.alpha,
+                "effect0": self.effect0, "alternative": self.alternative, "arms": list(self.arms),
+                "grid": self.grid, "backend": self.backend, "stop_on_reject": self.stop_on_reject,
+                "arm_input": self.arm_input, "input": self.input}
+
+    def inputs(self):
+        return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
+                self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
+
+    def initial_state(self) -> BoundedABState:
+        return BoundedABState(0, 0, 0.0, 0.0, self._cs.initial_state(), self._test.initial_state())
+
+    def score(self, treated: bool, y: float) -> float:
+        weight = 1.0 / self.allocation if treated else -1.0 / (1.0 - self.allocation)
+        # the bound can be exceeded only by rounding: clip to the declared range of the scores
+        return max(-self.bound, min(self.bound, weight * (y - self.center)))
+
+    def _output(self, state: BoundedABState, cs_out: Any, test_out: Any) -> BoundedABOutput:
+        control = state.n - state.treated
+        means = (state.sum_treated / state.treated if state.treated else None,
+                 state.sum_control / control if control else None)
+        lower = cs_out.lower if cs_out is not None else -self.bound
+        upper = cs_out.upper if cs_out is not None else self.bound
+        log_e = test_out.log_wealth if test_out is not None else 0.0
+        p_value = test_out.p_value if test_out is not None else 1.0
+        decision = test_out.decision if test_out is not None else None
+        return BoundedABOutput(state.n, means, lower, upper, log_e, p_value, decision)
+
+    def step(self, state: BoundedABState, x, rng=None):
+        label = x[self.arm_input]
+        if label not in self.arms:
+            if state.n == 0:
+                return state, self._output(state, None, None)
+            return state, self._last(state)
+        treated = label == self.arms[0]
+        y = x[self.input]
+        psi = self.score(treated, y)
+        cs_state, cs_out = self._cs.step(state.cs, {"psi": psi})
+        test_state, test_out = self._test.step(state.test, {"psi": psi})
+        new = BoundedABState(state.n + 1, state.treated + treated, state.sum_treated + (y if treated else 0.0),
+                             state.sum_control + (0.0 if treated else y), cs_state, test_state)
+        return new, self._output(new, cs_out, test_out)
+
+    def _last(self, state: BoundedABState) -> BoundedABOutput:
+        """The output for a step that changes nothing (a unit of another arm)."""
+        cs = state.cs
+        lower = -self.bound if cs.lower is None else cs.lower
+        upper = self.bound if cs.upper is None else cs.upper
+        t = state.test
+        log_e = self._test._log_wealth(t.log_up, t.log_down)
+        control = state.n - state.treated
+        means = (state.sum_treated / state.treated if state.treated else None,
+                 state.sum_control / control if control else None)
+        return BoundedABOutput(state.n, means, lower, upper, log_e, min(1.0, math.exp(-t.max_log_wealth)),
+                               t.decision)
+
+    def is_terminal(self, state: BoundedABState) -> bool:
+        return self.stop_on_reject and state.test.decision is not None
+
+    def encode_state(self, state: BoundedABState):
+        return {"n": state.n, "treated": state.treated, "sum_treated": state.sum_treated,
+                "sum_control": state.sum_control, "cs": self._cs.encode_state(state.cs),
+                "test": self._test.encode_state(state.test)}
+
+    def decode_state(self, data) -> BoundedABState:
+        require_state(isinstance(data, dict) and set(data) == {"n", "treated", "sum_treated", "sum_control", "cs",
+                                                               "test"}, "fields")
+        n, treated = data["n"], data["treated"]
+        require_state(type(n) is int and type(treated) is int and 0 <= treated <= n, "counts")
+        sums = (data["sum_treated"], data["sum_control"])
+        require_state(all(type(v) in (int, float) and math.isfinite(v) for v in sums), "sums")
+        cs, test = self._cs.decode_state(data["cs"]), self._test.decode_state(data["test"])
+        require_state(cs.n == n and test.n == n, "the inner states saw the same units")
+        return BoundedABState(n, treated, float(sums[0]), float(sums[1]), cs, test)
 
 
 # ---------------------------------------------------------------- many tests

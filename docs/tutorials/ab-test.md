@@ -93,14 +93,24 @@ The decision `reject_h0` means conversion differs, at an error rate of
 at most 5%, even though the test was looked at after every user.
 
 **What exactness costs.** Valid at every sample size, the exact test
-pays a price in users. By simulation, a 10% → 13% conversion lift is
-detected after a median of about 10,500 users. The asymptotic test below
-needs about 4,000, and a fixed-sample test planned for 80% power needs
-3,500, but that test may be looked at only once.
+pays a price in users. It works on blocks of one treatment and one
+control user. Use `block=(2, 1)` for a 2:1 split.
 
-For a 10% → 12% lift the medians are 22,000 against 9,500 users, about
-2.5 times. The extra cost of exactness is a logarithmic penalty for
-estimating both conversion rates.
+By simulation, the median number of users before a decision is:
+
+| Lift | Exact test (`method="grow"`, the default) | Asymptotic test (below) | Universal inference (`method="universal"`) |
+|---|---|---|---|
+| 10% → 15% | 2,000 | 1,500 | 4,800 |
+| 10% → 13% | 6,200 | 4,000 | 10,500 |
+| 10% → 12% | 14,000 | 9,500 | 22,000 |
+
+So the default exact test needs 1.3 to 1.6 times the users of the
+asymptotic test. A fixed-sample test planned for 80% power at 10% → 13%
+needs 3,500 users, but it may be looked at only once.
+
+`method="universal"` is for allocation that adapts to the outcomes, as a
+bandit's does. It needs no blocks and stays exact under any allocation
+rule, at the price shown in the last column.
 
 When thousands of users arrive anyway, the asymptotic confidence
 sequence of section 3 also works for a 0/1 outcome, and gives an
@@ -201,6 +211,92 @@ arms.consumers.append(log)
 run_sync(arms, arms_stream)
 print("arms better or worse than control:", log.outputs[-1].rejected)
 ```
+
+## 6. An exact interval for a bounded metric
+
+The interval of section 3 is asymptotic. For a metric with known bounds
+`BoundedABTest` gives an interval that holds exactly, at every sample
+size and for every distribution. Examples are a conversion, a share of
+sessions, or a revenue capped at 100.
+
+It works on the same inverse-propensity scores, with betting in place of
+the normal approximation:
+
+```python
+from sequential_analysis.procedures import BoundedABTest
+
+capped = [Observation(o.input, min(max(o.value, 0.0), 30.0) if o.input == "revenue" else o.value,
+                      seq=o.seq, key=o.key)
+          for o in stream if o.input in ("arm", "revenue")]
+exact = Run(BoundedABTest(lower=0.0, upper=30.0, allocation=0.5, input="revenue", grid=300),
+            topology=KeyJoin(("arm", "revenue")))
+seen = Recorder()
+exact.consumers.append(seen)
+run_sync(exact, capped)
+last = seen.outputs[-1]
+print(f"exact 95% interval for the revenue effect: [{last.lower:.3f}, {last.upper:.3f}]")
+```
+
+It is wider than the asymptotic one, which is the price of holding at
+n = 50 as well as at n = 50,000. Its `log_e_value` can join a
+`MultipleTests` family.
+
+## 7. Counts with exposure: orders per user-day
+
+When users stay in the experiment for different lengths of time, compare
+event rates rather than means. `RateRatioTest` takes each user's count
+and exposure and is exact for Poisson counts. It stays exact when the
+common rate drifts over the weeks, because it only compares users who
+arrived next to each other:
+
+```python
+import math
+from sequential_analysis.procedures import RateRatioTest
+
+rnd = random.Random(8)
+rate_stream = []
+for user in range(6000):
+    arm = int(rnd.random() < 0.5)
+    days = rnd.uniform(1, 14)
+    weekly = 1 + 0.3 * math.sin(user / 400)  # seasonality, shared by both arms
+    mean = 0.2 * days * weekly * (1.15 if arm else 1.0)
+    k, p, limit = 0, rnd.random(), math.exp(-mean)
+    while p > limit:
+        k += 1
+        p *= rnd.random()
+    rate_stream += [Observation(n, v, seq=user, key=user) for n, v in (("arm", arm), ("count", k), ("exposure", days))]
+
+rates = Run(RateRatioTest(), topology=KeyJoin(("arm", "count", "exposure")))
+seen = Recorder()
+rates.consumers.append(seen)
+run_sync(rates, rate_stream)
+last = seen.outputs[-1]
+print(f"orders per user-day, treatment / control: {last.rate_ratio:.3f}, "
+      f"95% confidence sequence [{last.lower:.3f}, {last.upper:.3f}], decision {last.decision}")
+```
+
+The counts have to be Poisson. If a few users order far more than the
+rest (overdispersion), cap the counts and use `BoundedABTest`, or use
+`ABTest`.
+
+## 8. Before the experiment: how many users?
+
+A sequential test has no fixed sample size, but its distribution can be
+planned. `planning.simulate` runs any procedure on simulated users and
+reports how often it decides within a budget, and how many users it
+needed:
+
+```python
+from sequential_analysis.planning import conversion_units, simulate
+
+for lift in (0.12, 0.13, 0.15):
+    plan = simulate(TwoProportionTest, conversion_units(lift, 0.10), runs=60, max_n=40_000, seed=1)
+    print(f"10% -> {lift:.0%}: decides within 40,000 users in {plan.power:.0%} of runs, "
+          f"median {plan.median_n:,.0f}, 90th percentile {plan.quantile(0.9) or float('nan'):,.0f}")
+```
+
+Plan with the effect you would be sorry to miss. The 90th percentile, not
+the median, is what to budget for.
 
 ## Running it for real
 

@@ -25,11 +25,14 @@ from sequential_analysis.procedures import (
     EMA,
     SPRT,
     ABTest,
+    AnytimeLinearModel,
+    AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
     BayesianChangePoint,
     BettingConfidenceSequence,
     BettingMeanTest,
     BootstrapParticleFilter,
+    BoundedABTest,
     CatoniConfidenceSequence,
     Gaussian,
     GaussianEmission,
@@ -43,12 +46,14 @@ from sequential_analysis.procedures import (
     MultipleTests,
     NormalGammaModel,
     NormalMixtureSPRT,
+    OnlineFDR,
     ParticleFilter,
     PlanTest,
     Poisson,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
+    RateRatioTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -139,6 +144,29 @@ def ab_units(n: int, seed: int, arms: int = 2):
         if i >= 3:
             out.append(Observation("y", units[i - 3][2], seq=i - 3, key=i - 3))
     return out
+
+
+def record_stream(rows, names):
+    """Rows of a table as observations: one per named column, keyed by the row number, the outcome late."""
+    out = []
+    for i, row in enumerate(rows):
+        out += [Observation(name, row[name], seq=i, key=i) for name in names]
+    return out
+
+
+def rate_rows(n: int, seed: int):
+    rnd = random.Random(seed)
+    rows = []
+    for _ in range(n):
+        arm = rnd.randrange(2)
+        e = round(rnd.uniform(0.5, 2.0), 3)
+        mean = (2.0 if arm else 1.5) * e
+        k, p, limit = 0, rnd.random(), math.exp(-mean)
+        while p > limit:
+            k += 1
+            p *= rnd.random()
+        rows.append({"arm": arm, "count": k, "exposure": e})
+    return rows
 
 
 def chain_ema_cusum():
@@ -383,6 +411,50 @@ def cases():
             Independent,
             Delivery,
             shift,
+            None,
+        ),
+        (
+            "bounded_ab_test",
+            lambda: BoundedABTest(0.0, 1.0, 0.5, grid=40, backend="python"),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            record_stream([{"arm": i % 2, "y": ((i * 7919) % 101) / 101} for i in range(n)], ("arm", "y")),
+            None,
+        ),
+        (
+            "rate_ratio_test",
+            lambda: RateRatioTest(grid=30),
+            lambda: KeyJoin(("arm", "count", "exposure")),
+            Delivery,
+            record_stream(rate_rows(n, 41), ("arm", "count", "exposure")),
+            None,
+        ),
+        (
+            "anytime_linear_model",
+            lambda: AnytimeLinearModel(["x"], ["z"]),
+            lambda: KeyJoin(("x", "z", "y")),
+            Delivery,
+            record_stream([{"x": math.sin(i), "z": float(i % 2), "y": 0.5 * math.sin(i) + 0.3 * (i % 2)
+                            + math.cos(3.1 * i)} for i in range(n)], ("x", "z", "y")),
+            None,
+        ),
+        (
+            "anytime_logrank_test",
+            lambda: AnytimeLogRankTest(cs_grid=21),
+            lambda: KeyJoin(("arm", "kind")),
+            Delivery,
+            # 40 patients enter, then 40 events and censorings, at most 20 per arm
+            record_stream([{"arm": i % 2, "kind": 0} for i in range(40)]
+                          + [{"arm": (i // 3) % 2 if i < 36 else i % 2, "kind": 1 if i % 4 else 2} for i in range(40)],
+                          ("arm", "kind")),
+            None,
+        ),
+        (
+            "online_fdr",
+            lambda: OnlineFDR(0.1),
+            Independent,
+            Delivery,
+            list(from_values("log_e", [((i * 37) % 23) / 2.0 - 3.0 for i in range(n)])),
             None,
         ),
         (

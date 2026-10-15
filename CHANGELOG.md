@@ -13,8 +13,14 @@ source adapters, a numpy backend, a specification of the formats with a
 TypeScript executor, and a documentation site.
 
 ### Added: A/B tests
-- `TwoProportionTest`: exact anytime-valid comparison of conversion rates by
-  sequential universal inference; any allocation rule; one- or two-sided.
+- `TwoProportionTest`: exact anytime-valid comparison of conversion rates,
+  one- or two-sided. By default (`method="grow"`) units are grouped into
+  blocks (`block=(1, 1)`, or the allocation ratio) and the blocks' e-values
+  of Turner, Ly and Grünwald multiply: exact for every common rate (checked
+  by enumerating every outcome of a block), and by simulation 1.3 to 1.6
+  times the units of the asymptotic test. `method="universal"` (sequential
+  universal inference) needs no blocks and stays exact under
+  outcome-adaptive allocation, at 2.3 to 3 times.
 - `SampleRatioMismatch`: Dirichlet-multinomial test of the traffic split.
 - `ABTest`: difference of means by inverse-propensity scores with a
   predictable regression on a pre-experiment covariate (CUPED without its
@@ -22,6 +28,31 @@ TypeScript executor, and a documentation site.
 - `e_bh` and `MultipleTests`: e-BH false discovery rate control over every
   procedure with an e-process (`e_value_field`); `versus_control` for
   multi-arm experiments.
+
+- `BoundedABTest`: exact confidence sequence and test for an effect on a
+  bounded metric (conversion, share, capped revenue), from
+  inverse-propensity scores and betting; valid at every sample size.
+- `RateRatioTest`: exact test and confidence sequence for a ratio of
+  Poisson rates with exposures, from pairs of units adjacent in time, so
+  that a drifting common rate (seasonality) does not matter.
+- `OnlineFDR`: e-LOND for a programme of experiments decided one by one,
+  FDR <= alpha under any dependence; an open-ended or planned (`horizon`)
+  schedule.
+- `sequential_analysis.planning`: `simulate` gives the power and the
+  distribution of the stopping time of any procedure in a scenario;
+  checked against exact operating characteristics.
+
+### Added: regression and survival
+- `AnytimeLinearModel`: anytime-valid tests and confidence sequences for
+  regression coefficients after Lindon, Ham, Tingley and Bojinov (2022):
+  covariate-adjusted effects with several covariates, exact under
+  Gaussian errors; the closed form is checked against two independent
+  numerical integrations of the mixture.
+- `AnytimeLogRankTest`: anytime-valid log-rank test (ter Schure,
+  Pérez-Ortiz, Ly and Grünwald) with a hazard-ratio confidence sequence;
+  exact for any baseline hazard when hazards are proportional on the time
+  scale of the records (the tutorial and the docstring describe the
+  staggered-entry case where they are not).
 
 ### Added: change detection and smoothing
 - `MeanEDetector`, `QuantileEDetector`: e-detectors (Shin, Ramdas and
@@ -40,10 +71,16 @@ TypeScript executor, and a documentation site.
 
 ### Added: specification, TypeScript executor, documentation
 - `SPEC.md`: the formats and semantics another implementation needs.
-- `ts/`: a TypeScript executor that reproduces the 23 conformance vectors
-  and continues runs started in Python (and hands them back).
-- Seven conformance vectors for the new procedures.
-- A documentation site (mkdocs) with tutorials whose code runs in the tests.
+- `ts/`: a TypeScript executor of every procedure of the library (36;
+  those with a numpy backend with the Python backend). It reproduces all 53
+  conformance vectors -- 19 bit for bit, the others to 3.6e-13 -- and
+  continues runs started in Python (and hands them back).
+- 37 conformance vectors for the new procedures.
+- A documentation site (mkdocs, GitHub Pages) with tutorials whose code
+  runs in the tests, and an API reference generated from the docstrings.
+- Release workflow: tested on Python 3.8 to 3.14; the TypeScript executor
+  is published to npm (with the `NPM_TOKEN` secret) and must carry the
+  same version.
 
 ### Added: filters
 - `KalmanFilter`: any linear Gaussian state-space model in matrix form, with
