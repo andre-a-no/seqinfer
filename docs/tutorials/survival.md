@@ -100,15 +100,137 @@ patients enter at different times. Then the patients at risk at a
 calendar moment are at different stages, the coin flips are not fair
 under H0, and the test can be badly anti-conservative. In a simulation
 with Weibull shape 0.3 in time since entry and entry spread over the
-study, it rejected 24% of null trials at a nominal 5%.
+study, it rejected 21% of 4000 null trials at a nominal 5%.
 
 For such trials, choose one of these:
 
 * order the records by time since entry, if that is how the trial is
   analysed;
-* stratify by entry cohort;
+* stratify by narrow entry cohorts (next section);
 * use a group sequential design (`GroupSequentialTest` with the
   log-rank statistic at planned analyses).
+
+## Stratified by centre or by entry cohort
+
+Patients in different centres, or with a different stage of disease, can
+have very different hazards. The stratified test compares like with
+like. Each record carries its stratum, and `strata` says how many there
+are. The test keeps the numbers at risk of each arm in each stratum. An
+event in stratum s falls in the treatment arm with probability
+`n_T^s θ / (n_T^s θ + n_C^s)`.
+
+Each stratum may have a baseline hazard of any shape. The hazard ratio θ
+is common to all of them. The guarantee is exact, as before.
+
+Stratifying matters most when the strata differ in both hazard and
+allocation. In this trial the riskiest centre also treats most of its
+patients:
+
+```python
+def records_to_stream(happenings, names):
+    happenings.sort()
+    stream = []
+    for i, (_, *values) in enumerate(happenings):
+        stream += [Observation(name, value, seq=i, key=i) for name, value in zip(names, values)]
+    return stream
+
+def multicentre_trial(n=300, hazard_ratio=1.0, seed=1):
+    rnd = random.Random(seed)
+    rates = [0.01, 0.05, 0.25]    # events per month in centres 0, 1, 2
+    treated = [0.25, 0.5, 0.75]   # share of patients randomised to treatment there
+    happenings = []
+    for _ in range(n):
+        centre = rnd.randrange(3)
+        arm = 1 if rnd.random() < treated[centre] else 0
+        entry = rnd.uniform(0.0, 12.0)
+        event = entry + rnd.expovariate(rates[centre] * (hazard_ratio if arm == 1 else 1.0))
+        dropout = entry + rnd.expovariate(0.01)
+        end = min(event, dropout, 36.0)
+        happenings += [(entry, arm, 0, centre), (end, arm, 1 if end == event else 2, centre)]
+    return records_to_stream(happenings, ("arm", "kind", "centre"))
+
+def rejects(procedure, stream, inputs):
+    run = Run(procedure, topology=KeyJoin(inputs))
+    run_sync(run, [o for o in stream if o.input in inputs])
+    return run.state.decision is not None
+
+plain = stratified = 0
+for seed in range(10):
+    stream = multicentre_trial(seed=200 + seed)
+    plain += rejects(AnytimeLogRankTest(confidence_sequence=False), stream, ("arm", "kind"))
+    stratified += rejects(AnytimeLogRankTest(confidence_sequence=False, strata=3, stratum_input="centre"),
+                          stream, ("arm", "kind", "centre"))
+print(f"no effect, 10 trials: unstratified rejected {plain}, stratified by centre {stratified}")
+```
+
+There is no effect, yet the unstratified test rejects every one of these
+trials. It sees more events among treated patients and blames the
+treatment, not the centre. The stratified test rejects none.
+
+With a real effect, the stratified run reads like the unstratified one:
+
+```python
+seen = Recorder()
+run = Run(AnytimeLogRankTest(strata=3, stratum_input="centre"), topology=KeyJoin(("arm", "kind", "centre")),
+          consumers=[seen])
+run_sync(run, multicentre_trial(hazard_ratio=0.6, seed=7))
+first = next(o for o in seen.outputs if o.decision)
+last = seen.outputs[-1]
+print(f"rejected after {first.n_events} events; at the end the hazard ratio is about "
+      f"{last.hazard_ratio_estimate:.2f}, [{last.lower:.2f}, {last.upper:.2f}]")
+```
+
+The outputs' `at_risk` is the total of each arm over the strata. The
+state keeps two counts per stratum, so its size stays fixed.
+
+Even with balanced allocation, stratifying can buy a lot of power when
+the strata differ widely. In a simulation of 600 trials with two centres
+whose hazards differ a hundredfold, power at a hazard ratio of 0.6 was
+82% stratified against 18% unstratified.
+
+### Entry cohorts
+
+For hazards that depend on time since entry, use the month (or week) of
+entry as the stratum. Within a narrow cohort, the patients at risk at a
+given moment are at about the same stage.
+
+```python
+def staggered_trial(n=200, seed=1, cohorts=25):
+    rnd = random.Random(seed)
+    happenings = []
+    for _ in range(n):
+        arm = rnd.randrange(2)
+        entry = rnd.uniform(0.0, 25.0)                          # months
+        event = entry + rnd.expovariate(1.0) ** (1 / 0.3)       # Weibull, shape 0.3: high right after entry
+        dropout = entry + rnd.expovariate(0.3)
+        cohort = min(cohorts - 1, int(entry / 25.0 * cohorts))  # the month of entry
+        end = min(event, dropout)
+        happenings += [(entry, arm, 0, cohort), (end, arm, 1 if end == event else 2, cohort)]
+    return records_to_stream(happenings, ("arm", "kind", "cohort"))
+
+plain = stratified = 0
+for seed in range(20):
+    stream = staggered_trial(seed=300 + seed)
+    plain += rejects(AnytimeLogRankTest(confidence_sequence=False), stream, ("arm", "kind"))
+    stratified += rejects(AnytimeLogRankTest(confidence_sequence=False, strata=25, stratum_input="cohort"),
+                          stream, ("arm", "kind", "cohort"))
+print(f"no effect, 20 trials: unstratified rejected {plain}, stratified by month of entry {stratified}")
+```
+
+This is an approximation, not an exact remedy. Within a cohort, entry
+still varies, so the cohorts must be narrow compared with how fast the
+hazard changes after entry. In 4000 simulated trials like these, at a
+nominal 5%, the share of null trials rejected was:
+
+| entry cohorts | 1 (unstratified) | 4   | 8   | 16   | 25 (one month) | 50   |
+|---------------|------------------|-----|-----|------|----------------|------|
+| rejected      | 21%              | 16% | 11% | 5.8% | 3.8%           | 1.5% |
+
+An exact analysis, with the records ordered by time since entry, rejects
+1.7%. Narrow cohorts also cost power: an event in a cohort with one arm
+empty says nothing. At a hazard ratio of 0.6, 25 cohorts detected the
+effect in 39% of trials and 50 cohorts in 21%. The exact analysis in
+time since entry detected it in 54%.
 
 ## Method and cost
 

@@ -1,6 +1,6 @@
 {
   "name": "sequential-analysis",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "TypeScript executor for sequential-analysis runs: the same procedures, checkpoints and observation logs as the Python library, bit for bit where the arithmetic allows.",
   "license": "AGPL-3.0-only",
   "type": "module",

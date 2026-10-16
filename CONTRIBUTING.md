@@ -25,7 +25,14 @@ python -m pip install -e .
 python -m unittest discover -s tests -t .
 ```
 
-Every change to inference, persistence or delivery needs a test. New
+Every change to inference, persistence or delivery needs a test.
+
+The property-based tests (`tests/test_properties.py`) need `hypothesis`
+(`pip install hypothesis`). Without it they are skipped. CI runs them
+derandomized, with a pinned version. To hunt for new failures, run
+`HYPOTHESIS_PROFILE=explore python -m unittest tests.test_properties`,
+and add every defect found to its `Regressions` class as a minimal
+reproduction. New
 source files start with the SPDX header used throughout the project.
 
 ## Minimum versions

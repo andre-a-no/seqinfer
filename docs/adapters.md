@@ -49,6 +49,7 @@ restored = Run.restore(TwoProportionTest(), checkpoint, topology=KeyJoin(("arm",
 start = min(next_position(restored.delivery, s) for s in ("arm", "y"))
 run_sync(restored, read(start))
 print("resumed at user", start, "; users counted:", sum(restored.state.trials))
+db.close()
 ```
 
 Reading too much after a restore is harmless: delivery drops what the

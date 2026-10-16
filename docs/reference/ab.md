@@ -5,3 +5,5 @@
 ::: sequential_analysis.procedures.rates
 
 ::: sequential_analysis.procedures.online_fdr
+
+::: sequential_analysis.procedures.ratio

@@ -18,6 +18,35 @@ jobs:
       # nothing newer than the declared minimum, Python 3.8 (see CONTRIBUTING.md, "Minimum versions")
       - run: vermin --no-tips --violations -t=3.8- src tests tools examples
 
+  r-reference:
+    # rpact and R's survival package as independent references (tools/r_reference.R): the reference
+    # file is regenerated here and the Python implementation compared with the fresh one
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends r-base-core r-cran-rpact r-cran-survival r-cran-jsonlite
+      - run: Rscript tools/r_reference.R > "$RUNNER_TEMP/r_reference.json"
+      - run: python -m pip install .
+      - run: R_REFERENCE="$RUNNER_TEMP/r_reference.json" python -m unittest tests.test_r_reference -v
+      - name: the committed reference file is the one R writes
+        run: |
+          python - "$RUNNER_TEMP/r_reference.json" tests/r_reference.json <<'PY'
+          import json, sys
+          fresh, committed = (json.load(open(p)) for p in sys.argv[1:])
+          def same(a, b):
+              if isinstance(a, float) or isinstance(b, float):
+                  return abs(a - b) <= 1e-9 * max(1.0, abs(a), abs(b))
+              if isinstance(a, list):
+                  return len(a) == len(b) and all(map(same, a, b))
+              if isinstance(a, dict):
+                  return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+              return a == b
+          assert same(fresh, committed), "tests/r_reference.json differs from what tools/r_reference.R writes"
+          PY
+
   test:
     runs-on: ubuntu-24.04
     strategy:
@@ -31,7 +60,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # numpy is optional: the design module uses it when present, and the tests
       # check that numpy values are rejected with a conversion hint
-      - run: python -m pip install . numpy
+      # matplotlib and hypothesis are optional too: with them the plotting and property-based tests run
+      # hypothesis pinned: its derandomized examples depend on its version (6.170 needs Python 3.11)
+      - run: python -m pip install . numpy matplotlib "hypothesis==6.170.0; python_version>='3.11'" "hypothesis==6.141.1; python_version<'3.11'"
       - run: python -W error::ResourceWarning -m unittest discover -s tests -t . -v
       - name: examples
         run: |
@@ -57,7 +88,7 @@ jobs:
       - name: tests against the installed wheel
         run: |
           python -m venv /tmp/venv
-          /tmp/venv/bin/pip install dist/*.whl
+          /tmp/venv/bin/pip install dist/*.whl hypothesis==6.170.0
           mkdir /tmp/outside && cp -r tests conformance tools docs mkdocs.yml /tmp/outside/
           cd /tmp/outside && /tmp/venv/bin/python -c "import sequential_analysis, sys; print(sequential_analysis.__file__); assert 'site-packages' in sequential_analysis.__file__"
           cd /tmp/outside && /tmp/venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -t .
@@ -75,9 +106,9 @@ jobs:
       matrix:
         include:
           - python: "3.8"
-            extra: "numpy==1.22.0"
+            extra: "numpy==1.22.0 hypothesis==6.113.0"
           - python: "3.9"
-            extra: ""
+            extra: "hypothesis==6.141.1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

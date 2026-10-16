@@ -35,15 +35,57 @@ time of the trial when records are streamed as they happen; a patient
 who enters late is then left-truncated, which the partial likelihood
 handles exactly.  If instead the hazards are a function of time since
 entry and they are not constant, staggered entry breaks the martingale
-property (the paper says so too), and not by a little: by simulation,
-with a Weibull hazard of shape 0.3 in time since entry, entry spread over
-25 scale units and 200 patients, the test rejects a true H0 in 24% of
-trials at alpha = 0.05 (shape 0.5: 5%; shape 2: under 1%).  The events
-of patients who entered recently then tell which arm they are in more
-often than n_T / (n_T + n_C) says.  Exponential (constant) hazards are
-the same on both time scales and are fine.  With hazards in time since
-entry, stream the records in that time scale (possible only after the
-fact) or use a test stratified by entry cohort.
+property (the paper says so too), and not by a little.  By simulation
+(200 patients entering uniformly over 25 scale units, 1:1, a Weibull
+hazard of shape 0.3 in time since entry with scale 1, exponential
+censoring at rate 0.3 after entry, the default mixture, alpha = 0.05),
+the test rejects a true H0 in 21% of 4000 trials (25% of 800 with
+censoring at rate 0.05; shape 0.5: 14% of 2000; shape 2: none of 2000),
+where an exact analysis of the same kind of trial, records in time since
+entry, rejects 1.7% of 2000.  The events of patients who entered recently then tell
+which arm they are in more often than n_T / (n_T + n_C) says.
+Exponential (constant) hazards are the same on both time scales and are
+fine.  With hazards in time since entry, stream the records in that time
+scale (possible only after the fact) or stratify by narrow entry cohorts
+(next paragraph), which brings the same trials back under the level.
+
+Stratification (strata > 1).  Each record also names its stratum s -- a
+centre, a prognostic group, an entry cohort -- and the procedure keeps
+n_T^s and n_C^s, the numbers at risk of each arm in each stratum.  Under
+proportional hazards within strata (a baseline hazard of any shape in
+each stratum, one hazard ratio theta common to all), an event in stratum
+s is in the treatment arm with probability
+n_T^s theta / (n_T^s theta + n_C^s): the stratified partial likelihood.
+LR_t is the factor above with n_T^s and n_C^s in place of n_T and n_C,
+its conditional mean under H0 is still exactly 1, and the products over
+the events of all strata, in arrival order, are test martingales: the
+methods, the one-sided composite nulls and the confidence sequence carry
+over unchanged, and the estimate is the (penalised) stratified Cox
+estimate.  An event in a stratum with one arm empty is certain: factor 1.
+By simulation (exponential hazards, 200 patients, 600 trials, alpha =
+0.05): in three centres with hazards 0.2, 1 and 5 randomising 1:3, 1:1
+and 3:1, the unstratified test rejects a true H0 in 96% of trials and
+the stratified one in 2.5%; in two centres with hazards 0.1 and 10
+randomising 1:1 (400 patients), power at a hazard ratio of 0.6 is 18%
+unstratified and 82% stratified.
+
+Entry cohorts are an approximation: within a cohort, entry still varies,
+so the cohorts must be narrow compared with the time over which the
+hazard changes after entry.  In the shape-0.3 simulation above (4000
+trials; cohorts are equal periods of entry), the rejection rate of a true
+H0 is 21% unstratified, 20% with 2 cohorts, 16% with 4, 11% with 8, 5.8%
+with 16, 3.8% with 25 (one scale unit each, 8 patients on average) and
+1.5% with 50.  Narrow cohorts cost power, since an event in a cohort with
+one arm empty carries no information: at a hazard ratio of 0.6, 39% with
+25 cohorts and 21% with 50 (1000 trials), against 54% for the exact
+analysis in time since entry (2000 trials).
+
+With strata = 1, the default, the inputs, the configuration and the state
+are exactly those of the unstratified test: the configuration names
+`strata` and `stratum_input` only when strata > 1, so the identity,
+checkpoints and conformance vectors of earlier releases are unchanged.
+The state's `at_risk` holds n_T^0, n_C^0, n_T^1, n_C^1, ... (two numbers
+per stratum); the output's `at_risk` is the total of each arm.
 
 Ties.  Events are processed one at a time in arrival order, each removed
 from the risk set before the next.  Tied events should be streamed in an
@@ -111,7 +153,9 @@ weights (8 700 multiply-adds at the start, falling as the interval
 narrows): 0.6 ms for the first events, 0.2 ms once the interval is
 narrow.  Entries and censorings cost a few µs.  The state is constant:
 252 floats with the default grids (5 kB of JSON; 1.5 kB without the
-confidence sequence).
+confidence sequence), and two integers per stratum.  25 strata do not
+change the cost measurably; 1000 strata about double the cost of an
+entry or censoring (the output sums the numbers at risk over the strata).
 """
 from __future__ import annotations
 
@@ -132,11 +176,12 @@ _STEPS = 8  # grid points per prior standard deviation
 _SPAN = 4  # prior standard deviations on each side
 _HALF = _STEPS * _SPAN  # 32: the alternative grid has 2 * 32 + 1 points
 _TINY = 1e-280  # below this a convolution is recomputed in the log domain
+_MAX_STRATA = 10_000
 
 
 @dataclass(frozen=True)
 class AnytimeLogRankState:
-    at_risk: tuple[int, int] = (0, 0)  # treatment, control
+    at_risk: tuple[int, ...] = (0, 0)  # treatment, control; per stratum: n_T^0, n_C^0, n_T^1, n_C^1, ...
     n_events: int = 0
     log_lik: tuple[float, ...] = ()  # sum_t log LR_t(delta_j), j = -32..32
     log_e: float = 0.0  # grow: log of the product of the plug-in factors
@@ -150,13 +195,18 @@ class AnytimeLogRankState:
 @dataclass(frozen=True)
 class AnytimeLogRankOutput:
     n_events: int
-    at_risk: tuple[int, int]
+    at_risk: tuple[int, int]  # treatment, control: totals over the strata
     log_e_value: float
     p_value: float
     decision: str | None
     hazard_ratio_estimate: float
     lower: float | None  # None: unbounded (or no confidence sequence)
     upper: float | None
+
+
+def _add(counts: tuple[int, ...], i: int, change: int) -> tuple[int, ...]:
+    """counts with counts[i] changed by `change`."""
+    return (*counts[:i], counts[i] + change, *counts[i + 1:])
 
 
 def _log_factor(x: int, n_t: int, n_c: int, delta: float, theta0: float, theta1: float) -> float:
@@ -176,6 +226,17 @@ class AnytimeLogRankTest(Procedure):
     against theta < theta0.  `prior_sd` is the standard deviation of the
     normal prior on log(theta / theta0) (method="mixture" and the
     confidence sequence) and of the shrinkage of the plug-in estimate.
+
+    `strata` > 1 makes the test stratified (see "Stratification" in the
+    module docstring): every record then also carries its stratum
+    (`stratum_input`, an integer in 0..strata-1), the state keeps the
+    numbers at risk of each arm in each stratum, and an event or censoring
+    in an arm of a stratum with nobody at risk is a contract violation.
+    The output's `at_risk` is the total over the strata.  With the default
+    strata=1 the procedure, its inputs, its configuration and its state
+    are exactly those of the unstratified test (the configuration names
+    `strata` and `stratum_input` only when strata > 1), so earlier
+    checkpoints restore unchanged.
     """
 
     name = "anytime_logrank_test"
@@ -186,7 +247,7 @@ class AnytimeLogRankTest(Procedure):
                  method: str = "mixture", prior_sd: float = 0.5, confidence_sequence: bool = True,
                  cs_range: tuple[float, float] = (0.1, 10.0), cs_grid: int = 101,
                  arms: tuple[int, int] = (1, 0), stop_on_reject: bool = False,
-                 arm_input: str = "arm", input: str = "kind"):
+                 arm_input: str = "arm", input: str = "kind", strata: int = 1, stratum_input: str = "stratum"):
         if not 0 < alpha < 1:
             raise ValueError("alpha must lie in (0, 1)")
         if type(theta0) not in (int, float) or not (math.isfinite(theta0) and theta0 > 0):
@@ -208,11 +269,16 @@ class AnytimeLogRankTest(Procedure):
             raise ValueError("arms must be two different non-negative integer labels")
         if arm_input == input:
             raise ValueError("the arm and the kind need different names")
+        if type(strata) is not int or not 1 <= strata <= _MAX_STRATA:
+            raise ValueError(f"strata must be an int in [1, {_MAX_STRATA}]")
+        if strata > 1 and stratum_input in (arm_input, input):
+            raise ValueError("the stratum needs a name different from the arm and the kind")
         self.alpha, self.theta0, self.alternative, self.method = float(alpha), float(theta0), alternative, method
         self.prior_sd, self.confidence_sequence = float(prior_sd), confidence_sequence
         self.cs_range, self.cs_grid = (float(cs_range[0]), float(cs_range[1])), cs_grid
         self.arms, self.stop_on_reject = (arms[0], arms[1]), stop_on_reject
         self.arm_input, self.input = arm_input, input
+        self.strata, self.stratum_input = strata, stratum_input
         self._log_level = math.log(1.0 / self.alpha)
 
         tau = self.prior_sd
@@ -248,15 +314,23 @@ class AnytimeLogRankTest(Procedure):
         self._cs_w = tuple(math.exp(v) for v in self._cs_logw)
 
     def config(self) -> dict:
-        return {"alpha": self.alpha, "theta0": self.theta0, "alternative": self.alternative,
-                "method": self.method, "prior_sd": self.prior_sd,
-                "confidence_sequence": self.confidence_sequence, "cs_range": list(self.cs_range),
-                "cs_grid": self.cs_grid, "arms": list(self.arms), "stop_on_reject": self.stop_on_reject,
-                "arm_input": self.arm_input, "input": self.input}
+        config = {"alpha": self.alpha, "theta0": self.theta0, "alternative": self.alternative,
+                  "method": self.method, "prior_sd": self.prior_sd,
+                  "confidence_sequence": self.confidence_sequence, "cs_range": list(self.cs_range),
+                  "cs_grid": self.cs_grid, "arms": list(self.arms), "stop_on_reject": self.stop_on_reject,
+                  "arm_input": self.arm_input, "input": self.input}
+        if self.strata != 1:  # only then: the unstratified test keeps the identity it had before strata existed
+            config["strata"] = self.strata
+            config["stratum_input"] = self.stratum_input
+        return config
 
     def inputs(self):
-        return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
-                self.input: InputContract(self.input, kind="integer", lower=ENTER, upper=CENSOR)}
+        contracts = {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
+                     self.input: InputContract(self.input, kind="integer", lower=ENTER, upper=CENSOR)}
+        if self.strata != 1:
+            contracts[self.stratum_input] = InputContract(self.stratum_input, kind="integer", lower=0,
+                                                          upper=self.strata - 1)
+        return contracts
 
     def initial_state(self) -> AnytimeLogRankState:
         cs: tuple[float, ...] = ()
@@ -264,7 +338,8 @@ class AnytimeLogRankTest(Procedure):
         if self.confidence_sequence:
             cs = (0.0,) * len(self._cs_betas)
             kept = (0, self.cs_grid - 1)
-        return AnytimeLogRankState(log_lik=(0.0,) * len(self._deltas), cs_log_lik=cs, cs_kept=kept)
+        return AnytimeLogRankState(at_risk=(0, 0) * self.strata, log_lik=(0.0,) * len(self._deltas), cs_log_lik=cs,
+                                   cs_kept=kept)
 
     # ------------------------------------------------------------ e-values and estimates
 
@@ -322,7 +397,12 @@ class AnytimeLogRankTest(Procedure):
     def _output(self, state: AnytimeLogRankState, value: float) -> AnytimeLogRankOutput:
         lower, upper = self._bounds(state.cs_kept)
         estimate = self.theta0 * math.exp(self.estimate(state.log_lik))
-        return AnytimeLogRankOutput(state.n_events, state.at_risk, value, min(1.0, math.exp(-state.max_log_e)),
+        at_risk = state.at_risk
+        n_t, n_c = at_risk[0], at_risk[1]
+        for i in range(2, len(at_risk), 2):  # totals over the strata (integers)
+            n_t += at_risk[i]
+            n_c += at_risk[i + 1]
+        return AnytimeLogRankOutput(state.n_events, (n_t, n_c), value, min(1.0, math.exp(-state.max_log_e)),
                                     state.decision, estimate, lower, upper)
 
     # ------------------------------------------------------------ the step
@@ -333,16 +413,24 @@ class AnytimeLogRankTest(Procedure):
             return state, self._output(state, self.log_e_value(state))
         k = self.arms.index(label)
         kind = x[self.input]
-        n_t, n_c = state.at_risk
+        stratum, where = 0, ""
+        if self.strata != 1:
+            given = x[self.stratum_input]
+            if type(given) not in (int, float) or not 0 <= given < self.strata or given != int(given):
+                raise ContractViolation(f"{self.name}: stratum {given!r} is not an integer in 0..{self.strata - 1}")
+            stratum = int(given)
+            where = f" of stratum {stratum}"
+        i = 2 * stratum + k  # the position of this arm of this stratum in the state
+        n_t, n_c = state.at_risk[2 * stratum], state.at_risk[2 * stratum + 1]
         if kind == ENTER:
-            at_risk = (n_t + 1, n_c) if k == 0 else (n_t, n_c + 1)
+            at_risk = _add(state.at_risk, i, 1)
             new = AnytimeLogRankState(at_risk, state.n_events, state.log_lik, state.log_e, state.comp,
                                       state.cs_log_lik, state.cs_kept, state.max_log_e, state.decision)
             return new, self._output(new, self.log_e_value(new))
-        if state.at_risk[k] == 0:
+        if state.at_risk[i] == 0:
             what = "an event" if kind == EVENT else "a censoring"
-            raise ContractViolation(f"{self.name}: {what} in arm {label} with nobody at risk")
-        at_risk = (n_t - 1, n_c) if k == 0 else (n_t, n_c - 1)
+            raise ContractViolation(f"{self.name}: {what} in arm {label}{where} with nobody at risk")
+        at_risk = _add(state.at_risk, i, -1)
         if kind == CENSOR:
             new = AnytimeLogRankState(at_risk, state.n_events, state.log_lik, state.log_e, state.comp,
                                       state.cs_log_lik, state.cs_kept, state.max_log_e, state.decision)
@@ -388,7 +476,8 @@ class AnytimeLogRankTest(Procedure):
 
     def decode_state(self, data) -> AnytimeLogRankState:
         state = decode_fields(AnytimeLogRankState, data)
-        require_state(len(state.at_risk) == 2 and len(state.cs_kept) == 2, "two arms, two CS indices")
+        require_state(len(state.at_risk) == 2 * self.strata and len(state.cs_kept) == 2,
+                      "two arms (in every stratum), two CS indices")
         require_state(len(state.log_lik) == len(self._deltas), "one log-likelihood per alternative")
         require_state(state.log_lik[_HALF] == 0.0, "the null point has likelihood ratio one")
         if self.method == "mixture":

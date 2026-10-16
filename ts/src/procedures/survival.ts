@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Novikov Laboratories LLC (Kazan, Tatarstan, Russian Federation)
 // Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 // Anytime-valid log-rank test and hazard-ratio confidence sequence; mirrors procedures/survival.py (AnytimeLogRankTest:
-// methods "mixture" and "grow", the confidence sequence grid with its convolution and log-domain fallback).
+// methods "mixture" and "grow", the confidence sequence grid with its convolution and log-domain fallback, and the
+// stratified test: strata > 1, numbers at risk per arm and stratum, config keys "strata" and "stratum_input" only then).
 import type { Json } from "../canonical.js";
 import { InputContract, type StatInput } from "../contracts.js";
 import { ContractViolation } from "../errors.js";
@@ -17,9 +18,11 @@ const STEPS = 8; // grid points per prior standard deviation
 const SPAN = 4; // prior standard deviations on each side
 const HALF = STEPS * SPAN; // 32: the alternative grid has 2 * 32 + 1 points
 const TINY = 1e-280; // below this a convolution is recomputed in the log domain
+const MAX_STRATA = 10_000;
 
 type LogRankState = {
-  at_risk: number[]; n_events: number; log_lik: number[]; log_e: number; comp: number; cs_log_lik: number[];
+  at_risk: number[]; // treatment, control; per stratum: n_T^0, n_C^0, n_T^1, n_C^1, ...
+  n_events: number; log_lik: number[]; log_e: number; comp: number; cs_log_lik: number[];
   cs_kept: number[]; max_log_e: number; decision: Decision;
 };
 
@@ -37,6 +40,13 @@ function firstMax(values: number[]): number {
   let m = values[0];
   for (let i = 1; i < values.length; i++) if (values[i] > m) m = values[i];
   return m;
+}
+
+/** counts with counts[i] changed by `change`. */
+function added(counts: number[], i: number, change: number): number[] {
+  const out = [...counts];
+  out[i] += change;
+  return out;
 }
 
 /** log LR_t: x delta + log(n_T theta0 + n_C) - log(n_T theta1 + n_C). */
@@ -81,6 +91,8 @@ export class AnytimeLogRankTest extends BaseProcedure {
     readonly stopOnReject = false,
     readonly armInput = "arm",
     readonly input = "kind",
+    readonly strata = 1,
+    readonly stratumInput = "stratum",
   ) {
     super();
     if (!(0 < alpha && alpha < 1)) invalid("alpha must lie in (0, 1)");
@@ -95,6 +107,9 @@ export class AnytimeLogRankTest extends BaseProcedure {
     if (arms.length !== 2 || arms.some((a) => !Number.isInteger(a) || a < 0) || arms[0] === arms[1])
       invalid("arms must be two different non-negative integer labels");
     if (armInput === input) invalid("the arm and the kind need different names");
+    if (!Number.isInteger(strata) || !(1 <= strata && strata <= MAX_STRATA)) invalid(`strata must be an int in [1, ${MAX_STRATA}]`);
+    if (strata > 1 && (stratumInput === armInput || stratumInput === input))
+      invalid("the stratum needs a name different from the arm and the kind");
     this.csRange = [csRange[0], csRange[1]];
     this.arms = [arms[0], arms[1]];
     this.logLevel = Math.log(1.0 / alpha);
@@ -139,24 +154,36 @@ export class AnytimeLogRankTest extends BaseProcedure {
   }
 
   static fromConfig(c: Config): AnytimeLogRankTest {
+    // "strata" and "stratum_input" are written only for a stratified test (strata > 1), as by the Python library
+    const stratified = "strata" in c || "stratum_input" in c;
+    const strata = stratified ? int(c, "strata") : 1;
+    if (stratified && strata === 1) invalid("config names 'strata' and 'stratum_input' only when strata is not 1");
     return new AnytimeLogRankTest(num(c, "alpha"), num(c, "theta0"), str(c, "alternative"), str(c, "method"), num(c, "prior_sd"),
       bool(c, "confidence_sequence"), nums(c, "cs_range"), int(c, "cs_grid"), nums(c, "arms"), bool(c, "stop_on_reject"),
-      str(c, "arm_input"), str(c, "input"));
+      str(c, "arm_input"), str(c, "input"), strata, stratified ? str(c, "stratum_input") : "stratum");
   }
 
   config(): Config {
-    return {
+    const config: Config = {
       alpha: this.alpha, theta0: this.theta0, alternative: this.alternative, method: this.method, prior_sd: this.priorSd,
       confidence_sequence: this.confidenceSequence, cs_range: [...this.csRange], cs_grid: this.csGrid, arms: [...this.arms],
       stop_on_reject: this.stopOnReject, arm_input: this.armInput, input: this.input,
     };
+    if (this.strata !== 1) { // only then: the unstratified test keeps the identity it had before strata existed
+      config.strata = this.strata;
+      config.stratum_input = this.stratumInput;
+    }
+    return config;
   }
 
   inputs(): Record<string, InputContract> {
-    return {
+    const contracts: Record<string, InputContract> = {
       [this.armInput]: new InputContract(this.armInput, "integer", [], 0),
       [this.input]: new InputContract(this.input, "integer", [], ENTER, CENSOR),
     };
+    if (this.strata !== 1)
+      contracts[this.stratumInput] = new InputContract(this.stratumInput, "integer", [], 0, this.strata - 1);
+    return contracts;
   }
 
   initialState(): LogRankState {
@@ -166,7 +193,7 @@ export class AnytimeLogRankTest extends BaseProcedure {
       kept = [0, this.csGrid - 1];
     }
     return {
-      at_risk: [0, 0], n_events: 0, log_lik: this.deltas.map(() => 0.0), log_e: 0.0, comp: 0.0, cs_log_lik: cs, cs_kept: kept,
+      at_risk: new Array<number>(2 * this.strata).fill(0), n_events: 0, log_lik: this.deltas.map(() => 0.0), log_e: 0.0, comp: 0.0, cs_log_lik: cs, cs_kept: kept,
       max_log_e: 0.0, decision: null,
     };
   }
@@ -230,8 +257,13 @@ export class AnytimeLogRankTest extends BaseProcedure {
   private output(s: LogRankState, value: number): State {
     const [lower, upper] = this.bounds(s.cs_kept);
     const estimate = this.theta0 * Math.exp(this.estimate(s.log_lik));
+    let nT = 0, nC = 0; // totals over the strata
+    for (let i = 0; i < s.at_risk.length; i += 2) {
+      nT += s.at_risk[i];
+      nC += s.at_risk[i + 1];
+    }
     return {
-      n_events: s.n_events, at_risk: [...s.at_risk], log_e_value: value, p_value: pyMin(1.0, Math.exp(-s.max_log_e)),
+      n_events: s.n_events, at_risk: [nT, nC], log_e_value: value, p_value: pyMin(1.0, Math.exp(-s.max_log_e)),
       decision: s.decision, hazard_ratio_estimate: estimate, lower, upper,
     };
   }
@@ -244,16 +276,25 @@ export class AnytimeLogRankTest extends BaseProcedure {
     if (!this.arms.includes(label)) return [s, this.output(s, this.logEValue(s))];
     const k = this.arms.indexOf(label);
     const kind = x[this.input] as number;
-    const [nT, nC] = s.at_risk;
+    let stratum = 0, where = "";
+    if (this.strata !== 1) {
+      const given = x[this.stratumInput];
+      if (typeof given !== "number" || !(0 <= given && given < this.strata) || !Number.isInteger(given))
+        throw new ContractViolation(`${this.name}: stratum ${JSON.stringify(given)} is not an integer in 0..${this.strata - 1}`);
+      stratum = given;
+      where = ` of stratum ${stratum}`;
+    }
+    const i = 2 * stratum + k; // the position of this arm of this stratum in the state
+    const nT = s.at_risk[2 * stratum], nC = s.at_risk[2 * stratum + 1];
     if (kind === ENTER) {
-      const next: LogRankState = { ...s, at_risk: k === 0 ? [nT + 1, nC] : [nT, nC + 1] };
+      const next: LogRankState = { ...s, at_risk: added(s.at_risk, i, 1) };
       return [next, this.output(next, this.logEValue(next))];
     }
-    if (s.at_risk[k] === 0) {
+    if (s.at_risk[i] === 0) {
       const what = kind === EVENT ? "an event" : "a censoring";
-      throw new ContractViolation(`${this.name}: ${what} in arm ${label} with nobody at risk`);
+      throw new ContractViolation(`${this.name}: ${what} in arm ${label}${where} with nobody at risk`);
     }
-    const atRisk = k === 0 ? [nT - 1, nC] : [nT, nC - 1];
+    const atRisk = added(s.at_risk, i, -1);
     if (kind === CENSOR) {
       const next: LogRankState = { ...s, at_risk: atRisk };
       return [next, this.output(next, this.logEValue(next))];
@@ -303,7 +344,7 @@ export class AnytimeLogRankTest extends BaseProcedure {
       at_risk: "counts", n_events: "count", log_lik: "numbers", log_e: "number", comp: "number", cs_log_lik: "numbers",
       cs_kept: "counts", max_log_e: "number", decision: "decision",
     }, data) as LogRankState;
-    requireState(s.at_risk.length === 2 && s.cs_kept.length === 2, "two arms, two CS indices");
+    requireState(s.at_risk.length === 2 * this.strata && s.cs_kept.length === 2, "two arms (in every stratum), two CS indices");
     requireState(s.log_lik.length === this.deltas.length, "one log-likelihood per alternative");
     requireState(s.log_lik[HALF] === 0.0, "the null point has likelihood ratio one");
     if (this.method === "mixture") requireState(s.log_e === 0.0 && s.comp === 0.0, "a mixture keeps no plug-in product");

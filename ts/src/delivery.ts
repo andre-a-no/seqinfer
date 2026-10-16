@@ -73,8 +73,11 @@ export class Delivery {
     if (stop <= first) return;
     const nxt = this.position(source);
     if (stop <= nxt) return;
-    if (first <= nxt) this.next.set(source, this.settle(source, stop));
-    else {
+    if (first <= nxt) {
+      const ahead = this.ahead.get(source);
+      if (ahead) for (const n of [...ahead]) if (n < stop) ahead.delete(n); // passed over with the range (delivery.py)
+      this.next.set(source, this.settle(source, stop));
+    } else {
       const gaps = this.gaps.get(source) ?? new Map<number, number>();
       gaps.set(first, Math.max(stop, gaps.get(first) ?? stop));
       this.gaps.set(source, gaps);

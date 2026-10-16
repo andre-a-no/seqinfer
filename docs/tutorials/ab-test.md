@@ -14,7 +14,8 @@ This tutorial goes through:
 * testing conversion exactly;
 * estimating the effect on revenue with a pre-experiment covariate;
 * many metrics at once;
-* several treatment arms.
+* several treatment arms;
+* ratio metrics, such as revenue per session, and relative lift.
 
 ## The data
 
@@ -279,7 +280,107 @@ The counts have to be Poisson. If a few users order far more than the
 rest (overdispersion), cap the counts and use `BoundedABTest`, or use
 `ABTest`.
 
-## 8. Before the experiment: how many users?
+## 8. Ratio metrics: revenue per session
+
+Many product metrics are ratios measured on something other than the
+user: revenue per session, click-through rate (clicks per impression),
+average order value (revenue per order). The users are randomised, but
+the metric counts sessions. A user's sessions are not independent: a
+big spender is a big spender in every session. A test that treats
+sessions as observations therefore has a standard error that is too
+small, and it finds effects that are not there.
+
+`RatioABTest` works per user. Each user reports a numerator (their
+revenue) and a denominator (their number of sessions). The metric of an
+arm is the ratio of the sums, and its variance comes from the delta
+method on the user totals (Deng, Knoblich and Lu 2018). The confidence
+sequence is the asymptotic one of section 3.
+
+Here 20,000 users have Poisson(2) sessions, so some have none. Each user
+has a spend level that all their sessions share, and treatment raises
+spend per session by 5%:
+
+```python
+from sequential_analysis.procedures import RatioABTest
+
+rnd = random.Random(11)
+session_stream, session_spend = [], []
+for user in range(20_000):
+    arm = int(rnd.random() < 0.5)
+    level = math.exp(rnd.gauss(0.0, 1.0)) * (1.05 if arm else 1.0)  # the user's spend per session
+    k, p, limit = 0, rnd.random(), math.exp(-2.0)  # Poisson(2) sessions
+    while p > limit:
+        k += 1
+        p *= rnd.random()
+    spend = [level * math.exp(rnd.gauss(0.0, 0.5)) for _ in range(k)]
+    session_spend += [(arm, s) for s in spend]
+    # a user with no session stays in: dropping them would select on an outcome of the treatment
+    session_stream += [Observation(n, v, seq=user, key=user)
+                       for n, v in (("arm", arm), ("revenue", sum(spend)), ("sessions", k))]
+
+per_session = Run(RatioABTest(input="revenue", denominator_input="sessions"),
+                  topology=KeyJoin(("arm", "revenue", "sessions")))
+seen = Recorder()
+per_session.consumers.append(seen)
+run_sync(per_session, session_stream)
+last = seen.outputs[-1]
+print(f"revenue per session: treatment {last.ratios[0]:.3f}, control {last.ratios[1]:.3f}")
+print(f"difference {last.difference:+.3f}, 95% confidence sequence [{last.lower:+.3f}, {last.upper:+.3f}]")
+print(f"relative lift {last.lift:+.1%}, 95% confidence sequence [{last.lift_lower:+.1%}, {last.lift_upper:+.1%}]")
+```
+
+The 5% lift is not yet detected after 20,000 users of so noisy a
+metric: both sequences still contain zero.
+
+The relative lift has its own confidence sequence. It is computed on
+the log scale, so it is not symmetric about the estimate. Both
+sequences are reported at every step. The decision follows the
+difference by default; with `scale="relative"` it follows the lift.
+`effect0` sets a null value other than zero.
+
+Compare the standard errors with the naive one, which treats every
+session as an independent observation:
+
+```python
+def per_session_standard_error(arm):
+    values = [s for a, s in session_spend if a == arm]
+    mean = sum(values) / len(values)
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / (len(values) - 1) / len(values))
+
+naive = math.hypot(per_session_standard_error(1), per_session_standard_error(0))
+print(f"standard error of the difference: per user {last.std_error:.4f}, per session (naive) {naive:.4f}")
+```
+
+The naive standard error is smaller, by a factor of about 1.6 here.
+The same data give the same estimate, but the naive interval is too
+narrow. The module docstring reports simulations of this kind of data,
+monitored after every user from the thousandth on, with no effect. The
+naive per-session test rejected in 24% to 26% of the runs.
+`RatioABTest` rejected in 1.4% to 3.5% of them.
+
+**Relative lift of a mean.** Without a denominator (`denominator=False`)
+every user's denominator is 1. The ratio is then the mean per user, so
+the same test gives the relative lift of revenue per user, which is how
+results are often reported:
+
+```python
+per_user = Run(RatioABTest(denominator=False, scale="relative", input="revenue"),
+               topology=KeyJoin(("arm", "revenue")))
+seen = Recorder()
+per_user.consumers.append(seen)
+run_sync(per_user, (o for o in stream if o.input in ("arm", "revenue")))
+last = seen.outputs[-1]
+print(f"revenue per user: {last.lift:+.1%}, 95% confidence sequence "
+      f"[{last.lift_lower:+.1%}, {last.lift_upper:+.1%}], decision {last.decision}")
+```
+
+Like `ABTest`, these intervals are asymptotic. Nothing is reported
+before `start` users (1,000 by default). With unbalanced arms and heavy
+tails, monitoring from the first few dozen users misses more often than
+`alpha`, and the lift misses more than the difference. The module
+docstring has the measured rates.
+
+## 9. Before the experiment: how many users?
 
 A sequential test has no fixed sample size, but its distribution can be
 planned. `planning.simulate` runs any procedure on simulated users and

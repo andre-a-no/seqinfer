@@ -23,6 +23,34 @@ from typing import Any
 _MAX_EXACT_INT = 2**53
 
 
+def _binary64_int(text: str) -> Any:
+    """An integer literal as JSON.parse reads it: an int within 2**53, beyond that the binary64 number."""
+    value = int(text)
+    return value if abs(value) <= _MAX_EXACT_INT else float(value)
+
+
+def loads(text: str) -> Any:
+    """Parse JSON whose numbers are binary64 (SPEC 1), as every executor writes it.
+
+    An integer literal beyond 2**53 is the binary64 number it denotes, a
+    float: ECMAScript's Number::toString, and so canonical JSON and
+    JSON.stringify, write 1e17 as 100000000000000000.  Python's json would
+    read that as an int, which the library refuses beyond 2**53.
+    """
+    return json.loads(text, parse_int=_binary64_int)
+
+
+def binary64(obj: Any) -> Any:
+    """A JSON value already parsed by json.loads, with integers beyond 2**53 read as `loads` reads them."""
+    if type(obj) is int:
+        return obj if abs(obj) <= _MAX_EXACT_INT else float(obj)
+    if isinstance(obj, list):
+        return [binary64(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: binary64(v) for k, v in obj.items()}
+    return obj
+
+
 def _number(x: float) -> str:
     """ECMAScript Number::toString for a finite binary64 value."""
     if not math.isfinite(x):

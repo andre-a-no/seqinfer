@@ -10,7 +10,11 @@ export { lgamma, erfc, regularizedBeta, tCdf, tIsfLog } from "./distributions.js
 export { MeanEDetector, QuantileEDetector } from "./edetector.js";
 export { EMA } from "./ema.js";
 export { Bernoulli, Exponential, type Family, familyFromSpec, Gaussian, Poisson } from "./families.js";
-export { GroupSequentialTest } from "./group_sequential.js";
+export {
+  efficacyBounds, futilityBounds, GroupSequentialLogRank, GroupSequentialMonitor, GroupSequentialProportions, GroupSequentialTest,
+  GroupSequentialTwoMeans, normalInvCdf,
+  spendingFunction,
+} from "./group_sequential.js";
 export { CategoricalEmission, type Emission, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, PoissonEmission } from "./hmm.js";
 export { LocalLevelKalman } from "./kalman.js";
 export { AnytimeLinearModel } from "./linear_model.js";
@@ -23,6 +27,7 @@ export {
 export { contractFromSpec, PlanTest } from "./plan.js";
 export { QuantileConfidenceSequence, QuantileTest } from "./quantile.js";
 export { RateRatioTest } from "./rates.js";
+export { RatioABTest } from "./ratio.js";
 export { AsymptoticConfidenceSequence, CatoniConfidenceSequence } from "./robust_mean.js";
 export { ShiryaevRoberts } from "./shiryaev_roberts.js";
 export { SPRT } from "./sprt.js";

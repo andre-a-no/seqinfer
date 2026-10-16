@@ -43,6 +43,7 @@ extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js
 nav:
   - Home: index.md
+  - Which method?: choosing.md
   - Tutorials:
       - A/B test, monitored continuously: tutorials/ab-test.md
       - Group sequential trial: tutorials/group-sequential.md
@@ -52,6 +53,7 @@ nav:
   - Guides:
       - Checkpoints, logs and backends: checkpoints.md
       - Data sources: adapters.md
+      - Plotting runs, designs and plans: plotting.md
       - TypeScript executor: typescript.md
   - Reference:
       - Methods: methods.md

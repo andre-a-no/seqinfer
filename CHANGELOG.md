@@ -6,6 +6,141 @@ change the checkpoint, log and cache formats, which are versioned
 separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 `.design-cache/1`).
 
+## 0.4.0 — 2026-10-16
+
+Group sequential trials for any endpoint, checked against rpact and R's
+survival package; ratio metrics; stratified log-rank tests; plots;
+property-based tests; a guide to choosing a method.
+
+### Added: group sequential trials for any endpoint
+- `GroupSequentialTwoMeans` (continuous endpoint in two arms, known
+  standard deviation or pooled t), `GroupSequentialProportions` (pooled
+  two-proportion Z) and `GroupSequentialLogRank` (log-rank statistic with
+  late entry, optionally stratified), analysed at unit or event counts.
+- `GroupSequentialMonitor`: alpha spending at the information actually
+  reached, one record (Z, information) per analysis, for any statistic
+  computed elsewhere; under- and over-running; optional non-binding
+  futility from the design.
+- `GroupSequentialDesign.at(fractions)`: the boundaries recomputed for
+  analyses that did not happen as planned (Lan–DeMets); boundaries of
+  analyses already done never move.
+- Sample sizes: `inflation_factor`, `max_sample_size_two_means`,
+  `max_sample_size_two_proportions` (rpact's method), `max_events`
+  (Schoenfeld).
+
+### Added: ratio metrics and relative lift
+- `RatioABTest`: anytime-valid A/B test for ratio metrics (revenue per
+  session, click-through rate, average order value) and for relative lift.
+  It uses the delta method on the totals of the randomised unit (Deng,
+  Knoblich and Lu 2018) with the asymptotic confidence sequence of
+  Waudby-Smith et al. (2024). It reports sequences for R_T − R_C and, on
+  the log scale, for R_T / R_C − 1. `denominator=False` gives the
+  relative lift of a mean per user.
+- Measured with sessions correlated within users and monitoring from
+  1,000 users: the time-uniform miscoverage is at most 0.047. In the same
+  simulations, the naive per-session test rejected a true null in 24–26%
+  of runs.
+- Constant state, 7 µs per step. TypeScript port included.
+
+### Added: stratified survival tests
+- `AnytimeLogRankTest(strata=k, stratum_input="stratum")`: a stratified
+  anytime-valid log-rank test, with numbers at risk per arm and stratum and
+  a common hazard ratio. It is exact under proportional hazards within the
+  strata, whatever each stratum's baseline hazard. Stratifying by centre
+  keeps the level when centres differ in baseline hazard. In simulation,
+  with unequal allocation and hazards of 0.2, 1 and 5, the unstratified
+  test rejects 96% of null trials and the stratified one 2.5%. Stratifying
+  by narrow entry cohorts brings the test back under its level when
+  hazards depend on time since entry (21% → 3.8% of null trials with 25
+  cohorts). With `strata=1`, the default, the identity, configuration,
+  state and conformance vectors are unchanged. Ported to the TypeScript
+  executor.
+- `GroupSequentialLogRank` takes `strata=` too.
+- Corrected numbers in the time-scale caveat of the log-rank test, from
+  new simulations: 21% (not 24%) for Weibull shape 0.3, 14% (not 5%) for
+  shape 0.5.
+
+### Added: plotting
+- `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
+  or later): `plot_e_process`, `plot_confidence_sequence`,
+  `plot_group_sequential_design`, `plot_detection`, `plot_filter`,
+  `plot_stopping_times`. Each takes a Recorder, output events, outputs or
+  trajectory pairs and returns the matplotlib Axes. Importing the module
+  does not need matplotlib.
+- A documentation page, "Plotting runs, designs and plans", whose
+  pictures are drawn by its own code (`python tools/make_plots.py`);
+  tested on matplotlib 3.3.0 with Python 3.8 and on 3.11 with Python 3.13.
+
+### Checked against R
+- `tools/r_reference.R` computes reference values with rpact 3.4.0 and
+  survival 3.5.8; `tests/test_r_reference.py` compares: 56 designs
+  (boundaries to 2·10⁻⁷, futility boundaries, drift, crossing and futility
+  probabilities, expected sample sizes, inflation factors), boundaries at
+  realised information including under- and over-running, 44 sample
+  sizes, the log-rank statistic at four interim analyses of a trial with
+  staggered entry (to 10⁻¹²), the chi-square and pooled t tests. A CI job
+  installs R, regenerates the references and repeats the comparison.
+
+### Changed
+- The power of a two-sided group sequential design counts rejections in
+  the direction of the effect, as rpact and gsDesign do (sample sizes of
+  two-sided Pocock-type designs fall by up to 6·10⁻⁵ relative).
+- `drift_for_power` solves by the Illinois method: a few evaluations of
+  the power instead of fifty.
+- The recursive integration sums in plain loops: `sum()` of floats is
+  compensated from Python 3.12 on, and boundaries must not depend on the
+  Python version.
+
+### Tests
+- Property-based tests with hypothesis (`tests/test_properties.py`,
+  derandomized in CI, about 25 s). They cover:
+  - checkpoint equivalence at any split for every procedure, with values
+    anywhere in the input contracts;
+  - transition-level state round trips;
+  - output invariants: monotone always-valid p-values, nested
+    confidence sequences, absorbing decisions;
+  - canonical JSON against an independent RFC 8785 /
+    `Number.prototype.toString` reference;
+  - models of the delivery policies and topologies;
+  - SplitMix64, the t distribution and the summation helpers.
+
+  They found the six defects below.
+- Agreement with R (above), and simulated level and power for every new
+  group sequential procedure.
+
+### Fixed (found by the property-based tests)
+- A step whose new state or output holds an integer beyond 2**53 (two
+  units with 2**53 events each in RateRatioTest) is a numerical failure,
+  and nothing is committed. Before, the step was committed and the next
+  checkpoint failed.
+- Integer literals beyond 2**53 in stored JSON are read as the binary64
+  numbers they denote, as `JSON.parse` reads them (SPEC 1). This applies
+  to checkpoints given to `Run.restore` or read by `load_checkpoint`, and
+  to observation logs. A run continued by the TypeScript executor comes
+  back to Python even when a number in its state is 1e17 or more.
+- `AnytimeLinearModel` restores its own checkpoints after a covariate
+  deviation below about 1e-154: the Cauchy–Schwarz check of the stored
+  cross products allows for products that underflowed.
+- Group sequential integration: the continuation region keeps the same
+  width in standard deviations at every scale. An analysis at an
+  information fraction of 1e-6 no longer builds a grid of millions of
+  points. A grid beyond 20,000 points is a NumericalError, not an
+  unbounded allocation.
+- `RateRatioTest`: once every grid point is excluded, the confidence
+  sequence keeps its last bound when the ratio lies beyond the grid, and
+  collapses onto the least-excluded point otherwise. It used to jump back
+  to (None, None).
+- `Delivery.skip_range` from the current position drops the numbers
+  delivered inside the range. Before, they stayed in the checkpoint for
+  ever.
+
+### Documentation and packaging
+- "Which method?": from the question asked to the procedure, with how
+  exact each guarantee is.
+- The group sequential tutorial covers binary and survival endpoints and
+  analyses that move.
+- A short paper for the Journal of Open Source Software (`paper/joss/`).
+
 ## 0.3.0 — 2026-10-15
 
 Filters and smoothers, A/B tests, nonparametric change detection, data

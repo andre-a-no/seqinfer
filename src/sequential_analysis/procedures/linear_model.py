@@ -126,6 +126,8 @@ def _cholesky(a: Rows, size: int) -> Rows | None:
     return low
 
 
+_SMALLEST_NORMAL = 2.0**-1022
+
 @dataclass(frozen=True)
 class LinearModelState:
     n: int = 0
@@ -375,8 +377,12 @@ class AnytimeLinearModel(Procedure):
         require_state(len(state.comoment) == m * (m + 1) // 2, "wrong size of the cross-product matrix")
         a = self._unpack(state.comoment)
         require_state(all(a[i][i] >= 0.0 for i in range(m)), "negative sum of squares")
+        # a relative slack for rounding, and an absolute one for underflow: with a deviation d below about
+        # 1e-154, d * d underflows while d * dy does not (n smallest normals cover every product lost)
+        tiny = state.n * _SMALLEST_NORMAL
         require_state(
-            all(abs(a[i][j]) <= math.sqrt(a[i][i] * a[j][j]) * (1.0 + 1e-9) for i in range(m) for j in range(i)),
+            all(abs(a[i][j]) <= math.sqrt((a[i][i] + tiny) * (a[j][j] + tiny)) * (1.0 + 1e-9)
+                for i in range(m) for j in range(i)),
             "cross products violate the Cauchy-Schwarz inequality",
         )
         if state.n == 0:

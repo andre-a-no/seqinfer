@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from sequential_analysis import Run  # noqa: E402
 from sequential_analysis.canonical import _number, canonical_json  # noqa: E402
+from sequential_analysis.group_sequential import group_sequential_design  # noqa: E402
 from sequential_analysis.procedures import (  # noqa: E402
     CUSUM,
     EMA,
@@ -47,7 +48,11 @@ from sequential_analysis.procedures import (  # noqa: E402
     Exponential,
     Gaussian,
     GaussianEmission,
+    GroupSequentialLogRank,
+    GroupSequentialMonitor,
+    GroupSequentialProportions,
     GroupSequentialTest,
+    GroupSequentialTwoMeans,
     HiddenMarkovFilter,
     KalmanFilter,
     KernelTwoSampleTest,
@@ -68,6 +73,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     QuantileEDetector,
     QuantileTest,
     RateRatioTest,
+    RatioABTest,
     RobustKalmanFilter,
     SampleRatioMismatch,
     SequentialSignTest,
@@ -342,7 +348,88 @@ def cases():
         ("anytime_logrank_test_grow", AnytimeLogRankTest(alternative="less", method="grow", confidence_sequence=False),
          None, survival_rows(150, 0.5, 40, 0.3)),
     ]
-    return existing + added + ported + later
+
+    def stratified_survival_rows(n, theta, strata, start):
+        """Survival records with a stratum each; no event or censoring in an arm of a stratum nobody is at risk in."""
+        rows, at_risk = [], [[0, 0] for _ in range(strata)]  # per stratum: treatment (arm 1), control (arm 0)
+        for i in range(n):
+            s = rnd.randrange(strata)
+            r = at_risk[s]
+            if i < start or rnd.random() < 0.35 or r[0] + r[1] == 0:
+                k = rnd.randrange(2)
+                r[k] += 1
+                rows.append({"arm": 1 - k, "kind": 0, "stratum": s})
+            else:
+                weight = r[0] * theta
+                k = 0 if rnd.random() * (weight + r[1]) < weight else 1
+                r[k] -= 1
+                rows.append({"arm": 1 - k, "kind": 1 if rnd.random() < 0.85 else 2, "stratum": s})
+        return rows
+
+    def analyses_rows(zs, informations, final_at=None):
+        rows = [{"z": z, "information": v} for z, v in zip(zs, informations)]
+        if final_at is not None:
+            for i, row in enumerate(rows):
+                row["final"] = int(i == final_at)
+        return rows
+
+    gs_futility = group_sequential_design(0.025, [0.25, 0.5, 0.75, 1.0], "obrien-fleming", futility="pocock",
+                                          power=0.85)
+    gs_power = group_sequential_design(0.05, [0.2, 0.4, 0.6, 0.8, 1.0], ("power", 2.0), two_sided=True)
+    gs_three = group_sequential_design(0.025, [1 / 3, 2 / 3, 1.0], "obrien-fleming")
+    round_four = [
+        ("group_sequential_monitor_futility", GroupSequentialMonitor.from_design(gs_futility, 300.0,
+                                                                                 final_input="final"), None,
+         analyses_rows([0.4, 1.2, 1.9, 2.1], [70.0, 155.0, 230.0, 290.0], final_at=3)),
+        ("group_sequential_monitor_two_sided", GroupSequentialMonitor.from_design(gs_power, 50.0), None,
+         analyses_rows([-0.5, -1.1, -1.7, -2.4, -2.6, -2.0], [8.0, 17.5, 26.0, 33.0, 41.0, 55.0])),
+        ("group_sequential_proportions", GroupSequentialProportions.from_design(gs_three, 240, analyses=[70, 170, 250]),
+         None, [{"arm": 2 if rnd.random() < 0.05 else i % 2, "y": int(rnd.random() < (0.45 if i % 2 else 0.3))}
+                for i in range(260)]),
+        ("group_sequential_logrank", GroupSequentialLogRank.from_design(gs_futility, 80, alternative="less"), None,
+         survival_rows(260, 0.6, 40, 0.4)),
+        ("group_sequential_logrank_stratified", GroupSequentialLogRank([25, 50, 75], [3.7, 2.5, 2.0], strata=3,
+                                                                       two_sided=True, alternative="greater"), None,
+         stratified_survival_rows(300, 1.5, 3, 45)),
+        ("group_sequential_two_means_t", GroupSequentialTwoMeans.from_design(gs_futility, 160, None), None,
+         [{"arm": 2 if rnd.random() < 0.05 else i % 2, "y": rnd.gauss(0.6 if i % 2 else 0.0, 1.5)}
+          for i in range(170)]),
+        ("group_sequential_two_means_known", GroupSequentialTwoMeans(1.5, [30, 60, 90], [3.5, 2.6, 2.0],
+                                                                     two_sided=True, alternative="less"), None,
+         [{"arm": i % 2, "y": rnd.gauss(-0.4 if i % 2 else 0.0, 1.5)} for i in range(95)]),
+    ]
+    # The stratified anytime-valid log-rank test; its data are drawn after all of the above.
+    stratified_logrank = [
+        ("anytime_logrank_test_stratified", AnytimeLogRankTest(cs_grid=30, strata=3), None,
+         [{"arm": 2, "kind": 1, "stratum": 1}, *stratified_survival_rows(220, 0.35, 3, 45)]),
+        ("anytime_logrank_test_stratified_grow",
+         AnytimeLogRankTest(alternative="less", method="grow", confidence_sequence=False, strata=2,
+                            stratum_input="centre"), None,
+         [{"arm": r["arm"], "kind": r["kind"], "centre": r["stratum"]}
+          for r in stratified_survival_rows(160, 0.5, 2, 30)]),
+    ]
+
+    def ratio_rows(n, lift):
+        rows = []
+        for _ in range(n):
+            u = rnd.random()
+            arm = 1 if u < 0.4 else 0 if u < 0.9 else 2
+            k = rnd.randrange(4)
+            level = math.exp(rnd.gauss(0.0, 0.8)) * (1.0 + lift if arm == 1 else 1.0)
+            y = 0.0
+            for _ in range(k):
+                y += level * rnd.expovariate(1.0)
+            rows.append({"arm": arm, "y": y, "d": float(k)})
+        return rows
+
+    ratio = [
+        ("ratio_ab_test", RatioABTest(start=30, tuned_for=50), None, ratio_rows(150, 1.0)),
+        ("ratio_ab_test_relative", RatioABTest(scale="relative", effect0=0.1, start=30, tuned_for=50), None,
+         ratio_rows(150, 0.6)),
+        ("ratio_ab_test_means", RatioABTest(denominator=False, start=20), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in ratio_rows(100, 0.5)]),
+    ]
+    return existing + added + ported + later + round_four + stratified_logrank + ratio
 
 
 def vector(label, procedure, seed, inputs):

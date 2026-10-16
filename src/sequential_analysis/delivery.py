@@ -98,6 +98,9 @@ class Delivery:
         if stop <= nxt:
             return
         if first <= nxt:
+            ahead = self._ahead.get(source)
+            if ahead:  # numbers delivered inside the range are passed over with it, not kept for ever
+                ahead.difference_update({n for n in ahead if n < stop})
             self._next[source] = self._settle(source, stop)
         else:
             gaps = self._gaps.setdefault(source, {})

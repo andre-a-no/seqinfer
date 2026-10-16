@@ -9,7 +9,13 @@ from .cusum import CUSUM
 from .edetector import MeanEDetector, QuantileEDetector
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
-from .group_sequential import GroupSequentialTest
+from .group_sequential import (
+    GroupSequentialLogRank,
+    GroupSequentialMonitor,
+    GroupSequentialProportions,
+    GroupSequentialTest,
+    GroupSequentialTwoMeans,
+)
 from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
 from .kalman import LocalLevelKalman
 from .linear_model import AnytimeLinearModel
@@ -26,6 +32,7 @@ from .particle_filter import (
 from .plan import PlanTest
 from .quantile import QuantileConfidenceSequence, QuantileTest
 from .rates import RateRatioTest
+from .ratio import RatioABTest
 from .robust_mean import AsymptoticConfidenceSequence, CatoniConfidenceSequence
 from .shiryaev_roberts import ShiryaevRoberts
 from .sprt import ACCEPT_H0, REJECT_H0, SPRT
@@ -59,7 +66,11 @@ __all__ = [
     "Family",
     "Gaussian",
     "GaussianEmission",
+    "GroupSequentialLogRank",
+    "GroupSequentialMonitor",
+    "GroupSequentialProportions",
     "GroupSequentialTest",
+    "GroupSequentialTwoMeans",
     "HiddenMarkovFilter",
     "KalmanFilter",
     "KernelTwoSampleTest",
@@ -80,6 +91,7 @@ __all__ = [
     "QuantileEDetector",
     "QuantileTest",
     "RateRatioTest",
+    "RatioABTest",
     "RobustKalmanFilter",
     "SampleRatioMismatch",
     "SequentialSignTest",

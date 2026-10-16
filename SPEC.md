@@ -2,7 +2,7 @@
 
 Version 2 of the formats (`sequential-analysis.checkpoint/2`,
 `sequential-analysis.history/2`, `sequential-analysis.log/2`), as written
-by sequential-analysis 0.3.0 and its TypeScript executor (`ts/`).
+by sequential-analysis 0.4.0 and its TypeScript executor (`ts/`).
 
 This document is what another implementation needs to continue a run
 started by this one, or to hand one back: the shape of every stored value
@@ -23,6 +23,13 @@ All stored values are JSON. Numbers are IEEE 754 binary64.
 * **Integers.** An integer must lie within ±2^53. Beyond that, binary64
   no longer holds every integer, so such a value is refused rather than
   rounded.
+* **Reading.** An integer literal beyond ±2^53 in stored JSON denotes the
+  binary64 number it writes, as `JSON.parse` reads it. ECMAScript's
+  `Number.prototype.toString`, and therefore canonical JSON and
+  `JSON.stringify`, writes the float 1e17 as `100000000000000000`. A
+  reader in a language with separate integers (Python's `json`) MUST read
+  such a literal as that float. The refusal above applies to integers
+  that are meant as integers: counts, sequence numbers, step counts.
 * **Numbers in general.** NaN and the infinities have no JSON
   representation. A state or output that contains one is a numerical
   failure of the step (section 6).
@@ -108,8 +115,9 @@ number starts at `start`.
 * **sequence** holds observations back until the gap before them is
   filled. Then it delivers them in `seq` order. A duplicate is dropped
   and counted with `dedup`, and is an ordering error without it.
-* **strict** requires every `seq` to be the next one. Anything else is an
-  ordering error.
+* **strict** requires every `seq` to be the next one. A number below the
+  position is a duplicate: it is dropped and counted with `dedup`, and is
+  an ordering error without it. Any other number is an ordering error.
 
 Observations without `seq` are delivered at once under `arrival`, and
 are an ordering error under the other policies.
@@ -185,8 +193,11 @@ For each delivered observation, in order:
      and fail the run when `max_invalid_streak` is reached.
    * **`raise`** or **`raise:<name>`**: fail the run.
 4. Compute `(S', O) = F(S_{t-1}, X, R)`.
-5. If `S'` or `O` contains a non-finite number, fail the run. Nothing is
-   committed.
+5. If `S'` or `O` contains a non-finite number, or an integer-valued
+   count beyond ±2^53, fail the run. Nothing is committed. Such a value
+   could be neither checkpointed nor decoded exactly. The Python library
+   checks integers by type. An executor without separate integers checks
+   the fields its procedures declare as counts.
 6. Compute `digest_t = SHA-256(digest_{t-1} ‖ canonical(X))`. Here
    `digest_0 = SHA-256("sequential-analysis.history/2")`, and ‖
    concatenates the hex digest with the canonical text.
@@ -360,17 +371,19 @@ Sums and products are reproduced exactly when they are evaluated in the
 reference order. Every procedure's sums are left-to-right or
 Neumaier-compensated, never pairwise. Decisions are compared exactly.
 
-In the TypeScript executor, 19 of the 53 cases agree bit for bit. The
+In the TypeScript executor, 24 of the 65 cases agree bit for bit. The
 others differ in the last bits only: by at most 5e-14 relative, except
-in four cases. Every such difference was traced to `Math.log`, `log1p`,
+in six cases. Every such difference was traced to `Math.log`, `log1p`,
 `exp`, `expm1` or `cos` rounding differently from the C library. In
-three of the four a small value is a difference of much larger terms,
+five of the six a small value is a difference of much larger terms,
 so a last-bit difference in those terms is large relative to it: in
 `quantile_test` (1.6e-13) a log-evidence near zero is a difference of
 log-gamma terms of a few hundred; in `anytime_logrank_test_grow`
-(3.6e-13) the log e-value passes 0.0025, a sum of log likelihood ratio
-factors of both signs; in `rate_ratio_test` (7.7e-14) the log e-value
-of one grid point is 0.017, a sum of per-pair terms of both signs. In
+(3.6e-13), `anytime_logrank_test_stratified` (4.5e-13) and
+`anytime_logrank_test_stratified_grow` (1.4e-13) the log e-value passes
+0.0025, 0.001 and -0.017, sums of log likelihood ratio factors of both
+signs; in `rate_ratio_test` (7.7e-14) the log e-value of one grid point
+is 0.017, a sum of per-pair terms of both signs. In
 `catoni_confidence_sequence` (2.1e-13) the bounds are roots found to a
 relative 1e-12, and the search stops at a slightly different point. No
 decision differs.

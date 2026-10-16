@@ -257,10 +257,14 @@ export class AnytimeLinearModel extends BaseProcedure {
     requireState(s.mean.length === (this.intercept ? m : 0), "wrong number of means");
     requireState(s.comoment.length === (m * (m + 1)) / 2, "wrong size of the cross-product matrix");
     const a = this.unpack(s.comoment);
+    const tiny = s.n * 2 ** -1022;
     let diagonal = true, schwarz = true;
     for (let i = 0; i < m; i++) {
       if (!(a[i][i] >= 0.0)) diagonal = false;
-      for (let j = 0; j < i; j++) if (!(Math.abs(a[i][j]) <= Math.sqrt(a[i][i] * a[j][j]) * (1.0 + 1e-9))) schwarz = false;
+      for (let j = 0; j < i; j++) {
+        // a relative slack for rounding, an absolute one for products that underflowed (linear_model.py)
+        if (!(Math.abs(a[i][j]) <= Math.sqrt((a[i][i] + tiny) * (a[j][j] + tiny)) * (1.0 + 1e-9))) schwarz = false;
+      }
     }
     requireState(diagonal, "negative sum of squares");
     requireState(schwarz, "cross products violate the Cauchy-Schwarz inequality");

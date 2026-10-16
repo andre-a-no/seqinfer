@@ -48,6 +48,7 @@ Python is enough (see "Minimum versions" in CONTRIBUTING.md).
 pip install sequential-analysis          # from PyPI
 pip install .                            # from a checkout
 pip install "sequential-analysis[fast]"  # with numpy: faster optimal designs
+pip install "sequential-analysis[plot]"  # with matplotlib: plots of runs, designs and plans
 ```
 
 The package is imported as `sequential_analysis`.
@@ -79,12 +80,12 @@ nonparametric monitoring, and a group sequential trial.
 | Kind | Procedures |
 |---|---|
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
-| Group sequential trials | `GroupSequentialTest` (planned analyses; efficacy and non-binding futility boundaries; known or estimated variance) |
+| Group sequential trials | `GroupSequentialTest` (one mean), `GroupSequentialTwoMeans`, `GroupSequentialProportions`, `GroupSequentialLogRank` (two arms: continuous, binary and time-to-event endpoints; stratified log-rank), `GroupSequentialMonitor` (any statistic, alpha spent at the information actually reached); efficacy and non-binding futility boundaries; checked against rpact and R's survival package |
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
 | Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
 | Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
-| A/B tests | `BoundedABTest` (exact confidence sequence for an effect on any bounded metric), `RateRatioTest` (exact, events per unit of exposure, robust to a drifting common rate), `TwoProportionTest` (exact for any n, one- or two-sided; GROW e-values on blocks of units, 1.3–1.6 times the users of the asymptotic test; or universal inference for outcome-adaptive allocation), `SampleRatioMismatch` (is the traffic split as intended?), `ABTest` (difference of means with a pre-experiment covariate, CUPED-like, confidence sequence), `MultipleTests` and `e_bh` (many metrics or arms, false discovery rate at any stopping time), `MultipleTests.versus_control` |
-| Regression and survival | `AnytimeLinearModel` (anytime-valid F/t tests and confidence sequences for regression coefficients, covariate-adjusted effects; exact under Gaussian errors), `AnytimeLogRankTest` (anytime-valid log-rank test and hazard-ratio confidence sequence, any baseline hazard) |
+| A/B tests | `BoundedABTest` (exact confidence sequence for an effect on any bounded metric), `RateRatioTest` (exact, events per unit of exposure, robust to a drifting common rate), `TwoProportionTest` (exact for any n, one- or two-sided; GROW e-values on blocks of units, 1.3–1.6 times the users of the asymptotic test; or universal inference for outcome-adaptive allocation), `SampleRatioMismatch` (is the traffic split as intended?), `ABTest` (difference of means with a pre-experiment covariate, CUPED-like, confidence sequence), `RatioABTest` (ratio metrics such as revenue per session or click-through rate, and relative lift: delta method on user totals, asymptotic confidence sequences for the difference and the lift), `MultipleTests` and `e_bh` (many metrics or arms, false discovery rate at any stopping time), `MultipleTests.versus_control` |
+| Regression and survival | `AnytimeLinearModel` (anytime-valid F/t tests and confidence sequences for regression coefficients, covariate-adjusted effects; exact under Gaussian errors), `AnytimeLogRankTest` (anytime-valid log-rank test and hazard-ratio confidence sequence, any baseline hazard; stratified with `strata=`) |
 | Experiment programmes and planning | `OnlineFDR` (e-LOND: false discovery rate over a series of experiments decided one by one), `sequential_analysis.planning.simulate` (power and stopping-time distribution of any procedure) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts`; `MeanEDetector`, `QuantileEDetector` (nonparametric e-detectors: average run length to a false alarm at least the target for every distribution with the given mean or quantile) |
 | Filtering and estimation | `KalmanFilter` (any linear Gaussian state-space model: trends, autoregressions, tracking, control input; exact likelihood), `RobustKalmanFilter` (Student-t observation noise: outliers discounted), `HiddenMarkovFilter` (which hidden regime now; categorical, Gaussian or Poisson observations), `ParticleFilter` (any model you can simulate: stochastic volatility, heavy tails; unbiased likelihood), `LocalLevelKalman`, `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
@@ -185,6 +186,15 @@ and the maximum sample size for a target power. With
 spending. The O'Brien–Fleming boundaries for five looks reproduce the
 published 4.877, 3.357, 2.680, 2.290, 2.031.
 
+`design.at(fractions)` recomputes the boundaries for analyses that do not
+happen as planned. The design also gives maximum sample sizes for two
+means and two proportions, the number of events for a log-rank test, and
+the inflation factor.
+
+These agree with rpact: 56 designs, boundaries to 2·10⁻⁷, and 44 sample
+sizes. `tools/r_reference.R` computes the reference values, and a CI job
+regenerates them with R and compares again on every change.
+
 **Inputs**: `sequential_analysis.sources` binds values, files (`from_csv`, with
 explicit conversion), simulators and replayed logs to logical inputs.
 Transformations between topology and procedure, or between the stages of
@@ -280,6 +290,22 @@ holds:
   events and a run identifier generated when none is given differ from run
   to run; the history digest and every output do not.
 <!-- --8<-- [end:checkpoints] -->
+
+## Plotting
+
+`sequential_analysis.plotting` draws:
+
+* a run's e-process with its 1/α threshold and the stop;
+* a confidence sequence as a band;
+* group sequential boundaries with the observed path;
+* a change detector's statistic and alarm;
+* a filter's mean with ±2 sd, and the smoother's;
+* the distribution of stopping times from `planning.simulate`.
+
+Each function takes a `Recorder` (or the outputs) and returns the
+matplotlib Axes. matplotlib is needed only when a function is called.
+See the
+[plotting guide](https://andre-a-no.github.io/sequential-analysis/plotting/).
 
 ## Speed
 
