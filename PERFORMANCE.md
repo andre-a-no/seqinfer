@@ -47,75 +47,81 @@ Measured with `python tools/benchmark.py --markdown` on CPython 3.13.16, numpy 2
 
 | Procedure | Backend | after n | time per step | checkpointed state |
 |---|---|---|---|---|
-| SPRT | - | 100 | 2 µs | 87 B |
-| TwoSPRT | - | 100 | 3 µs | 139 B |
-| PlanTest | - | 100 | 2 µs | 88 B |
-| GroupSequentialTest | - | 100 | 2 µs | 152 B |
+| SPRT | - | 100 | 1 µs | 87 B |
+| TwoSPRT | - | 100 | 2 µs | 139 B |
+| PlanTest | - | 100 | 1 µs | 88 B |
+| GroupSequentialTest | - | 100 | 3 µs | 152 B |
 | GroupSequentialTwoMeans, estimated variance | - | 100 | 4 µs | 212 B |
 | GroupSequentialProportions | - | 100 | 4 µs | 119 B |
 | GroupSequentialLogRank | - | 100 | 4 µs | 146 B |
-| GroupSequentialMonitor, one analysis | - | 3 | 73.5 ms | 166 B |
-| GroupSequentialMonitor, one analysis | - | 10 | 583.9 ms | 414 B |
+| GroupSequentialMonitor, one analysis | - | 3 | 90.3 ms | 166 B |
+| GroupSequentialMonitor, one analysis | - | 10 | 515.0 ms | 414 B |
 | NormalMixtureSPRT | - | 100 | 2 µs | 127 B |
 | TMixtureSPRT | - | 100 | 3 µs | 171 B |
 | BettingMeanTest | - | 100 | 3 µs | 179 B |
 | SequentialSignTest | - | 100 | 3 µs | 177 B |
-| QuantileTest | - | 100 | 28 µs | 99 B |
-| QuantileTest | - | 10,000 | 86 µs | 106 B |
-| QuantileConfidenceSequence | - | 100 | 173 µs | 2150 B |
-| QuantileConfidenceSequence | - | 1,000 | 395 µs | 21 kB |
-| QuantileConfidenceSequence | - | 10,000 | 481 µs | 206 kB |
-| KernelTwoSampleTest | python | 100 | 39 µs | 4341 B |
-| KernelTwoSampleTest | python | 1,000 | 454 µs | 41 kB |
-| KernelTwoSampleTest | python | 10,000 | 5.7 ms | 413 kB |
-| KernelTwoSampleTest | numpy | 100 | 30 µs | 4341 B |
-| KernelTwoSampleTest | numpy | 1,000 | 77 µs | 41 kB |
-| KernelTwoSampleTest | numpy | 10,000 | 763 µs | 413 kB |
-| BettingConfidenceSequence | python | 100 | 772 µs | 40 kB |
-| BettingConfidenceSequence | numpy | 100 | 209 µs | 40 kB |
-| CatoniConfidenceSequence | python | 100 | 415 µs | 2167 B |
-| CatoniConfidenceSequence | python | 1,000 | 2.8 ms | 21 kB |
-| CatoniConfidenceSequence | python | 3,000 | 9.1 ms | 62 kB |
-| CatoniConfidenceSequence | numpy | 100 | 208 µs | 2167 B |
-| CatoniConfidenceSequence | numpy | 1,000 | 553 µs | 21 kB |
-| CatoniConfidenceSequence | numpy | 3,000 | 1.4 ms | 62 kB |
-| AsymptoticConfidenceSequence | - | 100 | 2 µs | 141 B |
+| QuantileTest | - | 100 | 26 µs | 99 B |
+| QuantileTest | - | 10,000 | 83 µs | 106 B |
+| QuantileConfidenceSequence | - | 100 | 153 µs | 2150 B |
+| QuantileConfidenceSequence | - | 1,000 | 277 µs | 21 kB |
+| QuantileConfidenceSequence | - | 10,000 | 730 µs | 206 kB |
+| KernelTwoSampleTest | python | 100 | 62 µs | 4341 B |
+| KernelTwoSampleTest | python | 1,000 | 532 µs | 41 kB |
+| KernelTwoSampleTest | python | 10,000 | 3.6 ms | 413 kB |
+| KernelTwoSampleTest | numpy | 100 | 27 µs | 4341 B |
+| KernelTwoSampleTest | numpy | 1,000 | 74 µs | 41 kB |
+| KernelTwoSampleTest | numpy | 10,000 | 683 µs | 413 kB |
+| BettingConfidenceSequence | python | 100 | 443 µs | 40 kB |
+| BettingConfidenceSequence | numpy | 100 | 127 µs | 40 kB |
+| CatoniConfidenceSequence | python | 100 | 255 µs | 2167 B |
+| CatoniConfidenceSequence | python | 1,000 | 2.6 ms | 21 kB |
+| CatoniConfidenceSequence | python | 3,000 | 8.2 ms | 62 kB |
+| CatoniConfidenceSequence | numpy | 100 | 191 µs | 2167 B |
+| CatoniConfidenceSequence | numpy | 1,000 | 560 µs | 21 kB |
+| CatoniConfidenceSequence | numpy | 3,000 | 1.3 ms | 62 kB |
+| AsymptoticConfidenceSequence | - | 100 | 1 µs | 141 B |
 | CUSUM | - | 100 | 1 µs | 38 B |
 | ShiryaevRoberts | - | 100 | 1 µs | 56 B |
-| MeanEDetector, both directions | - | 100 | 7 µs | 499 B |
-| QuantileEDetector, both directions | - | 100 | 7 µs | 499 B |
+| MeanEDetector, both directions | - | 100 | 6 µs | 499 B |
+| QuantileEDetector, both directions | - | 100 | 6 µs | 499 B |
 | LocalLevelKalman | - | 100 | 1 µs | 67 B |
-| KalmanFilter, 2 states, 2 observations | - | 100 | 83 µs | 236 B |
-| KalmanFilter, 4 states, 2 observations | - | 100 | 154 µs | 522 B |
-| RobustKalmanFilter (local linear trend) | - | 100 | 621 µs | 199 B |
+| KalmanFilter, 2 states, 2 observations | - | 100 | 65 µs | 236 B |
+| KalmanFilter, 4 states, 2 observations | - | 100 | 186 µs | 522 B |
+| RobustKalmanFilter (local linear trend) | - | 100 | 551 µs | 199 B |
 | HiddenMarkovFilter, 3 states | - | 100 | 5 µs | 162 B |
-| OnlineHMM, 3 states, Gaussian | - | 100 | 63 µs | 1715 B |
-| BayesianChangePoint (normal-gamma) | - | 100 | 168 µs | 7400 B |
-| BayesianChangePoint (normal-gamma) | - | 1,000 | 1.7 ms | 75 kB |
-| BayesianChangePoint (normal-gamma) | - | 3,000 | 4.5 ms | 153 kB |
-| BootstrapParticleFilter, 256 particles | - | 100 | 390 µs | 5417 B |
-| ParticleFilter, 1000 particles | python | 100 | 1.5 ms | 41 kB |
-| ParticleFilter, 1000 particles | numpy | 100 | 152 µs | 41 kB |
+| OnlineHMM, 3 states, Gaussian | - | 100 | 58 µs | 1715 B |
+| ExponentialSmoothing, trend and season 12, fixed, 12 ahead | - | 100 | 10 µs | 493 B |
+| ExponentialSmoothing, learning sigma (t intervals) | - | 100 | 318 µs | 217 B |
+| AutoRegressive, order 5, learnt | - | 100 | 367 µs | 1128 B |
+| averaged_smoothing, trend and season 7 (63 models) | - | 100 | 7.5 ms | 26 kB |
+| ConformalForecast around learnt AutoRegressive(5) | - | 100 | 411 µs | 1275 B |
+| ForecastComparison | - | 100 | 3 µs | 150 B |
+| BayesianChangePoint (normal-gamma) | - | 100 | 160 µs | 7400 B |
+| BayesianChangePoint (normal-gamma) | - | 1,000 | 1.6 ms | 75 kB |
+| BayesianChangePoint (normal-gamma) | - | 3,000 | 3.9 ms | 153 kB |
+| BootstrapParticleFilter, 256 particles | - | 100 | 321 µs | 5417 B |
+| ParticleFilter, 1000 particles | python | 100 | 1.3 ms | 41 kB |
+| ParticleFilter, 1000 particles | numpy | 100 | 132 µs | 41 kB |
 | ParticleFilter, 20000 particles | python | 20 | 30.6 ms | 822 kB |
-| ParticleFilter, 20000 particles | numpy | 20 | 2.6 ms | 822 kB |
+| ParticleFilter, 20000 particles | numpy | 20 | 3.0 ms | 822 kB |
 | SampleRatioMismatch, 3 arms | - | 100 | 3 µs | 150 B |
-| TwoProportionTest | - | 100 | 7 µs | 275 B |
-| ABTest with covariate | - | 100 | 4 µs | 325 B |
-| MultipleTests, 2 arms vs control | - | 100 | 32 µs | 622 B |
-| BoundedABTest, grid 1000 | python | 100 | 444 µs | 41 kB |
-| BoundedABTest, grid 1000 | numpy | 100 | 140 µs | 41 kB |
+| TwoProportionTest | - | 100 | 6 µs | 275 B |
+| ABTest with covariate | - | 100 | 3 µs | 325 B |
+| MultipleTests, 2 arms vs control | - | 100 | 28 µs | 622 B |
+| BoundedABTest, grid 1000 | python | 100 | 382 µs | 41 kB |
+| BoundedABTest, grid 1000 | numpy | 100 | 127 µs | 41 kB |
 | RatioABTest | - | 100 | 5 µs | 254 B |
-| RateRatioTest, grid 200 | - | 100 | 51 µs | 4873 B |
-| AnytimeLinearModel, 2 covariates | - | 100 | 13 µs | 348 B |
-| AnytimeLogRankTest, with confidence sequence | - | 100 | 478 µs | 5336 B |
+| RateRatioTest, grid 200 | - | 100 | 45 µs | 4873 B |
+| AnytimeLinearModel, 2 covariates | - | 100 | 12 µs | 348 B |
+| AnytimeLogRankTest, with confidence sequence | - | 100 | 429 µs | 5336 B |
 | OnlineFDR (e-LOND) | - | 100 | 1 µs | 28 B |
-| MeanDifference | - | 100 | 2 µs | 139 B |
+| MeanDifference | - | 100 | 1 µs | 139 B |
 | EMA | - | 100 | 1 µs | 40 B |
 
 Offline smoothing (sequential_analysis.smoothing), over a whole series:
 
 | Function | series length | time per time point |
 |---|---|---|
-| kalman_smoother, local linear trend | 5,000 | 114 µs |
-| forward_backward, 3 states | 5,000 | 11 µs |
-| viterbi, 3 states | 5,000 | 3 µs |
+| kalman_smoother, local linear trend | 5,000 | 119 µs |
+| forward_backward, 3 states | 5,000 | 12 µs |
+| viterbi, 3 states | 5,000 | 2 µs |

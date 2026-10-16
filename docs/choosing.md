@@ -86,6 +86,19 @@ same data.
 | anything you can simulate | `ParticleFilter` |
 | smoothing after the fact | `sequential_analysis.smoothing` |
 
+## Forecasting
+
+| Situation | Procedure |
+|---|---|
+| a history to fit, the process stable | `fit_ets` (level, trend, season) or `fit_ar`, then forecast with the fitted model |
+| no history, or a process that changes | `averaged_smoothing` (learns the smoothing parameters), `AutoRegressive` without coefficients, with `forgetting` below 1 to follow drift |
+| several candidate models | `ModelAveraging` |
+| intervals that must hold whatever the data | `ConformalForecast` around any of them |
+| is one forecaster better than another? | `ForecastComparison`, valid at every time |
+
+The [forecasting tutorial](tutorials/forecasting.md) runs both kinds of
+training on the same data, before and after a change.
+
 ## Means of data that are not normal
 
 * **Bounded data:** `BettingConfidenceSequence`, exact.

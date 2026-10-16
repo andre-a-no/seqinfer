@@ -36,6 +36,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     AnytimeLinearModel,
     AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
+    AutoRegressive,
     BayesianChangePoint,
     Bernoulli,
     BetaBernoulliModel,
@@ -45,7 +46,10 @@ from sequential_analysis.procedures import (  # noqa: E402
     BoundedABTest,
     CategoricalEmission,
     CatoniConfidenceSequence,
+    ConformalForecast,
     Exponential,
+    ExponentialSmoothing,
+    ForecastComparison,
     Gaussian,
     GaussianEmission,
     GroupSequentialLogRank,
@@ -60,6 +64,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     LocalLevelKalman,
     MeanDifference,
     MeanEDetector,
+    ModelAveraging,
     MultipleTests,
     MultivariateGaussianEmission,
     NormalGammaModel,
@@ -86,6 +91,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_smoothing,
 )
 
 OUT = ROOT / "conformance"
@@ -486,7 +492,56 @@ def cases():
                                       StudentTEmission((0.0, 2.0), (1.0, 1.0), 4.0)), burn_in=25), None,
          regimes(120, lambda k: rv.gauss(3.0 * k, 1.0) + (30.0 if rv.random() < 0.04 else 0.0))),
     ]
-    return existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
+    rf = random.Random(20261017)  # forecasting's own stream
+
+    def seasonal_rows(n, period, trend, noise):
+        level, out = 20.0, []
+        for i in range(n):
+            level += rf.gauss(0.0, 0.3)
+            out.append({"y": level + trend * i + 2.0 * math.sin(2.0 * math.pi * i / period) + rf.gauss(0.0, noise)})
+        return out
+
+    def ar_rows(n, phi, sd):
+        ys = [0.0] * len(phi)
+        for _ in range(n):
+            v = 0.5
+            for i, p in enumerate(phi):
+                v += p * ys[-1 - i]
+            ys.append(v + rf.gauss(0.0, sd))
+        return [{"y": y} for y in ys[len(phi):]]
+
+    def loss_rows(n):
+        return [{"a": min(3.0, abs(rf.gauss(0.0, 1.0))), "b": min(3.0, abs(rf.gauss(0.0, 1.2)))} for _ in range(n)]
+
+    forecasting = [
+        ("ets_fixed_seasonal",
+         ExponentialSmoothing(0.3, beta=0.02, gamma=0.1, trend="additive", period=6, initial_level=20.0,
+                              initial_trend=0.1, initial_seasonal=(0.0, 1.7, 1.7, 0.0, -1.7, -1.7), sigma=1.1,
+                              horizon=7), None, seasonal_rows(60, 6, 0.1, 1.0)),
+        ("ets_learnt_damped",
+         ExponentialSmoothing(0.4, beta=0.1, phi=0.9, trend="damped", horizon=3, coverage=0.8), None,
+         seasonal_rows(50, 4, 0.2, 0.7)),
+        ("ar_fixed", AutoRegressive(2, coefficients=(0.6, -0.2), intercept=0.5, sigma=0.9, horizon=5), None,
+         ar_rows(50, (0.6, -0.2), 0.9)),
+        ("ar_learnt_forgetting", AutoRegressive(3, forgetting=0.97, ridge=0.1, horizon=4), None,
+         ar_rows(80, (0.5, 0.2, -0.3), 1.0)),
+        ("model_averaging",
+         ModelAveraging([ExponentialSmoothing(0.2, horizon=3), ExponentialSmoothing(0.6, horizon=3),
+                         AutoRegressive(2, horizon=3)], weights=(1.0, 1.0, 2.0), forgetting=0.95), None,
+         ar_rows(70, (0.7,), 1.0)),
+        ("averaged_smoothing",
+         averaged_smoothing(trend="additive", period=4, alphas=(0.1, 0.4), betas=(0.1,), gammas=(0.05, 0.3),
+                            horizon=2), None, seasonal_rows(50, 4, 0.1, 0.8)),
+        ("conformal_forecast",
+         ConformalForecast(AutoRegressive(1, horizon=3), alpha=0.2, step_size=0.1), None,
+         ar_rows(70, (0.8,), 1.0)),
+        ("conformal_unnormalized",
+         ConformalForecast(ExponentialSmoothing(0.5, sigma=1.0, horizon=2), normalize=False, initial=1.5), None,
+         seasonal_rows(40, 5, 0.0, 1.5)),
+        ("forecast_comparison", ForecastComparison((0.0, 3.0), alpha=0.1), None, loss_rows(120)),
+    ]
+    return (existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
+            + forecasting)
 
 
 def vector(label, procedure, seed, inputs):

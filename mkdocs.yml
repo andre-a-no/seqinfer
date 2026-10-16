@@ -50,6 +50,7 @@ nav:
       - Survival trial, monitored after every event: tutorials/survival.md
       - Process monitoring and change detection: tutorials/monitoring.md
       - Regimes with hidden Markov models: tutorials/regimes.md
+      - Forecasting, fixed and continuous training: tutorials/forecasting.md
       - A programme of experiments: tutorials/experiment-programme.md
   - Guides:
       - Checkpoints, logs and backends: checkpoints.md
@@ -69,4 +70,5 @@ nav:
       - A/B tests: reference/ab.md
       - Change detection: reference/detection.md
       - Filters and smoothers: reference/filters.md
+      - Forecasting: reference/forecasting.md
       - Design and planning: reference/design.md

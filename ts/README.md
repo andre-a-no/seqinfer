@@ -12,10 +12,10 @@ specified in SPEC.md:
 ## Agreement with the Python library
 
 * **History digests and random states** are identical.
-* **Outputs and states** are identical for 24 of the 70 conformance
-  cases. For the others they agree to 5e-14 relative, and to 4.5e-13 in
-  seven cases (a value near zero that is a difference of much larger
-  terms, in six; bounds found by a root search, in one): V8 rounds `Math.log`, `log1p`, `exp`, `expm1` and
+* **Outputs and states** are identical for 27 of the 79 conformance
+  cases. For the others they agree to 5e-14 relative, and to 5.9e-13 in
+  nine cases (a value near zero that is a difference of much larger
+  terms, in six; bounds found by a root search, in three): V8 rounds `Math.log`, `log1p`, `exp`, `expm1` and
   `cos` differently from the C library.
 * **Decisions** never differ.
 * **Round trip.** A run checkpointed in Python, continued here and

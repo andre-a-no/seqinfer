@@ -87,6 +87,43 @@ to choosing a method.
   the regime live with an alarm, smooth and decode afterwards, learn on
   the stream.
 
+### Added: forecasting, with fixed or continuous training
+- `ExponentialSmoothing`: additive-error ETS with no, additive or damped
+  trend and an optional additive season. It forecasts 1..`horizon` steps
+  ahead with intervals. With the same parameters, its one-step errors,
+  forecasts, intervals and likelihood agree with statsmodels' `ETSModel`
+  to 1e-9 (tested). With `sigma` unknown it learns the noise level, and
+  its intervals are then exact Student t ones.
+- `AutoRegressive`: AR(p) forecasts with intervals. With coefficients
+  given, they are AutoReg's. Without, it learns the coefficients by
+  Bayesian regression on the lags, with optional forgetting to follow
+  drift. The coefficients are then the exponentially weighted ridge
+  regression (tested), and the one-step forecast is exactly Student t.
+- `sequential_analysis.forecasting`:
+  - `fit_ets`: maximum likelihood, with the initial states profiled out
+    exactly by least squares. It reaches at least statsmodels'
+    likelihood (tested).
+  - `fit_ar`: conditional least squares, equal to AutoReg.
+
+  Both return the model and its state at the end of the history.
+- `ModelAveraging` and `averaged_smoothing`: Bayesian model averaging of
+  forecasters, with optional forgetting (dynamic model averaging). Over a
+  grid of smoothing parameters, it learns them on the stream. Its weights
+  are the exact posterior model probabilities (tested).
+- `ConformalForecast`: distribution-free intervals around any
+  forecaster, by online conformal quantile tracking. For any data, the
+  fraction of intervals that missed equals alpha up to a term that
+  vanishes at rate 1/n (the identity is tested).
+- `ForecastComparison`: an anytime-valid confidence sequence for the
+  difference in expected loss of two forecasters (Choe and Ramdas 2024,
+  with the empirical Bernstein stitched boundary of Howard et al. 2021),
+  with no stationarity assumed.
+- Every forecaster scores each value against its forecast: the error,
+  the log predictive density, and their sum, the prequential
+  log-likelihood.
+- Tutorial "Forecasting, fixed and continuous training". Reference page.
+  TypeScript ports.
+
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
   or later): `plot_e_process`, `plot_confidence_sequence`,

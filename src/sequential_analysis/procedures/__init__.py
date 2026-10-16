@@ -9,6 +9,14 @@ from .cusum import CUSUM
 from .edetector import MeanEDetector, QuantileEDetector
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
+from .forecast import (
+    AutoRegressive,
+    ConformalForecast,
+    ExponentialSmoothing,
+    ForecastComparison,
+    ModelAveraging,
+    averaged_smoothing,
+)
 from .group_sequential import (
     GroupSequentialLogRank,
     GroupSequentialMonitor,
@@ -62,6 +70,7 @@ __all__ = [
     "AnytimeLinearModel",
     "AnytimeLogRankTest",
     "AsymptoticConfidenceSequence",
+    "AutoRegressive",
     "BayesianChangePoint",
     "Bernoulli",
     "BetaBernoulliModel",
@@ -71,8 +80,11 @@ __all__ = [
     "BoundedABTest",
     "CategoricalEmission",
     "CatoniConfidenceSequence",
+    "ConformalForecast",
     "Exponential",
+    "ExponentialSmoothing",
     "Family",
+    "ForecastComparison",
     "Gaussian",
     "GaussianEmission",
     "GroupSequentialLogRank",
@@ -87,6 +99,7 @@ __all__ = [
     "LocalLevelKalman",
     "MeanDifference",
     "MeanEDetector",
+    "ModelAveraging",
     "MultipleTests",
     "MultivariateGaussianEmission",
     "NormalGammaModel",
@@ -114,6 +127,7 @@ __all__ = [
     "TMixtureSPRT",
     "TwoProportionTest",
     "TwoSPRT",
+    "averaged_smoothing",
     "e_bh",
     "emission_from_spec",
     "kiefer_weiss_point",

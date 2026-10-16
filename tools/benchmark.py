@@ -37,6 +37,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     AnytimeLinearModel,
     AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
+    AutoRegressive,
     BayesianChangePoint,
     Bernoulli,
     BettingConfidenceSequence,
@@ -44,6 +45,9 @@ from sequential_analysis.procedures import (  # noqa: E402
     BootstrapParticleFilter,
     BoundedABTest,
     CatoniConfidenceSequence,
+    ConformalForecast,
+    ExponentialSmoothing,
+    ForecastComparison,
     Gaussian,
     GaussianEmission,
     GroupSequentialLogRank,
@@ -77,6 +81,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_smoothing,
 )
 from sequential_analysis.rng import SplitMix64  # noqa: E402
 from sequential_analysis.smoothing import forward_backward, kalman_smoother, viterbi  # noqa: E402
@@ -100,6 +105,10 @@ def observation(rnd):
 
 def pair(rnd):
     return {"a": rnd.gauss(0.0, 1.0), "b": rnd.gauss(0.0, 1.0)}
+
+
+def loss_pair(rnd):
+    return {"a": rnd.random(), "b": rnd.random()}
 
 
 def two_d(rnd):
@@ -204,6 +213,17 @@ CASES = [
      lambda b: OnlineHMM(HiddenMarkovFilter((1 / 3,) * 3, ((0.9, 0.05, 0.05), (0.05, 0.9, 0.05), (0.05, 0.05, 0.9)),
                                             GaussianEmission((-1.0, 0.0, 1.0), (1.0, 1.0, 1.0))), burn_in=10),
      observation, (100,), False),
+    ("ExponentialSmoothing, trend and season 12, fixed, 12 ahead",
+     lambda b: ExponentialSmoothing(0.3, beta=0.01, gamma=0.1, trend="additive", period=12, initial_level=0.0,
+                                    sigma=1.0, horizon=12), observation, (100,), False),
+    ("ExponentialSmoothing, learning sigma (t intervals)", lambda b: ExponentialSmoothing(0.3), observation, (100,),
+     False),
+    ("AutoRegressive, order 5, learnt", lambda b: AutoRegressive(5, forgetting=0.99), observation, (100,), False),
+    ("averaged_smoothing, trend and season 7 (63 models)",
+     lambda b: averaged_smoothing(trend="additive", period=7), observation, (100,), False),
+    ("ConformalForecast around learnt AutoRegressive(5)",
+     lambda b: ConformalForecast(AutoRegressive(5, forgetting=0.99)), observation, (100,), False),
+    ("ForecastComparison", lambda b: ForecastComparison((0.0, 1.0)), loss_pair, (100,), False),
     ("BayesianChangePoint (normal-gamma)", lambda b: BayesianChangePoint(NormalGammaModel(), 0.01), normal,
      (100, 1000, 3000), False),
     ("BootstrapParticleFilter, 256 particles", lambda b: BootstrapParticleFilter(0.1, 1.0, particles=256),

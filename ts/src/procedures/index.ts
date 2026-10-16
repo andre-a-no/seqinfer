@@ -11,6 +11,10 @@ export { MeanEDetector, QuantileEDetector } from "./edetector.js";
 export { EMA } from "./ema.js";
 export { Bernoulli, Exponential, type Family, familyFromSpec, Gaussian, Poisson } from "./families.js";
 export {
+  AutoRegressive, averagedSmoothing, type AveragedSmoothingOptions, ConformalForecast, ExponentialSmoothing, ForecastComparison, Forecaster,
+  logDensity, ModelAveraging, type Predictive, standardCdf, stitchedBoundary,
+} from "./forecast.js";
+export {
   efficacyBounds, futilityBounds, GroupSequentialLogRank, GroupSequentialMonitor, GroupSequentialProportions, GroupSequentialTest,
   GroupSequentialTwoMeans, normalInvCdf,
   spendingFunction,
