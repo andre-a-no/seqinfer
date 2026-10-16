@@ -176,7 +176,8 @@ const LOG_SQRT_2PI = 0.5 * Math.log(2.0 * Math.PI);
 const HUGE_DF = 1e15;
 const TINY = 1e-280;
 
-function lgammaRatio(z: number, a: number): number {
+/** log Gamma(z + a) - log Gamma(z), without the cancellation of two large lgammas (distributions.py _lgamma_ratio). */
+export function lgammaRatio(z: number, a: number): number {
   if (z < 100.0) return lgamma(z + a) - lgamma(z);
   const w = z + a;
   const iw = 1.0 / w, iz = 1.0 / z;

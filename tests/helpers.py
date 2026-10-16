@@ -51,6 +51,7 @@ from sequential_analysis.procedures import (
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
+    OnlineHMM,
     ParticleFilter,
     PlanTest,
     Poisson,
@@ -512,6 +513,15 @@ def cases():
             record_stream([{"arm": 2 if i % 11 == 5 else i % 2, "d": float(i % 4),
                             "y": (i % 4) * (1.0 + ((i * 7919) % 101) / 50 + 0.4 * (i % 2))} for i in range(n)],
                           ("arm", "y", "d")),
+            None,
+        ),
+        (
+            "online_hmm",
+            lambda: OnlineHMM(HiddenMarkovFilter([0.5, 0.5], [[0.9, 0.1], [0.2, 0.8]],
+                                                 GaussianEmission([0.0, 1.0], [1.0, 2.0])), burn_in=15),
+            Independent,
+            Delivery,
+            list(from_values("y", [math.sin(1.3 * i) * (1 + 2 * ((i // 10) % 2)) for i in range(n)])),
             None,
         ),
         (

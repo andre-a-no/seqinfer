@@ -81,7 +81,8 @@ same data.
 | Model | Procedure |
 |---|---|
 | linear Gaussian (trends, autoregressions, tracking) | `KalmanFilter`; outliers: `RobustKalmanFilter` |
-| a few hidden regimes | `HiddenMarkovFilter` |
+| a few hidden regimes, model known | `HiddenMarkovFilter` |
+| a few hidden regimes, parameters to learn | `fit_hmm` on a history, or `OnlineHMM` on the stream ([tutorial](tutorials/regimes.md)) |
 | anything you can simulate | `ParticleFilter` |
 | smoothing after the fact | `sequential_analysis.smoothing` |
 

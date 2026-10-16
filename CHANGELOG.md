@@ -9,8 +9,9 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 ## 0.4.0 — 2026-10-16
 
 Group sequential trials for any endpoint, checked against rpact and R's
-survival package; ratio metrics; stratified log-rank tests; plots;
-property-based tests; a guide to choosing a method.
+survival package; ratio metrics; stratified log-rank tests; hidden Markov
+models that learn their parameters; plots; property-based tests; a guide
+to choosing a method.
 
 ### Added: group sequential trials for any endpoint
 - `GroupSequentialTwoMeans` (continuous endpoint in two arms, known
@@ -59,6 +60,23 @@ property-based tests; a guide to choosing a method.
 - Corrected numbers in the time-scale caveat of the log-rank test, from
   new simulations: 21% (not 24%) for Weibull shape 0.3, 14% (not 5%) for
   shape 0.5.
+
+### Added: hidden Markov models that learn their parameters
+- `sequential_analysis.hmm_fit.fit_hmm`: maximum-likelihood parameters of
+  an HMM from a recorded series (Baum–Welch), with random restarts whose
+  best run is labelled like the starting model. One EM step agrees with
+  hmmlearn to 1e-10. The log-likelihood never decreases, and the fit is a
+  fixed point of EM.
+- `OnlineHMM`: filtering and online EM (Cappé 2011) at once, in constant
+  memory, for a stream that cannot be recorded first. Polyak–Ruppert
+  averaging of the statistics brings the noise of its estimates down to
+  that of the batch fit. With step sizes 1/t, its statistics equal the
+  batch E-step's averages exactly (tested). TypeScript port.
+- Every emission family gives its sufficient statistics and its M-step
+  (`statistics`, `from_statistics`).
+- Tutorial "Regimes with hidden Markov models": fit on a history, follow
+  the regime live with an alarm, smooth and decode afterwards, learn on
+  the stream.
 
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3

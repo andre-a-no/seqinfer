@@ -21,6 +21,7 @@ from .kalman import LocalLevelKalman
 from .linear_model import AnytimeLinearModel
 from .mixture import NormalMixtureSPRT
 from .online_fdr import OnlineFDR
+from .online_hmm import OnlineHMM
 from .particle import BootstrapParticleFilter
 from .particle_filter import (
     LinearGaussianModel,
@@ -82,6 +83,7 @@ __all__ = [
     "NormalGammaModel",
     "NormalMixtureSPRT",
     "OnlineFDR",
+    "OnlineHMM",
     "ParticleFilter",
     "PlanTest",
     "Poisson",

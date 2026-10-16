@@ -49,6 +49,7 @@ nav:
       - Group sequential trial: tutorials/group-sequential.md
       - Survival trial, monitored after every event: tutorials/survival.md
       - Process monitoring and change detection: tutorials/monitoring.md
+      - Regimes with hidden Markov models: tutorials/regimes.md
       - A programme of experiments: tutorials/experiment-programme.md
   - Guides:
       - Checkpoints, logs and backends: checkpoints.md

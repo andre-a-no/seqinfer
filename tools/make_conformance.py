@@ -64,6 +64,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
+    OnlineHMM,
     ParticleFilter,
     PlanTest,
     Poisson,
@@ -429,7 +430,35 @@ def cases():
         ("ratio_ab_test_means", RatioABTest(denominator=False, start=20), None,
          [{"arm": r["arm"], "y": r["y"]} for r in ratio_rows(100, 0.5)]),
     ]
-    return existing + added + ported + later + round_four + stratified_logrank + ratio
+
+    def regime_rows(n, sds, stay):
+        rows, z = [], 0
+        for _ in range(n):
+            if rnd.random() > stay[z]:
+                z = 1 - z
+            rows.append({"y": rnd.gauss(0.0, sds[z])})
+        return rows
+
+    def count_rows(n, rates, stay):
+        rows, z = [], 0
+        for _ in range(n):
+            if rnd.random() > stay[z]:
+                z = 1 - z
+            k, p, limit = 0, rnd.random(), math.exp(-rates[z])
+            while p > limit:
+                p *= rnd.random()
+                k += 1
+            rows.append({"y": k})
+        return rows
+
+    guess = HiddenMarkovFilter([0.5, 0.5], [[0.9, 0.1], [0.1, 0.9]], GaussianEmission([0.0, 0.0], [0.5, 2.5]))
+    counts = HiddenMarkovFilter([0.5, 0.5], [[0.8, 0.2], [0.2, 0.8]], PoissonEmission([0.5, 4.0]))
+    online_hmm = [
+        ("online_hmm", OnlineHMM(guess, burn_in=30), None, regime_rows(160, (0.6, 2.0), (0.97, 0.93))),
+        ("online_hmm_poisson_last_iterate", OnlineHMM(counts, kappa=0.8, burn_in=20, average=False), None,
+         count_rows(120, (1.0, 6.0), (0.9, 0.85))),
+    ]
+    return existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm
 
 
 def vector(label, procedure, seed, inputs):

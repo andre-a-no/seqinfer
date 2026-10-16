@@ -20,6 +20,7 @@ export { LocalLevelKalman } from "./kalman.js";
 export { AnytimeLinearModel } from "./linear_model.js";
 export { NormalMixtureSPRT } from "./mixture.js";
 export { defaultGamma, OnlineFDR } from "./online_fdr.js";
+export { OnlineHMM } from "./online_hmm.js";
 export { BootstrapParticleFilter } from "./particle.js";
 export {
   LinearGaussianModel, ParticleFilter, type StateSpaceModel, stateSpaceModelFromSpec, StochasticVolatilityModel, StudentTLocalLevel,
