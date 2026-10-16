@@ -3,6 +3,7 @@
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Reference procedures.  Each one is only a transition function and its state."""
 from .ab import ABTest, BoundedABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e_bh
+from .allocation import ThompsonAllocation
 from .betting import BettingConfidenceSequence, BettingMeanTest, SequentialSignTest
 from .bocpd import BayesianChangePoint, BetaBernoulliModel, NormalGammaModel, PoissonGammaModel
 from .cusum import CUSUM
@@ -128,6 +129,7 @@ __all__ = [
     "StudentTEmission",
     "StudentTLocalLevel",
     "TMixtureSPRT",
+    "ThompsonAllocation",
     "TwoProportionTest",
     "TwoSPRT",
     "averaged_counts",

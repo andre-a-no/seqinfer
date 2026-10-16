@@ -26,12 +26,13 @@ approximately in long runs.
 | several covariates, regression adjustment | `AnytimeLinearModel` | exact under Gaussian errors | — |
 | ratio metric (revenue per session, clicks per impression), relative lift | `RatioABTest` | asymptotic, delta method on the randomised unit | [A/B test §8](tutorials/ab-test.md) |
 | events per unit of exposure | `RateRatioTest` | exact for Poisson counts, robust to a drifting rate | [A/B test §7](tutorials/ab-test.md) |
-| median, 90th percentile (latency, heavy tails) | `QuantileTest`, `QuantileConfidenceSequence` | exact, no assumption on the distribution | — |
+| median, 90th percentile of one group (a latency target) | `QuantileTest`, `QuantileConfidenceSequence` | exact, no assumption on the distribution; one group only (a difference of two groups' medians is not covered yet) | — |
 | "are A and B distributed the same at all?" | `KernelTwoSampleTest` | exact | — |
 | traffic split as intended? | `SampleRatioMismatch` | exact | [A/B test](tutorials/ab-test.md) |
 | many metrics or arms at once | `MultipleTests` (e-BH) | false discovery rate at any stopping time | [A/B test](tutorials/ab-test.md) |
 | a series of experiments decided one by one | `OnlineFDR` (e-LOND) | false discovery rate over the series | [programme](tutorials/experiment-programme.md) |
 | how long will it take, how much power? | `planning.simulate` | simulation | [A/B test §9](tutorials/ab-test.md) |
+| send more traffic to the better arm during the test | `ThompsonAllocation` (shares, expected-loss deployment rule); test with `TwoProportionTest(method="universal")` or `BoundedABTest(propensity_input=...)` | the rule bounds expected loss; those tests stay exact under any split | [A/B test §10](tutorials/ab-test.md) |
 
 ## Clinical trials
 

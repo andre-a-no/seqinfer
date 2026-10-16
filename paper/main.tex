@@ -1778,7 +1778,7 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes forty-eight procedures. For testing simple
+The implementation includes forty-nine procedures. For testing simple
 hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
 precomputed sampling plans. For clinical trials: group sequential
 tests with efficacy and non-binding futility boundaries for one mean and
@@ -1892,7 +1892,11 @@ conformal intervals by online quantile
 tracking~\cite{gibbs2021,angelopoulos2023}, whose long-run coverage holds
 for any sequence; and an anytime-valid comparison of two
 forecasters~\cite{choe2024} by the empirical Bernstein confidence
-sequence of~\cite{howard2021}. Likelihood-ratio procedures take one of four
+sequence of~\cite{howard2021}. For experiments that redirect traffic as they run, an
+allocation rule by Thompson sampling~\cite{thompson1933} with a floor per
+arm gives each arm's share and the expected loss of deploying it, and the
+exact test for bounded metrics weights each unit by the shares it was
+assigned with, so that it stays valid under any allocation rule. Likelihood-ratio procedures take one of four
 families (normal with known variance, Bernoulli, Poisson, exponential).
 A design module computes operating characteristics and optimal plans
 for Bernoulli, Poisson, normal and exponential data, for a fixed or the
@@ -1925,11 +1929,11 @@ trusted, so that a damaged or foreign one is reported as such.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for fifty-three combinations of procedure and
+non-interference are checked for fifty-five combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$746$ tests in total, including property-based tests that generate histories, split points and values; the remainder cover transactional updates,
+$763$ tests in total, including property-based tests that generate histories, split points and values; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
@@ -1943,9 +1947,9 @@ by a script in the repository from a fixed seed.
 The formats are specified in the repository (\code{SPEC.md}), and a
 second executor in TypeScript implements the run, the delivery policies,
 the topologies, checkpoints and the observation log, and all
-forty-eight procedures (with the pure-Python backend where a procedure
+forty-nine procedures (with the pure-Python backend where a procedure
 offers numpy), rebuilt from the identities recorded in checkpoints. It
-reproduces all eighty-seven conformance vectors: twenty-eight bit for bit,
+reproduces all ninety-two conformance vectors: twenty-eight bit for bit,
 the others to a relative $5.9\cdot 10^{-13}$, every difference traced to
 the last bit of \code{log}, \code{log1p}, \code{exp}, \code{expm1} or \code{cos},
 which the C library and the JavaScript engine round differently, and
@@ -1986,7 +1990,7 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers forty-eight procedures; optimal
+The reference implementation covers forty-nine procedures; optimal
 design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the

@@ -89,6 +89,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     StochasticVolatilityModel,
     StudentTEmission,
     StudentTLocalLevel,
+    ThompsonAllocation,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
@@ -592,8 +593,49 @@ def cases():
          ModelAveraging([ExponentialSmoothing(0.3, transform="log", horizon=2),
                          ExponentialSmoothing(0.3, horizon=2)]), None, positive_rows(40)),
     ]
+    rt = random.Random(20261019)  # traffic redirection's own stream
+
+    def redirected(n, rates, allocator, normal=False):
+        state, rows = allocator.initial_state(), []
+        for _ in range(n):
+            shares = list(state.shares)
+            u, arm, acc = rt.random(), len(shares) - 1, 0.0
+            for k, sh in enumerate(shares):
+                acc += sh
+                if u < acc:
+                    arm = k
+                    break
+            y = rt.gauss(rates[arm], 1.0) if normal else (1 if rt.random() < rates[arm] else 0)
+            rows.append({"arm": arm, "y": y, "p": shares})
+            state, _ = allocator.step(state, {"arm": arm, "y": y})
+        return rows
+
+    traffic = [
+        ("thompson_allocation",
+         ThompsonAllocation(3, floor=0.05, min_units=10, update_every=15, threshold=0.01), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             150, (0.2, 0.3, 0.5), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=15))]),
+        ("thompson_allocation_normal",
+         ThompsonAllocation(2, metric="normal", floor=0.1, min_units=5, update_every=10), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             100, (1.0, 1.6), ThompsonAllocation(2, metric="normal", floor=0.1, min_units=5, update_every=10),
+             normal=True)]),
+        ("bounded_ab_test_propensities",
+         BoundedABTest(0.0, 1.0, alpha=0.1, grid=40, backend="python", propensity_input="p", floor=0.1,
+                       arms=(1, 0)), None,
+         redirected(120, (0.2, 0.45), ThompsonAllocation(2, floor=0.1, min_units=10, update_every=10))),
+        ("thompson_allocation_reserve",
+         ThompsonAllocation(3, floor=0.05, min_units=10, update_every=12, control=0, reserve=0.25), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             120, (0.3, 0.2, 0.5), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=12, control=0,
+                                                      reserve=0.25))]),
+        ("bounded_ab_test_propensities_three_arms",
+         BoundedABTest(0.0, 1.0, alpha=0.1, grid=40, backend="python", propensity_input="p", arm_count=3,
+                       floor=0.05, arms=(2, 0)), None,
+         redirected(120, (0.2, 0.3, 0.6), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=10))),
+    ]
     return (existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
-            + forecasting + inputs_round)
+            + forecasting + inputs_round + traffic)
 
 
 def vector(label, procedure, seed, inputs):

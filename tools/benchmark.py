@@ -79,6 +79,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
+    ThompsonAllocation,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
@@ -112,6 +113,14 @@ def pair(rnd):
 def promo_day(rnd):
     return {"y": 100.0 + rnd.gauss(0.0, 5.0), "promo": [float(rnd.random() < 0.1) for _ in range(8)],
             "price": [1.0 + 0.1 * rnd.random() for _ in range(8)]}
+
+
+def three_arms(rnd):
+    return {"arm": rnd.randrange(3), "y": int(rnd.random() < 0.1)}
+
+
+def propensity_unit(rnd):
+    return {"arm": rnd.randrange(2), "y": rnd.random(), "p": [0.5, 0.5]}
 
 
 def count(rnd):
@@ -240,6 +249,10 @@ CASES = [
      (100,), False),
     ("PoissonSmoothing, 7 ahead", lambda b: PoissonSmoothing(0.9, horizon=7), count, (100,), False),
     ("averaged_counts (8 discounts)", lambda b: averaged_counts(), count, (100,), False),
+    ("ThompsonAllocation, 3 binary arms, split every unit",
+     lambda b: ThompsonAllocation(3, min_units=10, update_every=1), three_arms, (1000,), False),
+    ("BoundedABTest with propensities, grid 1000",
+     lambda b: BoundedABTest(propensity_input="p", floor=0.1, backend=b), propensity_unit, (100,), True),
     ("BayesianChangePoint (normal-gamma)", lambda b: BayesianChangePoint(NormalGammaModel(), 0.01), normal,
      (100, 1000, 3000), False),
     ("BootstrapParticleFilter, 256 particles", lambda b: BootstrapParticleFilter(0.1, 1.0, particles=256),

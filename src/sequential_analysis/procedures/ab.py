@@ -91,6 +91,7 @@ from typing import Any
 from .._compat import zip_strict
 from ..contracts import InputContract
 from ..core import Procedure, decode_fields, require_state
+from ..errors import ContractViolation
 from ..numerics import neumaier_add, require_finite
 from .sprt import REJECT_H0
 
@@ -580,6 +581,7 @@ class BoundedABState:
     sum_control: float
     cs: Any  # the confidence sequence's state, over the scores
     test: Any  # the test's state, over the scores
+    others: int = 0  # with propensities: units of the other arms, which count in the scores
 
 
 @dataclass(frozen=True)
@@ -616,6 +618,22 @@ class BoundedABTest(Procedure):
     every unit and independent of outcomes.  Units of other arms are
     ignored.  `log_e_value` is an e-process (usable by MultipleTests).
 
+    When the split changes during the experiment -- traffic redirected
+    towards the better arm, as ThompsonAllocation does -- give
+    `propensity_input`: an input holding, for each unit, the probabilities
+    with which it could have gone to each of the `arm_count` arms (the
+    shares in force when it was assigned), and `floor`, a lower bound on
+    the probabilities of the two compared arms.  The scores are then
+
+        psi = (1[arm = T] / pi_T - 1[arm = C] / pi_C) (y - c)
+
+    for every unit (the propensities must sum to 1, and arms are labelled
+    0..arm_count-1), 0 for units of other arms, which counts them as they
+    must be counted.  Their conditional mean is still E[y(T)] - E[y(C)],
+    whatever the rule that set the shares, as long as each unit's shares
+    were fixed before its outcome; their range is (upper - lower) /
+    (2 floor).  The sequence and the test stay exact.
+
     Cost per step (PERFORMANCE.md): that of BettingConfidenceSequence on
     `grid` points: 0.14 ms with numpy, 0.5 to 0.7 ms in Python for grid=1000.
     """
@@ -627,13 +645,27 @@ class BoundedABTest(Procedure):
     def __init__(self, lower: float = 0.0, upper: float = 1.0, allocation: float = 0.5, alpha: float = 0.05, *,
                  effect0: float = 0.0, alternative: str = "two-sided", arms: tuple[int, int] = (1, 0),
                  grid: int = 1000, backend: str = "auto", stop_on_reject: bool = False,
-                 arm_input: str = "arm", input: str = "y"):
+                 arm_input: str = "arm", input: str = "y", propensity_input: str | None = None,
+                 arm_count: int = 2, floor: float | None = None):
         from .betting import BettingConfidenceSequence, BettingMeanTest
 
         if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
             raise ValueError("need finite bounds lower < upper")
         if not 0 < allocation < 1:
             raise ValueError("allocation must lie in (0, 1)")
+        if propensity_input is not None:
+            if allocation != 0.5:
+                raise ValueError("with propensities the allocation comes from the data; leave allocation alone")
+            if floor is None or not 0.0 < floor <= 0.5:
+                raise ValueError("propensities need a floor in (0, 1/2]")
+            if type(arm_count) is not int or arm_count < 2 or max(arms) >= arm_count:
+                raise ValueError("arm_count must be an int >= 2 covering the compared arms")
+            if propensity_input in (arm_input, input):
+                raise ValueError("the propensities need their own input name")
+        elif floor is not None or arm_count != 2:
+            raise ValueError("floor and arm_count come with propensity_input")
+        self.propensity_input, self.arm_count = propensity_input, arm_count
+        self.floor = None if floor is None else float(floor)
         self.alpha = _check_alpha(alpha)
         if len(arms) != 2 or any(type(a) is not int or a < 0 for a in arms) or arms[0] == arms[1]:
             raise ValueError("arms must be two different non-negative integer labels")
@@ -641,7 +673,10 @@ class BoundedABTest(Procedure):
             raise ValueError("the arm and the outcome need different names")
         self.lower, self.upper, self.allocation = float(lower), float(upper), float(allocation)
         self.center = (self.lower + self.upper) / 2.0
-        self.bound = (self.upper - self.lower) / 2.0 * max(1.0 / self.allocation, 1.0 / (1.0 - self.allocation))
+        if self.floor is not None:
+            self.bound = (self.upper - self.lower) / 2.0 / self.floor
+        else:
+            self.bound = (self.upper - self.lower) / 2.0 * max(1.0 / self.allocation, 1.0 / (1.0 - self.allocation))
         if not -self.bound < effect0 < self.bound:
             raise ValueError("effect0 must lie strictly inside the range of the scores")
         self.effect0, self.arms = float(effect0), (arms[0], arms[1])
@@ -653,14 +688,22 @@ class BoundedABTest(Procedure):
         self.alternative, self.grid, self.backend = alternative, grid, self._cs.backend
 
     def config(self) -> dict:
-        return {"lower": self.lower, "upper": self.upper, "allocation": self.allocation, "alpha": self.alpha,
-                "effect0": self.effect0, "alternative": self.alternative, "arms": list(self.arms),
-                "grid": self.grid, "backend": self.backend, "stop_on_reject": self.stop_on_reject,
-                "arm_input": self.arm_input, "input": self.input}
+        config = {"lower": self.lower, "upper": self.upper, "allocation": self.allocation, "alpha": self.alpha,
+                  "effect0": self.effect0, "alternative": self.alternative, "arms": list(self.arms),
+                  "grid": self.grid, "backend": self.backend, "stop_on_reject": self.stop_on_reject,
+                  "arm_input": self.arm_input, "input": self.input}
+        if self.propensity_input is not None:  # only then, so that earlier identities are unchanged
+            config.update(propensity_input=self.propensity_input, arm_count=self.arm_count, floor=self.floor)
+        return config
 
     def inputs(self):
-        return {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0),
-                self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
+        upper = None if self.propensity_input is None else self.arm_count - 1
+        contracts = {self.arm_input: InputContract(self.arm_input, kind="integer", lower=0, upper=upper),
+                     self.input: InputContract(self.input, lower=self.lower, upper=self.upper)}
+        if self.propensity_input is not None:
+            contracts[self.propensity_input] = InputContract(self.propensity_input, shape=(self.arm_count,),
+                                                             lower=0.0, upper=1.0)
+        return contracts
 
     def initial_state(self) -> BoundedABState:
         return BoundedABState(0, 0, 0.0, 0.0, self._cs.initial_state(), self._test.initial_state())
@@ -671,7 +714,7 @@ class BoundedABTest(Procedure):
         return max(-self.bound, min(self.bound, weight * (y - self.center)))
 
     def _output(self, state: BoundedABState, cs_out: Any, test_out: Any) -> BoundedABOutput:
-        control = state.n - state.treated
+        control = state.n - state.treated - state.others
         means = (state.sum_treated / state.treated if state.treated else None,
                  state.sum_control / control if control else None)
         lower = cs_out.lower if cs_out is not None else -self.bound
@@ -681,19 +724,42 @@ class BoundedABTest(Procedure):
         decision = test_out.decision if test_out is not None else None
         return BoundedABOutput(state.n, means, lower, upper, log_e, p_value, decision)
 
+    def _propensity_score(self, label: int, y: float, shares) -> float:
+        total = 0.0
+        for v in shares:
+            total += v
+        if not abs(total - 1.0) < 1e-9:
+            raise ContractViolation(f"{self.name}: the propensities must sum to 1, got {total!r}")
+        pi_t, pi_c = float(shares[self.arms[0]]), float(shares[self.arms[1]])
+        if not (pi_t >= self.floor and pi_c >= self.floor):  # type: ignore[operator]
+            raise ContractViolation(f"{self.name}: propensities {pi_t!r}, {pi_c!r} below the floor {self.floor!r}")
+        if label == self.arms[0]:
+            weight = 1.0 / pi_t
+        elif label == self.arms[1]:
+            weight = -1.0 / pi_c
+        else:
+            return 0.0
+        return max(-self.bound, min(self.bound, weight * (y - self.center)))
+
     def step(self, state: BoundedABState, x, rng=None):
         label = x[self.arm_input]
-        if label not in self.arms:
+        if label not in self.arms and self.propensity_input is None:
             if state.n == 0:
                 return state, self._output(state, None, None)
             return state, self._last(state)
         treated = label == self.arms[0]
+        control = label == self.arms[1]
         y = x[self.input]
-        psi = self.score(treated, y)
+        if self.propensity_input is not None:
+            psi = self._propensity_score(label, y, x[self.propensity_input])
+        else:
+            psi = self.score(treated, y)
         cs_state, cs_out = self._cs.step(state.cs, {"psi": psi})
         test_state, test_out = self._test.step(state.test, {"psi": psi})
+        # with propensities, units of other arms count (as 0) in the scores; the means use the two arms only
         new = BoundedABState(state.n + 1, state.treated + treated, state.sum_treated + (y if treated else 0.0),
-                             state.sum_control + (0.0 if treated else y), cs_state, test_state)
+                             state.sum_control + (y if control else 0.0), cs_state, test_state,
+                             state.others + (not (treated or control)))
         return new, self._output(new, cs_out, test_out)
 
     def _last(self, state: BoundedABState) -> BoundedABOutput:
@@ -703,7 +769,7 @@ class BoundedABTest(Procedure):
         upper = self.bound if cs.upper is None else cs.upper
         t = state.test
         log_e = self._test._log_wealth(t.log_up, t.log_down)
-        control = state.n - state.treated
+        control = state.n - state.treated - state.others
         means = (state.sum_treated / state.treated if state.treated else None,
                  state.sum_control / control if control else None)
         return BoundedABOutput(state.n, means, lower, upper, log_e, min(1.0, math.exp(-t.max_log_wealth)),
@@ -713,20 +779,26 @@ class BoundedABTest(Procedure):
         return self.stop_on_reject and state.test.decision is not None
 
     def encode_state(self, state: BoundedABState):
-        return {"n": state.n, "treated": state.treated, "sum_treated": state.sum_treated,
+        data = {"n": state.n, "treated": state.treated, "sum_treated": state.sum_treated,
                 "sum_control": state.sum_control, "cs": self._cs.encode_state(state.cs),
                 "test": self._test.encode_state(state.test)}
+        if self.propensity_input is not None:
+            data["others"] = state.others
+        return data
 
     def decode_state(self, data) -> BoundedABState:
-        require_state(isinstance(data, dict) and set(data) == {"n", "treated", "sum_treated", "sum_control", "cs",
-                                                               "test"}, "fields")
-        n, treated = data["n"], data["treated"]
-        require_state(type(n) is int and type(treated) is int and 0 <= treated <= n, "counts")
+        keys = {"n", "treated", "sum_treated", "sum_control", "cs", "test"}
+        if self.propensity_input is not None:
+            keys.add("others")
+        require_state(isinstance(data, dict) and set(data) == keys, "fields")
+        n, treated, others = data["n"], data["treated"], data.get("others", 0)
+        require_state(type(n) is int and type(treated) is int and type(others) is int
+                      and 0 <= treated and 0 <= others and treated + others <= n, "counts")
         sums = (data["sum_treated"], data["sum_control"])
         require_state(all(type(v) in (int, float) and math.isfinite(v) for v in sums), "sums")
         cs, test = self._cs.decode_state(data["cs"]), self._test.decode_state(data["test"])
         require_state(cs.n == n and test.n == n, "the inner states saw the same units")
-        return BoundedABState(n, treated, float(sums[0]), float(sums[1]), cs, test)
+        return BoundedABState(n, treated, float(sums[0]), float(sums[1]), cs, test, others)
 
 
 # ---------------------------------------------------------------- many tests

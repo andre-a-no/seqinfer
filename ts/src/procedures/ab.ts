@@ -5,6 +5,7 @@
 // e_bh, MultipleTests and BoundedABTest).
 import type { Json } from "../canonical.js";
 import { InputContract, type StatInput } from "../contracts.js";
+import { ContractViolation } from "../errors.js";
 import { neumaierAdd, requireFinite } from "../numerics.js";
 import { decodeFields, fromIdentity, type Identity, identity, type Procedure, register, requireState, type State } from "../procedure.js";
 import type { SplitMix64 } from "../rng.js";
@@ -606,7 +607,10 @@ register("multiple_tests", "1", (c) => MultipleTests.fromConfig(c));
 
 // ---------------------------------------------------------------- bounded outcomes, exact
 
-type BoundedABState = { n: number; treated: number; sum_treated: number; sum_control: number; cs: State; test: State };
+type BoundedABState = {
+  n: number; treated: number; sum_treated: number; sum_control: number; cs: State; test: State;
+  others?: number; // with propensities only: units of the other arms, which count in the scores
+};
 
 /** Exact anytime-valid confidence sequence and test for an effect on a bounded metric (Python's BoundedABTest). */
 export class BoundedABTest extends BaseProcedure {
@@ -632,15 +636,28 @@ export class BoundedABTest extends BaseProcedure {
     readonly stopOnReject = false,
     readonly armInput = "arm",
     readonly input = "y",
+    readonly propensityInput: string | null = null,
+    readonly armCount = 2,
+    readonly floor: number | null = null,
   ) {
     super();
     if (!(Number.isFinite(lower) && Number.isFinite(upper) && lower < upper)) invalid("need finite bounds lower < upper");
     if (!(0 < allocation && allocation < 1)) invalid("allocation must lie in (0, 1)");
+    if (propensityInput !== null) {
+      if (allocation !== 0.5) invalid("with propensities the allocation comes from the data; leave allocation alone");
+      if (floor === null || !(0.0 < floor && floor <= 0.5)) invalid("propensities need a floor in (0, 1/2]");
+      if (!Number.isInteger(armCount) || armCount < 2 || Math.max(...arms) >= armCount)
+        invalid("arm_count must be an int >= 2 covering the compared arms");
+      if (propensityInput === armInput || propensityInput === input) invalid("the propensities need their own input name");
+    } else if (floor !== null || armCount !== 2) {
+      invalid("floor and arm_count come with propensity_input");
+    }
     checkAlpha(alpha);
     this.arms = checkArms(arms);
     if (armInput === input) invalid("the arm and the outcome need different names");
     this.center = (lower + upper) / 2.0;
-    this.bound = ((upper - lower) / 2.0) * pyMax(1.0 / allocation, 1.0 / (1.0 - allocation));
+    if (floor !== null) this.bound = (upper - lower) / 2.0 / floor;
+    else this.bound = ((upper - lower) / 2.0) * pyMax(1.0 / allocation, 1.0 / (1.0 - allocation));
     if (!(-this.bound < effect0 && effect0 < this.bound)) invalid("effect0 must lie strictly inside the range of the scores");
     this.cs = new BettingConfidenceSequence(-this.bound, this.bound, alpha, grid, "psi");
     this.test = new BettingMeanTest(effect0, -this.bound, this.bound, alpha, alternative, false, "psi");
@@ -648,27 +665,46 @@ export class BoundedABTest extends BaseProcedure {
 
   static fromConfig(c: Config): BoundedABTest {
     pythonBackend(c, "bounded_ab_test");
+    // propensity_input, arm_count and floor are in the configuration only when propensities are used
+    const propensities = "propensity_input" in c;
     return new BoundedABTest(num(c, "lower"), num(c, "upper"), num(c, "allocation"), num(c, "alpha"), num(c, "effect0"),
-      str(c, "alternative"), nums(c, "arms"), int(c, "grid"), bool(c, "stop_on_reject"), str(c, "arm_input"), str(c, "input"));
+      str(c, "alternative"), nums(c, "arms"), int(c, "grid"), bool(c, "stop_on_reject"), str(c, "arm_input"), str(c, "input"),
+      propensities ? str(c, "propensity_input") : null, propensities ? int(c, "arm_count") : 2,
+      propensities ? num(c, "floor") : null);
   }
 
   config(): Config {
-    return {
+    const config: Config = {
       lower: this.lower, upper: this.upper, allocation: this.allocation, alpha: this.alpha, effect0: this.effect0,
       alternative: this.alternative, arms: [...this.arms], grid: this.grid, backend: this.backend, stop_on_reject: this.stopOnReject,
       arm_input: this.armInput, input: this.input,
     };
+    if (this.propensityInput !== null) {
+      // only then, so that earlier identities are unchanged
+      config.propensity_input = this.propensityInput;
+      config.arm_count = this.armCount;
+      config.floor = this.floor;
+    }
+    return config;
   }
 
   inputs(): Record<string, InputContract> {
-    return {
-      [this.armInput]: new InputContract(this.armInput, "integer", [], 0),
+    const upper = this.propensityInput === null ? null : this.armCount - 1;
+    const contracts: Record<string, InputContract> = {
+      [this.armInput]: new InputContract(this.armInput, "integer", [], 0, upper),
       [this.input]: new InputContract(this.input, "real", [], this.lower, this.upper),
     };
+    if (this.propensityInput !== null)
+      contracts[this.propensityInput] = new InputContract(this.propensityInput, "real", [this.armCount], 0.0, 1.0);
+    return contracts;
   }
 
   initialState(): BoundedABState {
-    return { n: 0, treated: 0, sum_treated: 0.0, sum_control: 0.0, cs: this.cs.initialState(), test: this.test.initialState() };
+    const s: BoundedABState = {
+      n: 0, treated: 0, sum_treated: 0.0, sum_control: 0.0, cs: this.cs.initialState(), test: this.test.initialState(),
+    };
+    if (this.propensityInput !== null) s.others = 0;
+    return s;
   }
 
   score(treated: boolean, y: number): number {
@@ -677,8 +713,23 @@ export class BoundedABTest extends BaseProcedure {
     return pyMax(-this.bound, pyMin(this.bound, weight * (y - this.center)));
   }
 
+  /** The score of a unit from the propensities of its assignment: 0 for units of other arms. */
+  private propensityScore(label: number, y: number, shares: number[]): number {
+    let total = 0.0;
+    for (const v of shares) total += v;
+    if (!(Math.abs(total - 1.0) < 1e-9)) throw new ContractViolation(`${this.name}: the propensities must sum to 1, got ${total}`);
+    const piT = shares[this.arms[0]], piC = shares[this.arms[1]];
+    const floor = this.floor as number;
+    if (!(piT >= floor && piC >= floor)) throw new ContractViolation(`${this.name}: propensities ${piT}, ${piC} below the floor ${floor}`);
+    let weight: number;
+    if (label === this.arms[0]) weight = 1.0 / piT;
+    else if (label === this.arms[1]) weight = -1.0 / piC;
+    else return 0.0;
+    return pyMax(-this.bound, pyMin(this.bound, weight * (y - this.center)));
+  }
+
   private means(s: BoundedABState): [number | null, number | null] {
-    const control = s.n - s.treated;
+    const control = s.n - s.treated - (s.others ?? 0);
     return [s.treated ? s.sum_treated / s.treated : null, control ? s.sum_control / control : null];
   }
 
@@ -708,16 +759,22 @@ export class BoundedABTest extends BaseProcedure {
   step(state: State, x: StatInput): [BoundedABState, State] {
     const s = state as BoundedABState;
     const label = x[this.armInput] as number;
-    if (!this.arms.includes(label)) return [s, s.n === 0 ? this.output(s, null, null) : this.last(s)];
+    if (!this.arms.includes(label) && this.propensityInput === null)
+      return [s, s.n === 0 ? this.output(s, null, null) : this.last(s)];
     const treated = label === this.arms[0];
+    const control = label === this.arms[1];
     const y = x[this.input] as number;
-    const psi = this.score(treated, y);
+    const psi = this.propensityInput !== null
+      ? this.propensityScore(label, y, x[this.propensityInput] as number[])
+      : this.score(treated, y);
     const [csState, csOut] = this.cs.step(s.cs, { psi });
     const [testState, testOut] = this.test.step(s.test, { psi });
+    // with propensities, units of other arms count (as 0) in the scores; the means use the two arms only
     const next: BoundedABState = {
       n: s.n + 1, treated: s.treated + (treated ? 1 : 0), sum_treated: s.sum_treated + (treated ? y : 0.0),
-      sum_control: s.sum_control + (treated ? 0.0 : y), cs: csState, test: testState,
+      sum_control: s.sum_control + (control ? y : 0.0), cs: csState, test: testState,
     };
+    if (this.propensityInput !== null) next.others = (s.others as number) + (treated || control ? 0 : 1);
     return [next, this.output(next, csOut, testOut)];
   }
 
@@ -726,17 +783,21 @@ export class BoundedABTest extends BaseProcedure {
   }
 
   decodeState(data: Json): BoundedABState {
+    const keys = ["cs", "n", "sum_control", "sum_treated", "test", "treated"];
+    if (this.propensityInput !== null) keys.push("others");
     requireState(data !== null && typeof data === "object" && !Array.isArray(data)
-      && Object.keys(data).sort().join(",") === "cs,n,sum_control,sum_treated,test,treated", "fields");
+      && Object.keys(data).sort().join(",") === keys.sort().join(","), "fields");
     const d = data as { [key: string]: Json };
-    const n = d.n, treated = d.treated;
-    requireState(typeof n === "number" && Number.isInteger(n) && typeof treated === "number" && Number.isInteger(treated)
-      && 0 <= treated && treated <= n, "counts");
+    const n = d.n, treated = d.treated, others = this.propensityInput !== null ? d.others : 0;
+    const isInt = (v: Json): v is number => typeof v === "number" && Number.isInteger(v);
+    requireState(isInt(n) && isInt(treated) && isInt(others) && 0 <= treated && 0 <= others && treated + others <= n, "counts");
     const sums = [d.sum_treated, d.sum_control];
     requireState(sums.every((v) => typeof v === "number" && Number.isFinite(v)), "sums");
     const cs = this.cs.decodeState(d.cs), test = this.test.decodeState(d.test);
     requireState(cs.n === n && test.n === n, "the inner states saw the same units");
-    return { n: n as number, treated: treated as number, sum_treated: sums[0] as number, sum_control: sums[1] as number, cs, test };
+    const s: BoundedABState = { n: n as number, treated: treated as number, sum_treated: sums[0] as number, sum_control: sums[1] as number, cs, test };
+    if (this.propensityInput !== null) s.others = others as number;
+    return s;
   }
 }
 

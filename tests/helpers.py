@@ -73,6 +73,7 @@ from sequential_analysis.procedures import (
     ShiryaevRoberts,
     StochasticVolatilityModel,
     StudentTEmission,
+    ThompsonAllocation,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
@@ -619,6 +620,25 @@ def cases():
             Delivery,
             record_stream([{"y": (i * 7) % 5, "hours": [1.0 + 0.5 * ((i + j) % 3) for j in range(3)]}
                            for i in range(n)], ("y", "hours")),
+            None,
+        ),
+        (
+            "thompson_allocation",
+            lambda: ThompsonAllocation(3, floor=0.05, min_units=5, update_every=7, threshold=0.05),
+            lambda: KeyJoin(("arm", "y")),
+            Delivery,
+            record_stream([{"arm": i % 3, "y": int((i * 7919) % 100 < 20 + 10 * (i % 3))} for i in range(n)],
+                          ("arm", "y")),
+            None,
+        ),
+        (
+            "bounded_ab_test_propensities",
+            lambda: BoundedABTest(0.0, 1.0, grid=30, backend="python", propensity_input="p", arm_count=3,
+                                  floor=0.1, arms=(2, 0)),
+            lambda: KeyJoin(("arm", "y", "p")),
+            Delivery,
+            record_stream([{"arm": i % 3, "y": ((i * 37) % 11) / 10.0, "p": [0.2, 0.3, 0.5]} for i in range(n)],
+                          ("arm", "y", "p")),
             None,
         ),
         (

@@ -399,6 +399,106 @@ for lift in (0.12, 0.13, 0.15):
 Plan with the effect you would be sorry to miss. The 90th percentile, not
 the median, is what to budget for.
 
+## 10. Redirecting traffic to the better arm
+
+The tests above assume a split fixed in advance. Often the business
+wants more: as soon as a variant looks better, send it more users, so
+that fewer of them see a worse page. `ThompsonAllocation` computes that
+split. Every arm gets the share equal to the posterior probability that
+it is the best, and never less than `floor`. Until each arm has
+`min_units` users the split stays equal, and afterwards it is recomputed
+every `update_every` users. It also gives the expected loss of deploying
+each arm. Once one arm's expected loss is at most `threshold`, `deploy`
+names it.
+
+Redirecting traffic has a price, and the simulation below shows it.
+There is a control converting at 10.0%, a variant at 10.5% and a variant
+at 12.0%. Three ways to run the experiment are compared: an equal split,
+Thompson allocation, and Thompson allocation that keeps an extra 25% of
+the traffic on the control:
+
+```python
+from sequential_analysis.procedures import ThompsonAllocation
+
+RATES = (0.100, 0.105, 0.120)  # control, variant 1, variant 2
+
+
+def experiment(split, users=40000, seed=11):
+    """Assign users by the split's shares; each record keeps the shares it was assigned with."""
+    rnd = random.Random(seed)
+    allocator = ThompsonAllocation(3, floor=0.05, threshold=0.0005,
+                                   **({"control": 0, "reserve": 0.25} if split == "reserve" else {}))
+    state, records, chosen = allocator.initial_state(), [], None
+    for user in range(users):
+        shares = (1 / 3, 1 / 3, 1 / 3) if split == "equal" else state.shares
+        u, arm, acc = rnd.random(), 2, 0.0
+        for k, share in enumerate(shares):
+            acc += share
+            if u < acc:
+                arm = k
+                break
+        y = int(rnd.random() < RATES[arm])
+        records.append({"arm": arm, "y": y, "p": list(shares)})
+        state, out = allocator.step(state, {"arm": arm, "y": y})
+        if chosen is None and out.deploy is not None:
+            chosen = (user + 1, out.deploy)
+    return records, out, chosen
+
+
+def first_decision(test, records, fields):
+    state = test.initial_state()
+    for user, record in enumerate(records):
+        state, out = test.step(state, {k: record[k] for k in fields})
+        if out.decision is not None:
+            return user + 1
+    return None
+
+
+print(f"{'split':8} {'users per arm':22} {'lost conversions':>17} {'deploy rule':>20} {'exact test':>12}")
+for split in ("equal", "thompson", "reserve"):
+    records, out, chosen = experiment(split)
+    lost = sum(RATES[2] - RATES[r["arm"]] for r in records)
+    exact = first_decision(TwoProportionTest(method="universal", arms=(2, 0)), records, ("arm", "y"))
+    deployed = f"arm {chosen[1]} at {chosen[0]}" if chosen else "-"
+    print(f"{split:8} {str(out.counts):22} {lost:17.0f} {deployed:>20} {exact or 'not yet':>12}")
+```
+
+Over 40,000 users, Thompson allocation loses about a quarter of the
+conversions that an equal split loses. The expected-loss rule picks the
+right arm after a few thousand users in each case. But the error-
+controlled comparison of the best variant with the control does not
+finish under Thompson allocation: the control has been left at its 5%
+floor, and a comparison needs data on both sides. Reserving 25% of the
+traffic for the control gives up part of the gain but keeps the test
+running at about the pace of an equal split. In three simulated
+experiments (seeds 11 to 13) the test decided at 15,881, 35,522 and 460
+users with the reserve, against 29,999, 34,911 and 25,277 with an equal
+split, and not within 60,000 users under plain Thompson allocation.
+That is the usual compromise: a holdout for the control, adaptivity
+among the variants.
+
+Which tests remain valid when the split follows the outcomes:
+
+* `TwoProportionTest(method="universal")`, as used above, is valid for
+  any allocation rule. The default `method="grow"` is not.
+* `BoundedABTest(propensity_input="p", arm_count=3, floor=0.05)` reads,
+  with each user, the shares that user was assigned with. It weights the
+  outcomes by them and stays exact for any bounded metric under any
+  allocation rule. Users of other arms count with weight 0, as they must.
+  The shares must be recorded at assignment, and `floor` bounds the
+  weights.
+* `ABTest`, `RatioABTest`, `RateRatioTest` and `BoundedABTest` without
+  propensities assume a fixed split. Under redirected traffic their
+  guarantees no longer hold.
+* `SampleRatioMismatch` tests a fixed split. With redirection, the
+  check is that the logged shares were the ones applied, which it does
+  not do.
+
+The deployment rule is a decision rule, not a test. It bounds the
+expected cost of the choice under the posterior, not the probability of
+choosing wrongly. When the decision must come with an error guarantee,
+deploy once a valid test above has decided.
+
 ## Running it for real
 
 * **Live events.** Feed the run from your event log as it grows, with

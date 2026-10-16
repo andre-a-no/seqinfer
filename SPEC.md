@@ -371,9 +371,9 @@ Sums and products are reproduced exactly when they are evaluated in the
 reference order. Every procedure's sums are left-to-right or
 Neumaier-compensated, never pairwise. Decisions are compared exactly.
 
-In the TypeScript executor, 28 of the 87 cases agree bit for bit. The
+In the TypeScript executor, 28 of the 92 cases agree bit for bit. The
 others differ in the last bits only: by at most 5e-14 relative, except
-in eleven cases. Every such difference was traced to `Math.log`, `log1p`,
+in twelve cases. Every such difference was traced to `Math.log`, `log1p`,
 `exp`, `expm1` or `cos` rounding differently from the C library. In
 six of the seven a small value is a difference of much larger terms,
 so a last-bit difference in those terms is large relative to it: in
@@ -394,7 +394,10 @@ mixture of forecasts, found by Newton steps to a relative 1e-13; a
 last-bit difference in the t distribution function moves the point
 where the search stops. In `averaged_counts` (8.0e-14) the mixture
 weights are exponentials of differences of log-likelihoods built from
-log-gamma terms. No
+log-gamma terms. In `thompson_allocation` (9.4e-14) the probabilities
+that each arm is best are quadratures of products of Beta densities and
+distribution functions, which carry the last bits of `log`, `exp` and
+the incomplete beta function. No
 decision differs.
 
 The TypeScript executor implements the procedures listed by

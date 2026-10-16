@@ -61,7 +61,7 @@ delivers observations, and writes checkpoints. A run restored from a
 checkpoint continues bit for bit as if it had never stopped. A history
 digest in RFC 8785 canonical JSON [@rfc8785] records exactly which data
 produced a decision. A specification of the formats and a TypeScript
-executor let a run move between languages: 87 conformance vectors are
+executor let a run move between languages: 92 conformance vectors are
 reproduced, 28 bit for bit and the rest to $6\cdot10^{-13}$.
 
 # Statement of need

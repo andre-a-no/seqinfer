@@ -145,6 +145,25 @@ to choosing a method.
 - Tutorial "Forecasting, fixed and continuous training", with sections on
   regressors, counts and the log scale. Reference page. TypeScript ports.
 
+### Added: redirecting traffic during an experiment
+- `ThompsonAllocation`: the split of the next units between K arms, by
+  Thompson sampling (each arm's share is the posterior probability that
+  it is the best), with a floor per arm and an optional reserve for the
+  control. Conversion and real-valued metrics are supported. It also
+  gives each arm's expected loss and the expected-loss deployment rule
+  ("threshold of caring"). The probabilities come from deterministic
+  piecewise Gauss–Legendre quadrature, checked against the closed form
+  for two Beta posteriors and against mpmath.
+- `BoundedABTest(propensity_input=..., arm_count=..., floor=...)`: the
+  exact test and confidence sequence for any bounded metric weight each
+  unit by the shares it was assigned with, so they stay valid when the
+  split follows the outcomes. With constant 50/50 shares the result is
+  identical to the fixed-allocation test, and under redirected traffic
+  with no effect the test rejects at most alpha of the time (simulated).
+- A/B tutorial section on redirecting traffic: losses, the deployment
+  rule, and which tests stay valid; a reserved share for the control
+  keeps the comparison with it fast.
+
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
   or later): `plot_e_process`, `plot_confidence_sequence`,

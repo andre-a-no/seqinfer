@@ -3,6 +3,7 @@
 // Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 // The procedures; importing this module registers every one of them (see procedure.ts, fromIdentity).
 export { ABTest, BoundedABTest, eBH, MultipleTests, SampleRatioMismatch, TwoProportionTest } from "./ab.js";
+export { bestArmProbabilities, Posterior, ThompsonAllocation } from "./allocation.js";
 export { BettingConfidenceSequence, BettingMeanTest, SequentialSignTest } from "./betting.js";
 export { BayesianChangePoint, BetaBernoulliModel, type ConjugateModel, conjugateModelFromSpec, NormalGammaModel, PoissonGammaModel } from "./bocpd.js";
 export { CUSUM } from "./cusum.js";
