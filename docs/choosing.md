@@ -8,6 +8,25 @@ guarantee is, and names the tutorial that uses it.
 stopping time, under the stated assumptions. "Asymptotic" means it holds
 approximately in long runs.
 
+**Prefer an exact procedure.** Where an exact procedure answers the
+question, it is the default here and in the tutorials. An asymptotic one
+is worth its approximation only when nothing exact fits: an unbounded
+metric with no variance bound, a ratio of sums, planned analyses of an
+approximately normal statistic.
+
+Every procedure states its promise in its `guarantee` attribute
+(`sequential_analysis.core.GUARANTEES` lists the values):
+
+<!-- guarantees -->
+| Guarantee | Meaning | Procedures |
+|---|---|---|
+| **exact** | error rates, coverage or false-alarm rates hold at every sample size, under the stated assumptions | `AnytimeLinearModel`, `AnytimeLogRankTest`, `BettingConfidenceSequence`, `BettingMeanTest`, `BoundedABTest`, `CatoniConfidenceSequence`, `ConformalForecast`, `CUSUM`, `ForecastComparison`, `GroupSequentialTest` (known sigma), `GroupSequentialTwoMeans` (known sigma), `KernelTwoSampleTest`, `MeanEDetector`, `MultipleTests`, `NormalMixtureSPRT`, `OnlineFDR`, `PlanTest`, `QuantileConfidenceSequence`, `QuantileEDetector`, `QuantileTest`, `RateRatioTest`, `SampleRatioMismatch`, `SequentialSignTest`, `ShiryaevRoberts`, `SPRT`, `TMixtureSPRT`, `TwoProportionTest`, `TwoSPRT` |
+| **asymptotic** | they hold approximately, the better the larger the sample | `ABTest`, `AsymptoticConfidenceSequence`, `GroupSequentialLogRank`, `GroupSequentialMonitor`, `GroupSequentialProportions`, `GroupSequentialTest` (estimated sigma), `GroupSequentialTwoMeans` (estimated sigma), `RatioABTest` |
+| **model** | exact probabilities under the stated model and prior; no error rate beyond the model | `AutoRegressive`, `BayesianChangePoint`, `ExponentialSmoothing`, `HiddenMarkovFilter`, `KalmanFilter`, `LocalLevelKalman`, `ModelAveraging`, `PoissonSmoothing`, `ThompsonAllocation` |
+| **approximate** | an approximation even under the model (Monte Carlo, variational, stochastic approximation) | `BootstrapParticleFilter`, `OnlineHMM`, `ParticleFilter`, `RobustKalmanFilter` |
+| **none** | a transformation of the data; no inferential claim | `EMA`, `MeanDifference` |
+<!-- /guarantees -->
+
 ## First: may you look at any time, or only at planned analyses?
 
 | You want to | Use | What it costs |

@@ -44,6 +44,7 @@ def _welford(n: int, mean: float, ss: float, x: float) -> tuple[int, float, floa
 class MeanDifference(Procedure):
     name = "mean_difference"
     version = "1"
+    guarantee = "none"
     joint_inputs = False
 
     def __init__(self, a: str = "a", b: str = "b"):

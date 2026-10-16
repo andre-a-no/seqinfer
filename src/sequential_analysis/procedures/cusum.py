@@ -31,6 +31,7 @@ class CUSUM(Procedure):
 
     name = "cusum"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, family: Family, theta0: float, theta1: float, threshold: float, input: str = "x"):
         family.check(theta0)

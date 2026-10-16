@@ -73,6 +73,7 @@ class TwoSPRTOutput:
 class TwoSPRT(Procedure):
     name = "two_sprt"
     version = "1"
+    guarantee = "exact"
 
     def __init__(
         self,

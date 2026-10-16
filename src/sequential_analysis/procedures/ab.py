@@ -143,6 +143,7 @@ class SampleRatioMismatch(Procedure):
 
     name = "sample_ratio_mismatch"
     version = "1"
+    guarantee = "exact"
     e_value_field = "log_e_value"
 
     def __init__(self, weights: Sequence[float] = (0.5, 0.5), alpha: float = 0.001, *,
@@ -254,6 +255,7 @@ class TwoProportionTest(Procedure):
 
     name = "two_proportion_test"
     version = "1"
+    guarantee = "exact"
     e_value_field = "log_e_value"
 
     def __init__(self, alpha: float = 0.05, *, alternative: str = "two-sided", method: str = "grow",
@@ -458,6 +460,7 @@ class ABTest(Procedure):
 
     name = "ab_test"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(self, allocation: float = 0.5, alpha: float = 0.05, *, covariate: bool = False,
                  arms: tuple[int, int] = (1, 0), start: int = 1000, tuned_for: float = 1000.0,
@@ -640,6 +643,7 @@ class BoundedABTest(Procedure):
 
     name = "bounded_ab_test"
     version = "1"
+    guarantee = "exact"
     e_value_field = "log_e_value"
 
     def __init__(self, lower: float = 0.0, upper: float = 1.0, allocation: float = 0.5, alpha: float = 0.05, *,
@@ -861,6 +865,7 @@ class MultipleTests(Procedure):
 
     name = "multiple_tests"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, tests: Mapping[str, Procedure], alpha: float = 0.05):
         if not tests:

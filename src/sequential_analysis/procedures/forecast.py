@@ -453,6 +453,7 @@ class ExponentialSmoothing(Forecaster):
 
     name = "exponential_smoothing"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, alpha: float, *, beta: float = 0.0, gamma: float = 0.0, phi: float = 1.0,
                  trend: str | None = None, period: int | None = None, initial_level: float | None = None,
@@ -732,6 +733,7 @@ class AutoRegressive(Forecaster):
 
     name = "autoregressive"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, order: int, *, coefficients: Sequence[float] | None = None, intercept: float = 0.0,
                  sigma: float | None = None, regressors: Sequence[str] = (), effects: Sequence[float] | None = None,
@@ -909,6 +911,7 @@ class PoissonSmoothing(Forecaster):
 
     name = "poisson_smoothing"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, discount: float, *, exposure: str | None = None, prior: Sequence[float] = (0.0, 0.0),
                  horizon: int = 1, coverage: float = 0.9, input: str = "y"):
@@ -1023,6 +1026,7 @@ class ModelAveraging(Forecaster):
 
     name = "model_averaging"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, models: Sequence[Forecaster], *, weights: Sequence[float] | None = None,
                  forgetting: float = 1.0, coverage: float = 0.9):
@@ -1311,6 +1315,7 @@ class ConformalForecast(Procedure):
 
     name = "conformal_forecast"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, forecaster: Forecaster, *, alpha: float = 0.1, step_size: float = 0.05,
                  normalize: bool = True, initial: float | None = None):
@@ -1455,6 +1460,7 @@ class ForecastComparison(Procedure):
 
     name = "forecast_comparison"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, bounds: Sequence[float], *, alpha: float = 0.05, min_variance: float | None = None,
                  a: str = "a", b: str = "b"):

@@ -446,6 +446,7 @@ class HiddenMarkovFilter(Procedure):
 
     name = "hidden_markov_filter"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, initial, transition, emission, *, input: str = "y"):
         self.initial = _distribution(initial, None, "initial")

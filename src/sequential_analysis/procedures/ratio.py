@@ -212,6 +212,7 @@ class RatioABTest(Procedure):
 
     name = "ratio_ab_test"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(self, alpha: float = 0.05, *, denominator: bool = True, scale: str = "difference",
                  effect0: float = 0.0, arms: tuple[int, int] = (1, 0), start: int = 1000, tuned_for: float = 1000.0,

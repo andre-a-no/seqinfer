@@ -194,6 +194,7 @@ class ThompsonAllocation(Procedure):
 
     name = "thompson_allocation"
     version = "1"
+    guarantee = "model"
 
     def __init__(self, arms: int = 2, *, metric: str = "binary", floor: float = 0.05, threshold: float = 0.0,
                  min_units: int = 100, update_every: int = 100, prior: tuple[float, float] = (1.0, 1.0),

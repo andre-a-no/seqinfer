@@ -46,6 +46,7 @@ def _log1p_exp(x: float) -> float:
 class ShiryaevRoberts(Procedure):
     name = "shiryaev_roberts"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, family: Family, theta0: float, theta1: float, threshold: float, input: str = "x"):
         family.check(theta0)

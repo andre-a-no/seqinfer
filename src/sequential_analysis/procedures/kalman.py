@@ -39,6 +39,7 @@ class KalmanOutput:
 class LocalLevelKalman(Procedure):
     name = "local_level_kalman"
     version = "2"  # 2: the posterior variance as p r / s, exact when p >> r
+    guarantee = "model"
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, control: bool = False):
         if not (0 <= q < math.inf and 0 < r < math.inf and 0 <= p0 < math.inf and math.isfinite(m0)):

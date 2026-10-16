@@ -39,6 +39,7 @@ class SPRT(Procedure):
 
     name = "sprt"
     version = "1"
+    guarantee = "exact"
 
     def __init__(
         self, family: Family, theta0: float, theta1: float, alpha: float = 0.05, beta: float = 0.05, input: str = "x"

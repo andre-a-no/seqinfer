@@ -98,6 +98,7 @@ class CatoniConfidenceSequence(Procedure):
 
     name = "catoni_confidence_sequence"
     version = "1"
+    guarantee = "exact"
 
     def __init__(
         self,
@@ -258,6 +259,7 @@ class AsymptoticConfidenceSequence(Procedure):
 
     name = "asymptotic_confidence_sequence"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(
         self,

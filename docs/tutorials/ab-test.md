@@ -143,6 +143,11 @@ $$\psi_t = \left(\frac{T_t}{\pi} - \frac{C_t}{1-\pi}\right)\,\bigl(y_t - \hat f_
 which estimates the effect without bias for any $\hat f$ fitted on the
 past. This is CUPED's idea, without its in-sample bias.
 
+Its coverage is asymptotic. When the metric can be bounded (a capped
+revenue, a share), prefer the exact `BoundedABTest` of section 6; use
+`ABTest` for a metric with no useful bound, or to gain the covariate's
+variance reduction on a long run.
+
 ```python
 from sequential_analysis.procedures import ABTest
 

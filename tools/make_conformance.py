@@ -670,12 +670,30 @@ def number_vectors(count=500):
     return [{"bits": f"{struct.unpack('<Q', struct.pack('<d', v))[0]:016x}", "json": _number(v)} for v in values]
 
 
+def guarantees():
+    """Each procedure's guarantee by name; a dict {"known sigma": ..., "estimated sigma": ...} where it depends."""
+    import inspect
+
+    import sequential_analysis.procedures as procedures
+    from sequential_analysis.core import Procedure
+
+    out = {}
+    for name in procedures.__all__:
+        cls = getattr(procedures, name)
+        if inspect.isclass(cls) and issubclass(cls, Procedure) and cls.name != "procedure":
+            value = cls.__dict__.get("guarantee", cls.guarantee)
+            out[cls.name] = ({"known sigma": "exact", "estimated sigma": "asymptotic"}
+                             if isinstance(value, property) else value)
+    return out
+
+
 def main():
     OUT.mkdir(exist_ok=True)
     vectors = [vector(*case) for case in cases()]  # novermin (not PEP 798)
     (OUT / "procedures.json").write_text(canonical_json(vectors) + "\n", encoding="utf-8")
     (OUT / "numbers.json").write_text(canonical_json(number_vectors()) + "\n", encoding="utf-8")
-    print(f"wrote {len(vectors)} procedure vectors and the number vectors to {OUT}")
+    (OUT / "guarantees.json").write_text(canonical_json(guarantees()) + "\n", encoding="utf-8")
+    print(f"wrote {len(vectors)} procedure vectors, the number vectors and the guarantees to {OUT}")
 
 
 if __name__ == "__main__":

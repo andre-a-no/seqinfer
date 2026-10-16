@@ -154,6 +154,7 @@ class QuantileTest(Procedure):
     """
 
     name = "quantile_test"
+    guarantee = "exact"
     e_value_field = "log_evidence"  # an e-process: usable by MultipleTests
     version = "1"
 
@@ -259,6 +260,7 @@ class QuantileConfidenceSequence(Procedure):
 
     name = "quantile_confidence_sequence"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, p: float = 0.5, alpha: float = 0.05, *, tuned_for: float = 1000.0, input: str = "x"):
         _check(p, alpha, tuned_for)

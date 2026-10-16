@@ -58,6 +58,7 @@ class MixtureOutput:
 
 class NormalMixtureSPRT(Procedure):
     name = "normal_mixture_sprt"
+    guarantee = "exact"
     e_value_field = "log_lambda"  # an e-process: usable by MultipleTests
     version = "1"
 

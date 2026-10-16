@@ -58,6 +58,7 @@ class PlanOutput:
 class PlanTest(Procedure):
     name = "plan_test"
     version = "1"
+    guarantee = "exact"
 
     def __init__(
         self,

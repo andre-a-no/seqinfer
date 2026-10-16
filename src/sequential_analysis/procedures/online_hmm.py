@@ -93,6 +93,7 @@ class OnlineHMM(Procedure):
 
     name = "online_hmm"
     version = "1"
+    guarantee = "approximate"
 
     def __init__(self, start: HiddenMarkovFilter, *, kappa: float = 0.6, burn_in: int = 100, min_scale: float = 1e-6,
                  average: bool = True):

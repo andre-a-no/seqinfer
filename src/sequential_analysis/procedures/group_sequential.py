@@ -77,6 +77,11 @@ class GroupSequentialTest(Procedure):
     name = "group_sequential_test"
     version = "4"  # 4: t boundaries beyond 2e4 degrees of freedom from the more accurate t tail
 
+    @property
+    def guarantee(self) -> str:  # type: ignore[override]
+        """Exact with a known sigma; with an estimated one the t boundaries are approximate."""
+        return "exact" if self.sigma is not None else "asymptotic"
+
     def __init__(
         self,
         sigma: float | None,
@@ -262,6 +267,7 @@ class GroupSequentialMonitor(Procedure):
 
     name = "group_sequential_monitor"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(self, alpha: float, max_information: float, spending="obrien-fleming", *, two_sided: bool = False,
                  futility=None, power: float | None = None, drift: float | None = None, max_analyses: int = 20,
@@ -491,6 +497,7 @@ class GroupSequentialProportions(_TwoArmGroupSequential):
 
     name = "group_sequential_proportions"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(self, analyses: Sequence[int], bounds: Sequence[float], *, futility: Sequence[float] | None = None,
                  two_sided: bool = False, alternative: str = "greater", arms: tuple[int, int] = (1, 0),
@@ -611,6 +618,11 @@ class GroupSequentialTwoMeans(_TwoArmGroupSequential):
 
     name = "group_sequential_two_means"
     version = "1"
+
+    @property
+    def guarantee(self) -> str:  # type: ignore[override]
+        """Exact with a known sigma; with an estimated one the t boundaries are approximate."""
+        return "exact" if self.sigma is not None else "asymptotic"
 
     def __init__(self, sigma: float | None, analyses: Sequence[int], bounds: Sequence[float], *,
                  futility: Sequence[float] | None = None, two_sided: bool = False, alternative: str = "greater",
@@ -769,6 +781,7 @@ class GroupSequentialLogRank(_TwoArmGroupSequential):
 
     name = "group_sequential_logrank"
     version = "1"
+    guarantee = "asymptotic"
 
     def __init__(self, analyses: Sequence[int], bounds: Sequence[float], *, futility: Sequence[float] | None = None,
                  two_sided: bool = False, alternative: str = "less", arms: tuple[int, int] = (1, 0),

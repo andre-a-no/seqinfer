@@ -145,6 +145,15 @@ to choosing a method.
 - Tutorial "Forecasting, fixed and continuous training", with sections on
   regressors, counts and the log scale. Reference page. TypeScript ports.
 
+### Added: what each procedure promises
+- Every procedure has a `guarantee` attribute: `exact`, `asymptotic`,
+  `model`, `approximate` or `none` (`sequential_analysis.core.GUARANTEES`
+  says what each means). `GroupSequentialTest` and
+  `GroupSequentialTwoMeans` are exact with a known sigma and asymptotic
+  with an estimated one. The which-method page lists every procedure by
+  its guarantee (a test keeps the table in step with the code) and
+  recommends the exact procedure wherever one answers the question.
+
 ### Added: redirecting traffic during an experiment
 - `ThompsonAllocation`: the split of the next units between K arms, by
   Thompson sampling (each arm's share is the posterior probability that

@@ -78,6 +78,13 @@ nonparametric monitoring, and a group sequential trial.
 
 <!-- --8<-- [start:methods] -->
 
+Each procedure states what it promises in its `guarantee` attribute:
+`exact` (error rates or coverage at every sample size, under the stated
+assumptions), `asymptotic`, `model` (exact under a stated model or
+prior), `approximate` or `none`. Where an exact procedure answers the
+question, it is the one the documentation recommends first; the full
+list is on the [which-method page](https://andre-a-no.github.io/sequential-analysis/choosing/).
+
 | Kind | Procedures |
 |---|---|
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |

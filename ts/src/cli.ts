@@ -12,6 +12,7 @@
 // seq, key, time) and writes the new checkpoint and the outputs.
 import { readFileSync, writeFileSync } from "node:fs";
 import { canonicalJson } from "./canonical.js";
+import { PROCEDURE_GUARANTEES } from "./guarantees.js";
 import { restoreFromCheckpoint } from "./executor.js";
 import type { Observation } from "./observation.js";
 import { registered } from "./procedure.js";
@@ -25,7 +26,13 @@ function option(args: string[], name: string): string | undefined {
 function main(argv: string[]): number {
   const [command, ...args] = argv;
   if (command === "procedures") {
-    console.log(registered().join("\n"));
+    // each registered procedure with what it promises (see the which-method page)
+    const describe = (name: string): string => {
+      const g = PROCEDURE_GUARANTEES[name.split("/")[0]];
+      if (g === undefined) return "";
+      return typeof g === "string" ? g : Object.entries(g).map(([k, v]) => `${v} (${k})`).join(", ");
+    };
+    console.log(registered().map((name) => `${name}\t${describe(name)}`).join("\n"));
     return 0;
   }
   if (command === "verify" && args[0]) {
