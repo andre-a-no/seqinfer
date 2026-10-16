@@ -118,11 +118,32 @@ to choosing a method.
   difference in expected loss of two forecasters (Choe and Ramdas 2024,
   with the empirical Bernstein stitched boundary of Howard et al. 2021),
   with no stationarity assumed.
+- Regressors (promotions, holidays, prices): an input per regressor
+  holding its value now and its planned values for the forecast horizon
+  (`forecasting.forecast_records` builds them from aligned columns).
+  - Exponential smoothing takes their effects fixed (estimated by
+    `fit_ets`, profiled exactly with the initial states) or learns them on
+    the stream. The learnt effects are an exact Bayesian regression,
+    because the model's errors are affine in the effects (tested against
+    the explicit regression).
+  - `AutoRegressive` and `fit_ar` take them too; `fit_ar` with regressors
+    equals AutoReg with exog, forecasts and intervals included (tested).
+- `PoissonSmoothing`: forecasts of counts (the Poisson local level model
+  of Harvey and Fernandes, a gamma rate discounted at each step). The
+  forecasts are negative binomial, checked against numerical integration
+  of the Poisson-gamma mixture, and the intervals are counts holding at
+  least their coverage. It takes an optional exposure. `fit_counts`
+  estimates the discount, and `averaged_counts` learns it on the stream.
+- `transform="log"` for exponential smoothing and autoregression:
+  proportional effects and seasons. The intervals are mapped back
+  exactly, the point forecast is the median, and log scores and fitted
+  likelihoods are those of y itself, so transformed and untransformed
+  models compare and average.
 - Every forecaster scores each value against its forecast: the error,
-  the log predictive density, and their sum, the prequential
-  log-likelihood.
-- Tutorial "Forecasting, fixed and continuous training". Reference page.
-  TypeScript ports.
+  the log predictive density (or probability), and their sum, the
+  prequential log-likelihood.
+- Tutorial "Forecasting, fixed and continuous training", with sections on
+  regressors, counts and the log scale. Reference page. TypeScript ports.
 
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3

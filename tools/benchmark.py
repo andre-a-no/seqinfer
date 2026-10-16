@@ -68,6 +68,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     OnlineHMM,
     ParticleFilter,
     PlanTest,
+    PoissonSmoothing,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
@@ -81,6 +82,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_counts,
     averaged_smoothing,
 )
 from sequential_analysis.rng import SplitMix64  # noqa: E402
@@ -105,6 +107,15 @@ def observation(rnd):
 
 def pair(rnd):
     return {"a": rnd.gauss(0.0, 1.0), "b": rnd.gauss(0.0, 1.0)}
+
+
+def promo_day(rnd):
+    return {"y": 100.0 + rnd.gauss(0.0, 5.0), "promo": [float(rnd.random() < 0.1) for _ in range(8)],
+            "price": [1.0 + 0.1 * rnd.random() for _ in range(8)]}
+
+
+def count(rnd):
+    return {"y": rnd.randrange(6)}
 
 
 def loss_pair(rnd):
@@ -224,6 +235,11 @@ CASES = [
     ("ConformalForecast around learnt AutoRegressive(5)",
      lambda b: ConformalForecast(AutoRegressive(5, forgetting=0.99)), observation, (100,), False),
     ("ForecastComparison", lambda b: ForecastComparison((0.0, 1.0)), loss_pair, (100,), False),
+    ("ExponentialSmoothing, season 7, 2 learnt regressors, 7 ahead",
+     lambda b: ExponentialSmoothing(0.3, gamma=0.1, period=7, regressors=("promo", "price"), horizon=7), promo_day,
+     (100,), False),
+    ("PoissonSmoothing, 7 ahead", lambda b: PoissonSmoothing(0.9, horizon=7), count, (100,), False),
+    ("averaged_counts (8 discounts)", lambda b: averaged_counts(), count, (100,), False),
     ("BayesianChangePoint (normal-gamma)", lambda b: BayesianChangePoint(NormalGammaModel(), 0.01), normal,
      (100, 1000, 3000), False),
     ("BootstrapParticleFilter, 256 particles", lambda b: BootstrapParticleFilter(0.1, 1.0, particles=256),

@@ -76,6 +76,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     Poisson,
     PoissonEmission,
     PoissonGammaModel,
+    PoissonSmoothing,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
@@ -91,6 +92,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_counts,
     averaged_smoothing,
 )
 
@@ -540,8 +542,58 @@ def cases():
          seasonal_rows(40, 5, 0.0, 1.5)),
         ("forecast_comparison", ForecastComparison((0.0, 3.0), alpha=0.1), None, loss_rows(120)),
     ]
+    rg = random.Random(20261018)  # the second forecasting round's own stream
+
+    def promo_rows(n, horizon, effect):
+        promo = [1.0 if rg.random() < 0.15 else 0.0 for _ in range(n + horizon)]
+        level, out = 50.0, []
+        for t in range(n):
+            level += rg.gauss(0.0, 0.5)
+            out.append({"y": level + 3.0 * math.sin(2.0 * math.pi * t / 5) + effect * promo[t] + rg.gauss(0.0, 1.0),
+                        "promo": promo[t:t + horizon + 1]})
+        return out
+
+    def count_rows(n, horizon):
+        out, log_rate = [], math.log(4.0)
+        hours = [1.0 + 0.5 * rg.random() for _ in range(n + horizon)]
+        for t in range(n):
+            log_rate += rg.gauss(0.0, 0.05)
+            mean, k, p = hours[t] * math.exp(log_rate), 0, rg.random()
+            limit = math.exp(-mean)
+            while p > limit:
+                k += 1
+                p *= rg.random()
+            out.append({"y": k, "hours": hours[t:t + horizon + 1]})
+        return out
+
+    def positive_rows(n):
+        level, out = 2.0, []
+        for _ in range(n):
+            level += rg.gauss(0.0, 0.05)
+            out.append({"y": math.exp(level + rg.gauss(0.0, 0.2))})
+        return out
+
+    inputs_round = [
+        ("ets_fixed_effects",
+         ExponentialSmoothing(0.3, gamma=0.1, period=5, initial_level=50.0, sigma=1.2, regressors=("promo",),
+                              coefficients=(8.0,), horizon=3), None, promo_rows(50, 3, 8.0)),
+        ("ets_learnt_effects",
+         ExponentialSmoothing(0.3, gamma=0.1, period=5, regressors=("promo",), forgetting=0.98, ridge=0.5,
+                              horizon=3), None, promo_rows(60, 3, 8.0)),
+        ("ar_learnt_regressor", AutoRegressive(2, regressors=("promo",), horizon=2), None, promo_rows(60, 2, 5.0)),
+        ("ar_fixed_log", AutoRegressive(1, coefficients=(0.7,), intercept=0.6, sigma=0.2, transform="log",
+                                        horizon=3), None, positive_rows(40)),
+        ("ets_log_learnt_sigma", ExponentialSmoothing(0.4, transform="log", horizon=2, coverage=0.8), None,
+         positive_rows(40)),
+        ("poisson_smoothing", PoissonSmoothing(0.9, exposure="hours", horizon=3), None, count_rows(60, 3)),
+        ("averaged_counts", averaged_counts(discounts=(0.7, 0.9, 1.0), horizon=2, coverage=0.8), None,
+         [{"y": r["y"]} for r in count_rows(60, 0)]),
+        ("averaged_log_and_raw",
+         ModelAveraging([ExponentialSmoothing(0.3, transform="log", horizon=2),
+                         ExponentialSmoothing(0.3, horizon=2)]), None, positive_rows(40)),
+    ]
     return (existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
-            + forecasting)
+            + forecasting + inputs_round)
 
 
 def vector(label, procedure, seed, inputs):

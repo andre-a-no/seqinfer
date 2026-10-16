@@ -61,6 +61,7 @@ from sequential_analysis.procedures import (
     ParticleFilter,
     PlanTest,
     Poisson,
+    PoissonSmoothing,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
@@ -589,6 +590,35 @@ def cases():
             lambda: KeyJoin(("a", "b")),
             Delivery,
             record_stream([{"a": ((i * 37) % 19) / 10.0, "b": ((i * 11) % 13) / 8.0} for i in range(n)], ("a", "b")),
+            None,
+        ),
+        (
+            "exponential_smoothing_learnt_effects",
+            lambda: ExponentialSmoothing(0.3, gamma=0.1, period=4, regressors=("promo",), forgetting=0.99,
+                                         horizon=2),
+            lambda: KeyJoin(("y", "promo")),
+            Delivery,
+            record_stream([{"y": 10.0 + math.sin(1.3 * i) + 4.0 * (i % 9 == 2),
+                            "promo": [float((i + j) % 9 == 2) for j in range(3)]} for i in range(n)], ("y", "promo")),
+            None,
+        ),
+        (
+            "autoregressive_log_regressor",
+            lambda: AutoRegressive(1, regressors=("price",), transform="log", horizon=2),
+            lambda: KeyJoin(("y", "price")),
+            Delivery,
+            record_stream([{"y": math.exp(1.0 + 0.3 * math.sin(0.5 * i)), "price": [1.0 + 0.1 * ((i + j) % 5)
+                                                                                    for j in range(3)]}
+                           for i in range(n)], ("y", "price")),
+            None,
+        ),
+        (
+            "poisson_smoothing",
+            lambda: PoissonSmoothing(0.9, exposure="hours", horizon=2),
+            lambda: KeyJoin(("y", "hours")),
+            Delivery,
+            record_stream([{"y": (i * 7) % 5, "hours": [1.0 + 0.5 * ((i + j) % 3) for j in range(3)]}
+                           for i in range(n)], ("y", "hours")),
             None,
         ),
         (

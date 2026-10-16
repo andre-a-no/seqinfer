@@ -191,7 +191,7 @@ class LearntAutoregression(unittest.TestCase):
         state = model.initial_state()
         rate = 0.0
         for t, y in enumerate(ys):
-            new, _, score = model.update(state, y)
+            new, _, score = model.update(state, {"y": y})
             if t >= 2:
                 theta, gram = self.reference(ys[:t], 2, 1.0, 1.0)
                 x = [1.0, ys[t - 1], ys[t - 2]]
@@ -302,7 +302,7 @@ class Averaging(unittest.TestCase):
         comps = avg._components(state)
         for h in range(2):
             for bound, target in ((outs[-1].lower[h], 0.1), (outs[-1].upper[h], 0.9)):
-                cdf = sum(w * standard_cdf((bound - p.mean[h]) / p.scale[h], p.df) for w, p in comps)
+                cdf = sum(w * standard_cdf((bound - p.mean[h]) / p.scale[h], p.df) for w, _, p in comps)
                 self.assertAlmostEqual(cdf, target, delta=1e-9)
 
     def test_grid_learns_the_smoothing_parameter(self):
@@ -390,8 +390,8 @@ class Comparison(unittest.TestCase):
                 sc, out = comparison.step(sc, {"a": min(5.0, abs(y - pg.mean[0])), "b": min(5.0, abs(y - pn.mean[0]))})
                 if out.better and decided is None:
                     decided = out.n, out.better
-            sg, _, _ = good.update(sg, y)
-            sn, _, _ = naive.update(sn, y)
+            sg, _, _ = good.update(sg, {"y": y})
+            sn, _, _ = naive.update(sn, {"y": y})
         self.assertIsNotNone(decided)
         self.assertEqual(decided[1], "a")
 

@@ -15,6 +15,8 @@ from .forecast import (
     ExponentialSmoothing,
     ForecastComparison,
     ModelAveraging,
+    PoissonSmoothing,
+    averaged_counts,
     averaged_smoothing,
 )
 from .group_sequential import (
@@ -111,6 +113,7 @@ __all__ = [
     "Poisson",
     "PoissonEmission",
     "PoissonGammaModel",
+    "PoissonSmoothing",
     "QuantileConfidenceSequence",
     "QuantileEDetector",
     "QuantileTest",
@@ -127,6 +130,7 @@ __all__ = [
     "TMixtureSPRT",
     "TwoProportionTest",
     "TwoSPRT",
+    "averaged_counts",
     "averaged_smoothing",
     "e_bh",
     "emission_from_spec",

@@ -371,9 +371,9 @@ Sums and products are reproduced exactly when they are evaluated in the
 reference order. Every procedure's sums are left-to-right or
 Neumaier-compensated, never pairwise. Decisions are compared exactly.
 
-In the TypeScript executor, 27 of the 79 cases agree bit for bit. The
+In the TypeScript executor, 28 of the 87 cases agree bit for bit. The
 others differ in the last bits only: by at most 5e-14 relative, except
-in nine cases. Every such difference was traced to `Math.log`, `log1p`,
+in eleven cases. Every such difference was traced to `Math.log`, `log1p`,
 `exp`, `expm1` or `cos` rounding differently from the C library. In
 six of the seven a small value is a difference of much larger terms,
 so a last-bit difference in those terms is large relative to it: in
@@ -388,10 +388,13 @@ is 0.017, a sum of per-pair terms of both signs; in `online_hmm_student_t`
 observations of both signs. In
 `catoni_confidence_sequence` (2.1e-13) the bounds are roots found to a
 relative 1e-12, and the search stops at a slightly different point. In
-`model_averaging` (9.3e-14) and `averaged_smoothing` (5.9e-13) the
-interval ends are quantiles of a mixture of Student t forecasts, found
-by Newton steps to a relative 1e-13; a last-bit difference in the t
-distribution function moves the point where the search stops. No
+`model_averaging` (8.3e-14), `averaged_smoothing` (5.9e-13) and
+`averaged_log_and_raw` (8.9e-14) the interval ends are quantiles of a
+mixture of forecasts, found by Newton steps to a relative 1e-13; a
+last-bit difference in the t distribution function moves the point
+where the search stops. In `averaged_counts` (8.0e-14) the mixture
+weights are exponentials of differences of log-likelihoods built from
+log-gamma terms. No
 decision differs.
 
 The TypeScript executor implements the procedures listed by

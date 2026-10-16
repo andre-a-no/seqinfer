@@ -92,6 +92,9 @@ same data.
 |---|---|
 | a history to fit, the process stable | `fit_ets` (level, trend, season) or `fit_ar`, then forecast with the fitted model |
 | no history, or a process that changes | `averaged_smoothing` (learns the smoothing parameters), `AutoRegressive` without coefficients, with `forgetting` below 1 to follow drift |
+| known drivers: promotions, holidays, prices | `regressors=` on any of them |
+| counts (orders, calls, incidents) | `fit_counts` or `averaged_counts` (`PoissonSmoothing`) |
+| growth, swings proportional to the level | `transform="log"` |
 | several candidate models | `ModelAveraging` |
 | intervals that must hold whatever the data | `ConformalForecast` around any of them |
 | is one forecaster better than another? | `ForecastComparison`, valid at every time |
