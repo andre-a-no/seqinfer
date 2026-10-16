@@ -8,10 +8,15 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 
 ## 0.4.0 — 2026-10-16
 
+The first release on PyPI since 0.2.0: it also brings everything listed
+under 0.3.0, which was tagged on GitHub but not published on PyPI.
+
 Group sequential trials for any endpoint, checked against rpact and R's
 survival package; ratio metrics; stratified log-rank tests; hidden Markov
-models that learn their parameters; plots; property-based tests; a guide
-to choosing a method.
+models that learn their parameters; forecasting with fixed or continuous
+training; redirecting traffic during an experiment; a `guarantee` on
+every procedure; plots; property-based tests; a guide to choosing a
+method.
 
 ### Added: group sequential trials for any endpoint
 - `GroupSequentialTwoMeans` (continuous endpoint in two arms, known
@@ -255,6 +260,8 @@ to choosing a method.
 - A short paper for the Journal of Open Source Software (`paper/joss/`).
 
 ## 0.3.0 — 2026-10-15
+
+Not published on PyPI; these changes reached it with 0.4.0.
 
 Filters and smoothers, A/B tests, nonparametric change detection, data
 source adapters, a numpy backend, a specification of the formats with a
