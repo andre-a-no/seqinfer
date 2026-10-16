@@ -17,15 +17,15 @@ state,
 
 for the transitions (counts of j -> l) and the emissions (the
 statistics `emission.statistics` of each state), updated by the backward
-kernel r_t(j | k) = phi_{t-1}(j) A[j][k] / sum_j' phi_{t-1}(j') A[j'][k]:
+kernel `r_t(j | k) = phi_{t-1}(j) A[j][k] / sum_j' phi_{t-1}(j') A[j'][k]`:
 
     rho_t(k) = gamma_t s(., k, y_t) + (1 - gamma_t) sum_j rho_{t-1}(j) r_t(j | k),
 
 with step sizes gamma_t = t^-kappa (1/2 < kappa <= 1).  The statistics
 S_t = sum_k rho_t(k) phi_t(k) approximate the normalised expected
 statistics of the batch E-step, and after `burn_in` observations the
-parameters are their maximiser (the M-step of fit_hmm): A[j][l] =
-S(j, l) / sum_l S(j, l), the emissions `emission.from_statistics`.
+parameters are their maximiser (the M-step of fit_hmm):
+`A[j][l] = S(j, l) / sum_l S(j, l)`, the emissions `emission.from_statistics`.
 Before that the starting model is used.  Cappé (2011) shows that the
 estimates converge to a stationary point of the limiting likelihood under
 regularity conditions; the tests check that they approach the batch

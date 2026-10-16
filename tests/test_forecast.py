@@ -144,7 +144,9 @@ class AgainstStatsmodels(unittest.TestCase):
 def solve(a, b):
     """Gaussian elimination with partial pivoting, for the reference computations."""
     n = len(a)
-    m = [[*list(row), v] for row, v in zip(a, b)]
+    m = [list(row) for row in a]
+    for row, v in zip(m, b):
+        row.append(v)
     for i in range(n):
         p = max(range(i, n), key=lambda r: abs(m[r][i]))
         m[i], m[p] = m[p], m[i]

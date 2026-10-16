@@ -65,7 +65,9 @@ def promo_series(n, seed, effect=20.0, period=7, horizon=3):
 
 def solve(a, b):
     n = len(a)
-    m = [[*row, v] for row, v in zip(a, b)]
+    m = [list(row) for row in a]
+    for row, v in zip(m, b):
+        row.append(v)
     for i in range(n):
         p = max(range(i, n), key=lambda r: abs(m[r][i]))
         m[i], m[p] = m[p], m[i]

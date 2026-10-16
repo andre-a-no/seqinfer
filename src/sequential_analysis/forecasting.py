@@ -9,8 +9,9 @@ the regressors enter the one-step errors linearly, e_t = e_t(0) -
 w' D^(t-1) x0 - sum_j b_j u_jt with D = F - g w' (Hyndman et al. 2008), so
 for given smoothing parameters the best initial states and effects are a
 least-squares regression and the likelihood is profiled over them
-exactly.  The smoothing parameters are then found by Nelder-Mead over the
-usual admissible region, as statsmodels bounds it: alpha in [1e-4,
+exactly.  The smoothing parameters are then found by Nelder-Mead, started
+from the four best points of a grid (the likelihood can have several
+local maxima), over the usual admissible region, as statsmodels bounds it: alpha in [1e-4,
 0.9999], beta / alpha in [1e-4, 0.9999], gamma in [0, 0.9999 (1 - alpha)]
 (statsmodels also allows a slightly negative gamma) and phi in [0.8,
 0.98].  The seasonal effects are normalized to sum to zero (level and
@@ -285,21 +286,26 @@ def fit_ets(inputs: Iterable[Any], *, trend: str | None = None, period: int | No
     n_params = len(problem.pack(0.5, 0.1, 0.1, 0.9))
     if len(ys) < problem.k + n_params + 2:
         raise ValueError("the history is too short for this model")
-    # start from the best point of a small grid, then Nelder-Mead
-    best_u, best_f = None, math.inf
-    for a in (0.1, 0.3, 0.6):
-        for fb in ((0.05, 0.3) if trend is not None else (None,)):
-            for fg in ((0.05, 0.3) if period else (None,)):
-                b = a * fb if fb is not None else 0.0
-                g = (1.0 - a) * fg if fg is not None else 0.0
-                u = problem.pack(a, b, g, 0.95)
-                value = problem.objective(u)
-                if value < best_f:
-                    best_u, best_f = u, value
-    assert best_u is not None
-    u, sse, evaluations = nelder_mead(problem.objective, best_u, max_evaluations=max_evaluations)
-    u, sse, more = nelder_mead(problem.objective, u, step=0.1, max_evaluations=max_evaluations)  # restart
-    evaluations += more
+    # Nelder-Mead from the four best points of a grid: the likelihood can have several local maxima
+    # (with a damped trend, for instance, one at beta = 0 beside the global one)
+    starts: list[tuple[float, int, Any]] = []
+    for a in (0.1, 0.3, 0.6, 0.85):
+        for fb in ((0.01, 0.1, 0.4) if trend is not None else (None,)):
+            for fg in ((0.02, 0.1, 0.4) if period else (None,)):
+                for f in ((0.85, 0.95) if trend == "damped" else (0.95,)):
+                    b = a * fb if fb is not None else 0.0
+                    g = (1.0 - a) * fg if fg is not None else 0.0
+                    u = problem.pack(a, b, g, f)
+                    starts.append((problem.objective(u), len(starts), u))
+    starts.sort()
+    evaluations = len(starts)
+    u, sse = starts[0][2], starts[0][0]
+    for _, _, start in starts[:4]:
+        x, value, used = nelder_mead(problem.objective, start, max_evaluations=max_evaluations)
+        x, value, more = nelder_mead(problem.objective, x, step=0.1, max_evaluations=max_evaluations)  # restart
+        evaluations += used + more
+        if value < sse:
+            u, sse = x, value
     alpha, beta, gamma, phi = problem.unpack(u)
     x0, _errors = problem.initial_states((alpha, beta, gamma, phi))
     n = len(ys)
