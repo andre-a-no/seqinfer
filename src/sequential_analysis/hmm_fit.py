@@ -253,9 +253,9 @@ def fit_hmm(inputs: Iterable[Mapping[str, Any]], start: HiddenMarkovFilter, *, i
     starting parameters; its input name selects the field of the
     records.  EM stops when the log-likelihood rises by less than
     `tolerance` in an iteration, or after `iterations`.  `min_scale`
-    bounds standard deviations and rates from below (a state that
-    collapses onto one value otherwise drives the likelihood to
-    infinity).  With `restarts`, further runs start from random soft
+    bounds standard deviations, scales and rates from below, and is the
+    ridge on covariances (a state that collapses onto one value otherwise
+    drives the likelihood to infinity).  With `restarts`, further runs start from random soft
     assignments of the observations to the states (seeded by `seed`), and
     the best run is returned with its states sorted by their first
     emission parameter; `fit_initial` / `fit_transition` False keep those

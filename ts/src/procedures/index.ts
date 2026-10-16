@@ -15,7 +15,10 @@ export {
   GroupSequentialTwoMeans, normalInvCdf,
   spendingFunction,
 } from "./group_sequential.js";
-export { CategoricalEmission, type Emission, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, PoissonEmission } from "./hmm.js";
+export {
+  CategoricalEmission, type Emission, type EmissionInput, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, MultivariateGaussianEmission,
+  PoissonEmission, StudentTEmission,
+} from "./hmm.js";
 export { LocalLevelKalman } from "./kalman.js";
 export { AnytimeLinearModel } from "./linear_model.js";
 export { NormalMixtureSPRT } from "./mixture.js";

@@ -48,6 +48,7 @@ from sequential_analysis.procedures import (
     MeanDifference,
     MeanEDetector,
     MultipleTests,
+    MultivariateGaussianEmission,
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
@@ -65,6 +66,7 @@ from sequential_analysis.procedures import (
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
+    StudentTEmission,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
@@ -513,6 +515,25 @@ def cases():
             record_stream([{"arm": 2 if i % 11 == 5 else i % 2, "d": float(i % 4),
                             "y": (i % 4) * (1.0 + ((i * 7919) % 101) / 50 + 0.4 * (i % 2))} for i in range(n)],
                           ("arm", "y", "d")),
+            None,
+        ),
+        (
+            "hidden_markov_multivariate",
+            lambda: HiddenMarkovFilter((0.5, 0.5), ((0.95, 0.05), (0.1, 0.9)), MultivariateGaussianEmission(
+                ((0.0, 0.0), (2.0, 0.0)), (((1.0, 0.2), (0.2, 0.6)), ((1.5, -0.3), (-0.3, 0.8))))),
+            Independent,
+            Delivery,
+            list(from_values("y", [[math.sin(0.7 * i) + 2.0 * ((i // 20) % 2), math.cos(1.1 * i)] for i in range(n)])),
+            None,
+        ),
+        (
+            "hidden_markov_student_t",
+            lambda: HiddenMarkovFilter((0.5, 0.5), ((0.95, 0.05), (0.1, 0.9)),
+                                       StudentTEmission((0.0, 2.0), (1.0, 1.5), 4.0)),
+            Independent,
+            Delivery,
+            list(from_values("y", [(0.0 if (i // 20) % 2 == 0 else 2.0) + math.sin(1.7 * i)
+                                   + (40.0 if i % 23 == 7 else 0.0) for i in range(n)])),
             None,
         ),
         (

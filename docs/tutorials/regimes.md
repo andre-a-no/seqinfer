@@ -141,12 +141,49 @@ Every output also carries the prequential log-likelihood: the sum of
 log p(y_t | y_1..y_{t-1}), each term under the parameters learnt before
 y_t. It is a fair score for comparing learners.
 
+## Outliers: Student-t emissions
+
+Real data have glitches, such as a bad tick or a fat-finger trade. A
+Gaussian model can only explain a glitch as a short spell of the
+volatile regime. Fitted to data with 1% of them, it inflates the
+volatile standard deviation and shortens the spells. Student-t emissions
+give the glitches heavy tails to land in. Their EM step weights each
+observation by how plausible it is (an ECM step with the degrees of
+freedom held fixed), so a glitch hardly moves the estimates:
+
+```python
+from sequential_analysis.procedures import StudentTEmission
+
+rnd = random.Random(4)
+dirty = [y + (rnd.choice((-15.0, 15.0)) if rnd.random() < 0.01 else 0.0) for y in history]
+t_guess = HiddenMarkovFilter([0.5, 0.5], [[0.9, 0.1], [0.1, 0.9]],
+                             StudentTEmission(means=[0.0, 0.0], scales=[0.5, 2.5], df=4.0))
+for name, start in (("Gaussian", guess), ("Student t, 4 df", t_guess)):
+    for label, data in (("clean", history), ("with glitches", dirty)):
+        fitted = fit_hmm([{"y": y} for y in data], start, restarts=2, seed=7).model
+        spec = fitted.emission.spec()
+        widths = spec.get("sds", spec.get("scales"))
+        print(f"{name:16} {label:14} widths {[round(w, 2) for w in widths]}, "
+              f"spells {1 / fitted.transition[0][1]:.0f} and {1 / fitted.transition[1][0]:.0f} days")
+```
+
+With the glitches, the Gaussian fit's volatile standard deviation goes
+from 2.05 to 3.84, and its spells shrink from 40 and 16 days to 22 and
+7. The t fit's scales move from 1.65 to 1.79, and its spells from 44 and
+18 days to 32 and 14. A t scale is not a standard deviation: with 4
+degrees of freedom the standard deviation is √2 times the scale.
+
 ## Choosing the emissions
 
 * `GaussianEmission` is for one real value per step.
+* `StudentTEmission` is the same with heavy tails, for data with
+  outliers.
+* `MultivariateGaussianEmission` is for a vector per step (several
+  sensors, several assets), with a full covariance matrix per regime.
 * `PoissonEmission` is for counts.
 * `CategoricalEmission` is for symbols.
 
-A regime can only be told apart by what the emission model sees. Two
-regimes with the same mean and different variances, as here, need the
-variance in the model, which the Gaussian has.
+All of them work with the filter, the smoother, `fit_hmm` and
+`OnlineHMM`. A regime can only be told apart by what the emission model
+sees. Two regimes with the same mean and different variances, as here,
+need the variance in the model.

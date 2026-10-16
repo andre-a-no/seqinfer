@@ -16,7 +16,15 @@ from .group_sequential import (
     GroupSequentialTest,
     GroupSequentialTwoMeans,
 )
-from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
+from .hmm import (
+    CategoricalEmission,
+    GaussianEmission,
+    HiddenMarkovFilter,
+    MultivariateGaussianEmission,
+    PoissonEmission,
+    StudentTEmission,
+    emission_from_spec,
+)
 from .kalman import LocalLevelKalman
 from .linear_model import AnytimeLinearModel
 from .mixture import NormalMixtureSPRT
@@ -80,6 +88,7 @@ __all__ = [
     "MeanDifference",
     "MeanEDetector",
     "MultipleTests",
+    "MultivariateGaussianEmission",
     "NormalGammaModel",
     "NormalMixtureSPRT",
     "OnlineFDR",
@@ -100,10 +109,12 @@ __all__ = [
     "ShiryaevRoberts",
     "StateSpaceModel",
     "StochasticVolatilityModel",
+    "StudentTEmission",
     "StudentTLocalLevel",
     "TMixtureSPRT",
     "TwoProportionTest",
     "TwoSPRT",
     "e_bh",
+    "emission_from_spec",
     "kiefer_weiss_point",
 ]

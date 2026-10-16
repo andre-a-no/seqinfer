@@ -72,8 +72,17 @@ to choosing a method.
   averaging of the statistics brings the noise of its estimates down to
   that of the batch fit. With step sizes 1/t, its statistics equal the
   batch E-step's averages exactly (tested). TypeScript port.
+- New emissions:
+  - `MultivariateGaussianEmission`: vector observations, with a mean
+    vector and a full covariance matrix per state.
+  - `StudentTEmission`: heavy tails for data with outliers, with
+    per-state degrees of freedom. Its EM step is the ECM step with df
+    held fixed.
+
+  Both are ported to the TypeScript executor.
 - Every emission family gives its sufficient statistics and its M-step
-  (`statistics`, `from_statistics`).
+  (`statistics`, `from_statistics`). `emission_from_spec` rebuilds any
+  emission from its spec.
 - Tutorial "Regimes with hidden Markov models": fit on a history, follow
   the regime live with an alarm, smooth and decode afterwards, learn on
   the stream.

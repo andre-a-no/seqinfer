@@ -61,6 +61,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     MeanDifference,
     MeanEDetector,
     MultipleTests,
+    MultivariateGaussianEmission,
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
@@ -80,6 +81,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
+    StudentTEmission,
     StudentTLocalLevel,
     TMixtureSPRT,
     TwoProportionTest,
@@ -458,7 +460,33 @@ def cases():
         ("online_hmm_poisson_last_iterate", OnlineHMM(counts, kappa=0.8, burn_in=20, average=False), None,
          count_rows(120, (1.0, 6.0), (0.9, 0.85))),
     ]
-    return existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm
+
+    rv = random.Random(20261016)  # its own stream: the vectors above keep their data
+
+    def regimes(n, draw, stay=(0.92, 0.88)):
+        rows, z = [], 0
+        for _ in range(n):
+            if rv.random() > stay[z]:
+                z = 1 - z
+            rows.append({"y": draw(z)})
+        return rows
+
+    emissions = [
+        ("hmm_multivariate_gaussian",
+         HiddenMarkovFilter((0.5, 0.5), ((0.9, 0.1), (0.15, 0.85)),
+                            MultivariateGaussianEmission(((0.0, 0.0), (2.0, -1.0)),
+                                                         (((1.0, 0.3), (0.3, 0.5)), ((2.0, -0.8), (-0.8, 1.0))))), None,
+         regimes(60, lambda k: [rv.gauss(2.0 * k, 1.0), rv.gauss(-k, 0.7)])),
+        ("hmm_student_t",
+         HiddenMarkovFilter((0.6, 0.4), ((0.95, 0.05), (0.1, 0.9)),
+                            StudentTEmission((0.0, 3.0), (1.0, 0.5), (3.0, 10.0))), None,
+         regimes(60, lambda k: rv.gauss(3.0 * k, 1.0) + (25.0 if rv.random() < 0.05 else 0.0))),
+        ("online_hmm_student_t",
+         OnlineHMM(HiddenMarkovFilter((0.5, 0.5), ((0.9, 0.1), (0.1, 0.9)),
+                                      StudentTEmission((0.0, 2.0), (1.0, 1.0), 4.0)), burn_in=25), None,
+         regimes(120, lambda k: rv.gauss(3.0 * k, 1.0) + (30.0 if rv.random() < 0.04 else 0.0))),
+    ]
+    return existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
 
 
 def vector(label, procedure, seed, inputs):
