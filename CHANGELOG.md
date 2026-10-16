@@ -8,9 +8,15 @@ separately (`sequential-analysis.checkpoint/2`, `.log/2`, `.history/2`,
 
 ## 0.4.0 — 2026-10-16
 
+The first release on PyPI since 0.2.0: it also brings everything listed
+under 0.3.0, which was tagged on GitHub but not published on PyPI.
+
 Group sequential trials for any endpoint, checked against rpact and R's
-survival package; ratio metrics; stratified log-rank tests; plots;
-property-based tests; a guide to choosing a method.
+survival package; ratio metrics; stratified log-rank tests; hidden Markov
+models that learn their parameters; forecasting with fixed or continuous
+training; redirecting traffic during an experiment; a `guarantee` on
+every procedure; plots; property-based tests; a guide to choosing a
+method.
 
 ### Added: group sequential trials for any endpoint
 - `GroupSequentialTwoMeans` (continuous endpoint in two arms, known
@@ -59,6 +65,118 @@ property-based tests; a guide to choosing a method.
 - Corrected numbers in the time-scale caveat of the log-rank test, from
   new simulations: 21% (not 24%) for Weibull shape 0.3, 14% (not 5%) for
   shape 0.5.
+
+### Added: hidden Markov models that learn their parameters
+- `sequential_analysis.hmm_fit.fit_hmm`: maximum-likelihood parameters of
+  an HMM from a recorded series (Baum–Welch), with random restarts whose
+  best run is labelled like the starting model. One EM step agrees with
+  hmmlearn to 1e-10. The log-likelihood never decreases, and the fit is a
+  fixed point of EM.
+- `OnlineHMM`: filtering and online EM (Cappé 2011) at once, in constant
+  memory, for a stream that cannot be recorded first. Polyak–Ruppert
+  averaging of the statistics brings the noise of its estimates down to
+  that of the batch fit. With step sizes 1/t, its statistics equal the
+  batch E-step's averages exactly (tested). TypeScript port.
+- New emissions:
+  - `MultivariateGaussianEmission`: vector observations, with a mean
+    vector and a full covariance matrix per state.
+  - `StudentTEmission`: heavy tails for data with outliers, with
+    per-state degrees of freedom. Its EM step is the ECM step with df
+    held fixed.
+
+  Both are ported to the TypeScript executor.
+- Every emission family gives its sufficient statistics and its M-step
+  (`statistics`, `from_statistics`). `emission_from_spec` rebuilds any
+  emission from its spec.
+- Tutorial "Regimes with hidden Markov models": fit on a history, follow
+  the regime live with an alarm, smooth and decode afterwards, learn on
+  the stream.
+
+### Added: forecasting, with fixed or continuous training
+- `ExponentialSmoothing`: additive-error ETS with no, additive or damped
+  trend and an optional additive season. It forecasts 1..`horizon` steps
+  ahead with intervals. With the same parameters, its one-step errors,
+  forecasts, intervals and likelihood agree with statsmodels' `ETSModel`
+  to 1e-9 (tested). With `sigma` unknown it learns the noise level, and
+  its intervals are then exact Student t ones.
+- `AutoRegressive`: AR(p) forecasts with intervals. With coefficients
+  given, they are AutoReg's. Without, it learns the coefficients by
+  Bayesian regression on the lags, with optional forgetting to follow
+  drift. The coefficients are then the exponentially weighted ridge
+  regression (tested), and the one-step forecast is exactly Student t.
+- `sequential_analysis.forecasting`:
+  - `fit_ets`: maximum likelihood, with the initial states profiled out
+    exactly by least squares. It reaches at least statsmodels'
+    likelihood (tested).
+  - `fit_ar`: conditional least squares, equal to AutoReg.
+
+  Both return the model and its state at the end of the history.
+- `ModelAveraging` and `averaged_smoothing`: Bayesian model averaging of
+  forecasters, with optional forgetting (dynamic model averaging). Over a
+  grid of smoothing parameters, it learns them on the stream. Its weights
+  are the exact posterior model probabilities (tested).
+- `ConformalForecast`: distribution-free intervals around any
+  forecaster, by online conformal quantile tracking. For any data, the
+  fraction of intervals that missed equals alpha up to a term that
+  vanishes at rate 1/n (the identity is tested).
+- `ForecastComparison`: an anytime-valid confidence sequence for the
+  difference in expected loss of two forecasters (Choe and Ramdas 2024,
+  with the empirical Bernstein stitched boundary of Howard et al. 2021),
+  with no stationarity assumed.
+- Regressors (promotions, holidays, prices): an input per regressor
+  holding its value now and its planned values for the forecast horizon
+  (`forecasting.forecast_records` builds them from aligned columns).
+  - Exponential smoothing takes their effects fixed (estimated by
+    `fit_ets`, profiled exactly with the initial states) or learns them on
+    the stream. The learnt effects are an exact Bayesian regression,
+    because the model's errors are affine in the effects (tested against
+    the explicit regression).
+  - `AutoRegressive` and `fit_ar` take them too; `fit_ar` with regressors
+    equals AutoReg with exog, forecasts and intervals included (tested).
+- `PoissonSmoothing`: forecasts of counts (the Poisson local level model
+  of Harvey and Fernandes, a gamma rate discounted at each step). The
+  forecasts are negative binomial, checked against numerical integration
+  of the Poisson-gamma mixture, and the intervals are counts holding at
+  least their coverage. It takes an optional exposure. `fit_counts`
+  estimates the discount, and `averaged_counts` learns it on the stream.
+- `transform="log"` for exponential smoothing and autoregression:
+  proportional effects and seasons. The intervals are mapped back
+  exactly, the point forecast is the median, and log scores and fitted
+  likelihoods are those of y itself, so transformed and untransformed
+  models compare and average.
+- Every forecaster scores each value against its forecast: the error,
+  the log predictive density (or probability), and their sum, the
+  prequential log-likelihood.
+- Tutorial "Forecasting, fixed and continuous training", with sections on
+  regressors, counts and the log scale. Reference page. TypeScript ports.
+
+### Added: what each procedure promises
+- Every procedure has a `guarantee` attribute: `exact`, `asymptotic`,
+  `model`, `approximate` or `none` (`sequential_analysis.core.GUARANTEES`
+  says what each means). `GroupSequentialTest` and
+  `GroupSequentialTwoMeans` are exact with a known sigma and asymptotic
+  with an estimated one. The which-method page lists every procedure by
+  its guarantee (a test keeps the table in step with the code) and
+  recommends the exact procedure wherever one answers the question.
+
+### Added: redirecting traffic during an experiment
+- `ThompsonAllocation`: the split of the next units between K arms, by
+  Thompson sampling (each arm's share is the posterior probability that
+  it is the best), with a floor per arm and an optional reserve for the
+  control. Conversion and real-valued metrics are supported. It also
+  gives each arm's expected loss and the expected-loss deployment rule
+  ("threshold of caring"). The probabilities come from deterministic
+  piecewise Gauss–Legendre quadrature, checked against the closed form
+  for two Beta posteriors and against mpmath.
+- `BoundedABTest(propensity_input=..., arm_count=..., floor=...)`: the
+  exact test and confidence sequence for any bounded metric weight each
+  unit by the shares it was assigned with, so they stay valid when the
+  split follows the outcomes. With constant 50/50 shares the result is
+  identical to the fixed-allocation test, and under redirected traffic
+  with no effect the test rejects at most alpha of the time (simulated).
+- A/B tutorial section on redirecting traffic: losses, the deployment
+  rule, and which tests stay valid; a reserved share for the control
+  keeps the comparison with it fast.
 
 ### Added: plotting
 - `sequential_analysis.plotting` (optional extra `[plot]`, matplotlib 3.3
@@ -142,6 +260,8 @@ property-based tests; a guide to choosing a method.
 - A short paper for the Journal of Open Source Software (`paper/joss/`).
 
 ## 0.3.0 — 2026-10-15
+
+Not published on PyPI; these changes reached it with 0.4.0.
 
 Filters and smoothers, A/B tests, nonparametric change detection, data
 source adapters, a numpy backend, a specification of the formats with a

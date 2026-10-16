@@ -266,6 +266,16 @@ def refuse_terminal(procedure: Any, state: Any) -> None:
         raise LifecycleError(f"{procedure.name} has stopped; a terminal state takes no further observations")
 
 
+#: What a procedure's outputs promise, from the strongest to the weakest.
+GUARANTEES = {
+    "exact": "error rates, coverage or false-alarm rates hold at every sample size, under the stated assumptions",
+    "asymptotic": "they hold approximately, the better the larger the sample",
+    "model": "exact probabilities under the stated model and prior; no error rate beyond the model",
+    "approximate": "an approximation even under the model (Monte Carlo, variational, stochastic approximation)",
+    "none": "a transformation of the data; no inferential claim",
+}
+
+
 class Procedure(ABC, Generic[S, O]):
     """Semantic contract of a Sequential Procedure.
 
@@ -283,6 +293,8 @@ class Procedure(ABC, Generic[S, O]):
     randomized: bool = False
     #: True if every declared input is required in every step.
     joint_inputs: bool = True
+    #: What the outputs promise; one of GUARANTEES.
+    guarantee: str = "none"
 
     @abstractmethod
     def config(self) -> dict:

@@ -142,6 +142,7 @@ class MeanEDetector(_EDetector):
 
     name = "mean_e_detector"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, m: float, lo: float = 0.0, hi: float = 1.0, *, arl: float = 1000.0,
                  direction: str = "both", statistic: str = "shiryaev-roberts", grid: int = 10, input: str = "x"):
@@ -171,6 +172,7 @@ class QuantileEDetector(_EDetector):
 
     name = "quantile_e_detector"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, q0: float, p: float = 0.5, *, arl: float = 1000.0, direction: str = "both",
                  statistic: str = "shiryaev-roberts", grid: int = 10, input: str = "x"):

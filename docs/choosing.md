@@ -8,6 +8,25 @@ guarantee is, and names the tutorial that uses it.
 stopping time, under the stated assumptions. "Asymptotic" means it holds
 approximately in long runs.
 
+**Prefer an exact procedure.** Where an exact procedure answers the
+question, it is the default here and in the tutorials. An asymptotic one
+is worth its approximation only when nothing exact fits: an unbounded
+metric with no variance bound, a ratio of sums, planned analyses of an
+approximately normal statistic.
+
+Every procedure states its promise in its `guarantee` attribute
+(`sequential_analysis.core.GUARANTEES` lists the values):
+
+<!-- guarantees -->
+| Guarantee | Meaning | Procedures |
+|---|---|---|
+| **exact** | error rates, coverage or false-alarm rates hold at every sample size, under the stated assumptions | `AnytimeLinearModel`, `AnytimeLogRankTest`, `BettingConfidenceSequence`, `BettingMeanTest`, `BoundedABTest`, `CatoniConfidenceSequence`, `ConformalForecast`, `CUSUM`, `ForecastComparison`, `GroupSequentialTest` (known sigma), `GroupSequentialTwoMeans` (known sigma), `KernelTwoSampleTest`, `MeanEDetector`, `MultipleTests`, `NormalMixtureSPRT`, `OnlineFDR`, `PlanTest`, `QuantileConfidenceSequence`, `QuantileEDetector`, `QuantileTest`, `RateRatioTest`, `SampleRatioMismatch`, `SequentialSignTest`, `ShiryaevRoberts`, `SPRT`, `TMixtureSPRT`, `TwoProportionTest`, `TwoSPRT` |
+| **asymptotic** | they hold approximately, the better the larger the sample | `ABTest`, `AsymptoticConfidenceSequence`, `GroupSequentialLogRank`, `GroupSequentialMonitor`, `GroupSequentialProportions`, `GroupSequentialTest` (estimated sigma), `GroupSequentialTwoMeans` (estimated sigma), `RatioABTest` |
+| **model** | exact probabilities under the stated model and prior; no error rate beyond the model | `AutoRegressive`, `BayesianChangePoint`, `ExponentialSmoothing`, `HiddenMarkovFilter`, `KalmanFilter`, `LocalLevelKalman`, `ModelAveraging`, `PoissonSmoothing`, `ThompsonAllocation` |
+| **approximate** | an approximation even under the model (Monte Carlo, variational, stochastic approximation) | `BootstrapParticleFilter`, `OnlineHMM`, `ParticleFilter`, `RobustKalmanFilter` |
+| **none** | a transformation of the data; no inferential claim | `EMA`, `MeanDifference` |
+<!-- /guarantees -->
+
 ## First: may you look at any time, or only at planned analyses?
 
 | You want to | Use | What it costs |
@@ -26,12 +45,13 @@ approximately in long runs.
 | several covariates, regression adjustment | `AnytimeLinearModel` | exact under Gaussian errors | — |
 | ratio metric (revenue per session, clicks per impression), relative lift | `RatioABTest` | asymptotic, delta method on the randomised unit | [A/B test §8](tutorials/ab-test.md) |
 | events per unit of exposure | `RateRatioTest` | exact for Poisson counts, robust to a drifting rate | [A/B test §7](tutorials/ab-test.md) |
-| median, 90th percentile (latency, heavy tails) | `QuantileTest`, `QuantileConfidenceSequence` | exact, no assumption on the distribution | — |
+| median, 90th percentile of one group (a latency target) | `QuantileTest`, `QuantileConfidenceSequence` | exact, no assumption on the distribution; one group only (a difference of two groups' medians is not covered yet) | — |
 | "are A and B distributed the same at all?" | `KernelTwoSampleTest` | exact | — |
 | traffic split as intended? | `SampleRatioMismatch` | exact | [A/B test](tutorials/ab-test.md) |
 | many metrics or arms at once | `MultipleTests` (e-BH) | false discovery rate at any stopping time | [A/B test](tutorials/ab-test.md) |
 | a series of experiments decided one by one | `OnlineFDR` (e-LOND) | false discovery rate over the series | [programme](tutorials/experiment-programme.md) |
 | how long will it take, how much power? | `planning.simulate` | simulation | [A/B test §9](tutorials/ab-test.md) |
+| send more traffic to the better arm during the test | `ThompsonAllocation` (shares, expected-loss deployment rule); test with `TwoProportionTest(method="universal")` or `BoundedABTest(propensity_input=...)` | the rule bounds expected loss; those tests stay exact under any split | [A/B test §10](tutorials/ab-test.md) |
 
 ## Clinical trials
 
@@ -81,9 +101,26 @@ same data.
 | Model | Procedure |
 |---|---|
 | linear Gaussian (trends, autoregressions, tracking) | `KalmanFilter`; outliers: `RobustKalmanFilter` |
-| a few hidden regimes | `HiddenMarkovFilter` |
+| a few hidden regimes, model known | `HiddenMarkovFilter` |
+| a few hidden regimes, parameters to learn | `fit_hmm` on a history, or `OnlineHMM` on the stream ([tutorial](tutorials/regimes.md)) |
 | anything you can simulate | `ParticleFilter` |
 | smoothing after the fact | `sequential_analysis.smoothing` |
+
+## Forecasting
+
+| Situation | Procedure |
+|---|---|
+| a history to fit, the process stable | `fit_ets` (level, trend, season) or `fit_ar`, then forecast with the fitted model |
+| no history, or a process that changes | `averaged_smoothing` (learns the smoothing parameters), `AutoRegressive` without coefficients, with `forgetting` below 1 to follow drift |
+| known drivers: promotions, holidays, prices | `regressors=` on any of them |
+| counts (orders, calls, incidents) | `fit_counts` or `averaged_counts` (`PoissonSmoothing`) |
+| growth, swings proportional to the level | `transform="log"` |
+| several candidate models | `ModelAveraging` |
+| intervals that must hold whatever the data | `ConformalForecast` around any of them |
+| is one forecaster better than another? | `ForecastComparison`, valid at every time |
+
+The [forecasting tutorial](tutorials/forecasting.md) runs both kinds of
+training on the same data, before and after a change.
 
 ## Means of data that are not normal
 

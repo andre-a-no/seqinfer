@@ -3,12 +3,23 @@
 # Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 """Reference procedures.  Each one is only a transition function and its state."""
 from .ab import ABTest, BoundedABTest, MultipleTests, SampleRatioMismatch, TwoProportionTest, e_bh
+from .allocation import ThompsonAllocation
 from .betting import BettingConfidenceSequence, BettingMeanTest, SequentialSignTest
 from .bocpd import BayesianChangePoint, BetaBernoulliModel, NormalGammaModel, PoissonGammaModel
 from .cusum import CUSUM
 from .edetector import MeanEDetector, QuantileEDetector
 from .ema import EMA
 from .families import Bernoulli, Exponential, Family, Gaussian, Poisson
+from .forecast import (
+    AutoRegressive,
+    ConformalForecast,
+    ExponentialSmoothing,
+    ForecastComparison,
+    ModelAveraging,
+    PoissonSmoothing,
+    averaged_counts,
+    averaged_smoothing,
+)
 from .group_sequential import (
     GroupSequentialLogRank,
     GroupSequentialMonitor,
@@ -16,11 +27,20 @@ from .group_sequential import (
     GroupSequentialTest,
     GroupSequentialTwoMeans,
 )
-from .hmm import CategoricalEmission, GaussianEmission, HiddenMarkovFilter, PoissonEmission
+from .hmm import (
+    CategoricalEmission,
+    GaussianEmission,
+    HiddenMarkovFilter,
+    MultivariateGaussianEmission,
+    PoissonEmission,
+    StudentTEmission,
+    emission_from_spec,
+)
 from .kalman import LocalLevelKalman
 from .linear_model import AnytimeLinearModel
 from .mixture import NormalMixtureSPRT
 from .online_fdr import OnlineFDR
+from .online_hmm import OnlineHMM
 from .particle import BootstrapParticleFilter
 from .particle_filter import (
     LinearGaussianModel,
@@ -53,6 +73,7 @@ __all__ = [
     "AnytimeLinearModel",
     "AnytimeLogRankTest",
     "AsymptoticConfidenceSequence",
+    "AutoRegressive",
     "BayesianChangePoint",
     "Bernoulli",
     "BetaBernoulliModel",
@@ -62,8 +83,11 @@ __all__ = [
     "BoundedABTest",
     "CategoricalEmission",
     "CatoniConfidenceSequence",
+    "ConformalForecast",
     "Exponential",
+    "ExponentialSmoothing",
     "Family",
+    "ForecastComparison",
     "Gaussian",
     "GaussianEmission",
     "GroupSequentialLogRank",
@@ -78,15 +102,19 @@ __all__ = [
     "LocalLevelKalman",
     "MeanDifference",
     "MeanEDetector",
+    "ModelAveraging",
     "MultipleTests",
+    "MultivariateGaussianEmission",
     "NormalGammaModel",
     "NormalMixtureSPRT",
     "OnlineFDR",
+    "OnlineHMM",
     "ParticleFilter",
     "PlanTest",
     "Poisson",
     "PoissonEmission",
     "PoissonGammaModel",
+    "PoissonSmoothing",
     "QuantileConfidenceSequence",
     "QuantileEDetector",
     "QuantileTest",
@@ -98,10 +126,15 @@ __all__ = [
     "ShiryaevRoberts",
     "StateSpaceModel",
     "StochasticVolatilityModel",
+    "StudentTEmission",
     "StudentTLocalLevel",
     "TMixtureSPRT",
+    "ThompsonAllocation",
     "TwoProportionTest",
     "TwoSPRT",
+    "averaged_counts",
+    "averaged_smoothing",
     "e_bh",
+    "emission_from_spec",
     "kiefer_weiss_point",
 ]

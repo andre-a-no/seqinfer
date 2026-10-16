@@ -237,6 +237,7 @@ class ParticleFilter(Procedure):
 
     name = "particle_filter"
     version = "1"
+    guarantee = "approximate"
     randomized = True
 
     def __init__(self, model: StateSpaceModel, particles: int = 500, *, resample_threshold: float = 0.5,

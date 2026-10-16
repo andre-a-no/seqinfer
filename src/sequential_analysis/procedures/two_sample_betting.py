@@ -85,6 +85,7 @@ class KernelTwoSampleTest(Procedure):
     """
 
     name = "kernel_two_sample_test"
+    guarantee = "exact"
     e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
     joint_inputs = True

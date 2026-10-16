@@ -26,6 +26,7 @@ const vectors = JSON.parse(readFileSync(new URL("../../../conformance/procedures
 /** Compensation fields of a state and the running sums they belong to. */
 const PARTNERS: Record<string, string[]> = {
   comp: ["llr", "total", "log_bf", "log_marginal", "log_sum", "log_likelihood", "log_evidence", "log_e"], c0: ["l0"], c1: ["l1"],
+  sse_comp: ["sse"], total_comp: ["total"], variance_comp: ["variance"],
 };
 
 /** Largest relative difference of two JSON values; throws if they differ in anything but numbers. */

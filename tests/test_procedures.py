@@ -291,3 +291,56 @@ class PortableArithmetic(unittest.TestCase):
 
         values = [1e16, 1.0, -1e16, 1.0]
         self.assertEqual(ordered_sum(values), ((1e16 + 1.0) - 1e16) + 1.0)
+
+
+class Guarantees(unittest.TestCase):
+    """Every procedure states what it promises, and the table on the choosing page says the same."""
+
+    def procedures(self):
+        import inspect
+
+        import sequential_analysis.procedures as procedures
+        from sequential_analysis.core import Procedure
+
+        for name in sorted(procedures.__all__, key=str.lower):
+            obj = getattr(procedures, name)
+            if inspect.isclass(obj) and issubclass(obj, Procedure) and obj.name != "procedure":
+                yield name, obj
+
+    def test_every_procedure_has_a_known_guarantee(self):
+        from sequential_analysis.core import GUARANTEES
+        from sequential_analysis.procedures import GroupSequentialTest, GroupSequentialTwoMeans
+
+        for name, cls in self.procedures():
+            value = cls.__dict__.get("guarantee", cls.guarantee)
+            if isinstance(value, property):
+                continue
+            self.assertIn(value, GUARANTEES, name)
+            if name not in ("EMA", "MeanDifference"):
+                self.assertNotEqual(value, "none", name)
+        self.assertEqual(GroupSequentialTest(1.0, [10, 20], [2.5, 2.0]).guarantee, "exact")
+        self.assertEqual(GroupSequentialTest(None, [10, 20], [2.5, 2.0]).guarantee, "asymptotic")
+        self.assertEqual(GroupSequentialTwoMeans(None, [10, 20], [2.5, 2.0]).guarantee, "asymptotic")
+
+    def test_the_table_on_the_choosing_page_is_current(self):
+        from pathlib import Path
+
+        from sequential_analysis.core import GUARANTEES
+
+        rows = {g: [] for g in GUARANTEES}
+        for name, cls in self.procedures():
+            value = cls.__dict__.get("guarantee", cls.guarantee)
+            if isinstance(value, property):
+                rows["exact"].append(f"`{name}` (known sigma)")
+                rows["asymptotic"].append(f"`{name}` (estimated sigma)")
+            else:
+                rows[value].append(f"`{name}`")
+        table = "| Guarantee | Meaning | Procedures |\n|---|---|---|\n" + "".join(
+            f"| **{g}** | {meaning} | {', '.join(rows[g])} |\n" for g, meaning in GUARANTEES.items())
+        page = Path(__file__).resolve().parent.parent / "docs" / "choosing.md"
+        if not page.exists():
+            self.skipTest("the documentation is not here")
+        text = page.read_text(encoding="utf-8")
+        start = text.index("<!-- guarantees -->\n") + len("<!-- guarantees -->\n")
+        current = text[start:text.index("<!-- /guarantees -->")]
+        self.assertEqual(current, table, "regenerate the table from the procedures' guarantee attributes")

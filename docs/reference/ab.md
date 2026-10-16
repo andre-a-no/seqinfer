@@ -7,3 +7,5 @@
 ::: sequential_analysis.procedures.online_fdr
 
 ::: sequential_analysis.procedures.ratio
+
+::: sequential_analysis.procedures.allocation

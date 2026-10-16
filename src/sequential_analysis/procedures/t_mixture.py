@@ -70,6 +70,7 @@ class TMixtureOutput:
 
 class TMixtureSPRT(Procedure):
     name = "t_mixture_sprt"
+    guarantee = "exact"
     e_value_field = "log_bf"  # an e-process: usable by MultipleTests
     version = "3"  # 3: the critical t in logarithms (no overflow, no cancellation in k - 1)
 

@@ -3,6 +3,7 @@
 // Commercial licenses for use outside the AGPL: see COMMERCIAL.md
 // The procedures; importing this module registers every one of them (see procedure.ts, fromIdentity).
 export { ABTest, BoundedABTest, eBH, MultipleTests, SampleRatioMismatch, TwoProportionTest } from "./ab.js";
+export { bestArmProbabilities, Posterior, ThompsonAllocation } from "./allocation.js";
 export { BettingConfidenceSequence, BettingMeanTest, SequentialSignTest } from "./betting.js";
 export { BayesianChangePoint, BetaBernoulliModel, type ConjugateModel, conjugateModelFromSpec, NormalGammaModel, PoissonGammaModel } from "./bocpd.js";
 export { CUSUM } from "./cusum.js";
@@ -11,15 +12,24 @@ export { MeanEDetector, QuantileEDetector } from "./edetector.js";
 export { EMA } from "./ema.js";
 export { Bernoulli, Exponential, type Family, familyFromSpec, Gaussian, Poisson } from "./families.js";
 export {
+  AutoRegressive, averagedCounts, type AveragedCountsOptions, averagedSmoothing, type AveragedSmoothingOptions, ConformalForecast,
+  countQuantile, ExponentialSmoothing, ForecastComparison, Forecaster, logDensity, ModelAveraging, negativeBinomialCdf,
+  negativeBinomialLogPmf, PoissonSmoothing, Predictive, standardCdf, stitchedBoundary,
+} from "./forecast.js";
+export {
   efficacyBounds, futilityBounds, GroupSequentialLogRank, GroupSequentialMonitor, GroupSequentialProportions, GroupSequentialTest,
   GroupSequentialTwoMeans, normalInvCdf,
   spendingFunction,
 } from "./group_sequential.js";
-export { CategoricalEmission, type Emission, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, PoissonEmission } from "./hmm.js";
+export {
+  CategoricalEmission, type Emission, type EmissionInput, emissionFromSpec, GaussianEmission, HiddenMarkovFilter, MultivariateGaussianEmission,
+  PoissonEmission, StudentTEmission,
+} from "./hmm.js";
 export { LocalLevelKalman } from "./kalman.js";
 export { AnytimeLinearModel } from "./linear_model.js";
 export { NormalMixtureSPRT } from "./mixture.js";
 export { defaultGamma, OnlineFDR } from "./online_fdr.js";
+export { OnlineHMM } from "./online_hmm.js";
 export { BootstrapParticleFilter } from "./particle.js";
 export {
   LinearGaussianModel, ParticleFilter, type StateSpaceModel, stateSpaceModelFromSpec, StochasticVolatilityModel, StudentTLocalLevel,

@@ -36,6 +36,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     AnytimeLinearModel,
     AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
+    AutoRegressive,
     BayesianChangePoint,
     Bernoulli,
     BetaBernoulliModel,
@@ -45,7 +46,10 @@ from sequential_analysis.procedures import (  # noqa: E402
     BoundedABTest,
     CategoricalEmission,
     CatoniConfidenceSequence,
+    ConformalForecast,
     Exponential,
+    ExponentialSmoothing,
+    ForecastComparison,
     Gaussian,
     GaussianEmission,
     GroupSequentialLogRank,
@@ -60,15 +64,19 @@ from sequential_analysis.procedures import (  # noqa: E402
     LocalLevelKalman,
     MeanDifference,
     MeanEDetector,
+    ModelAveraging,
     MultipleTests,
+    MultivariateGaussianEmission,
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
+    OnlineHMM,
     ParticleFilter,
     PlanTest,
     Poisson,
     PoissonEmission,
     PoissonGammaModel,
+    PoissonSmoothing,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
@@ -79,10 +87,14 @@ from sequential_analysis.procedures import (  # noqa: E402
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
+    StudentTEmission,
     StudentTLocalLevel,
+    ThompsonAllocation,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_counts,
+    averaged_smoothing,
 )
 
 OUT = ROOT / "conformance"
@@ -429,7 +441,201 @@ def cases():
         ("ratio_ab_test_means", RatioABTest(denominator=False, start=20), None,
          [{"arm": r["arm"], "y": r["y"]} for r in ratio_rows(100, 0.5)]),
     ]
-    return existing + added + ported + later + round_four + stratified_logrank + ratio
+
+    def regime_rows(n, sds, stay):
+        rows, z = [], 0
+        for _ in range(n):
+            if rnd.random() > stay[z]:
+                z = 1 - z
+            rows.append({"y": rnd.gauss(0.0, sds[z])})
+        return rows
+
+    def count_rows(n, rates, stay):
+        rows, z = [], 0
+        for _ in range(n):
+            if rnd.random() > stay[z]:
+                z = 1 - z
+            k, p, limit = 0, rnd.random(), math.exp(-rates[z])
+            while p > limit:
+                p *= rnd.random()
+                k += 1
+            rows.append({"y": k})
+        return rows
+
+    guess = HiddenMarkovFilter([0.5, 0.5], [[0.9, 0.1], [0.1, 0.9]], GaussianEmission([0.0, 0.0], [0.5, 2.5]))
+    counts = HiddenMarkovFilter([0.5, 0.5], [[0.8, 0.2], [0.2, 0.8]], PoissonEmission([0.5, 4.0]))
+    online_hmm = [
+        ("online_hmm", OnlineHMM(guess, burn_in=30), None, regime_rows(160, (0.6, 2.0), (0.97, 0.93))),
+        ("online_hmm_poisson_last_iterate", OnlineHMM(counts, kappa=0.8, burn_in=20, average=False), None,
+         count_rows(120, (1.0, 6.0), (0.9, 0.85))),
+    ]
+
+    rv = random.Random(20261016)  # its own stream: the vectors above keep their data
+
+    def regimes(n, draw, stay=(0.92, 0.88)):
+        rows, z = [], 0
+        for _ in range(n):
+            if rv.random() > stay[z]:
+                z = 1 - z
+            rows.append({"y": draw(z)})
+        return rows
+
+    emissions = [
+        ("hmm_multivariate_gaussian",
+         HiddenMarkovFilter((0.5, 0.5), ((0.9, 0.1), (0.15, 0.85)),
+                            MultivariateGaussianEmission(((0.0, 0.0), (2.0, -1.0)),
+                                                         (((1.0, 0.3), (0.3, 0.5)), ((2.0, -0.8), (-0.8, 1.0))))), None,
+         regimes(60, lambda k: [rv.gauss(2.0 * k, 1.0), rv.gauss(-k, 0.7)])),
+        ("hmm_student_t",
+         HiddenMarkovFilter((0.6, 0.4), ((0.95, 0.05), (0.1, 0.9)),
+                            StudentTEmission((0.0, 3.0), (1.0, 0.5), (3.0, 10.0))), None,
+         regimes(60, lambda k: rv.gauss(3.0 * k, 1.0) + (25.0 if rv.random() < 0.05 else 0.0))),
+        ("online_hmm_student_t",
+         OnlineHMM(HiddenMarkovFilter((0.5, 0.5), ((0.9, 0.1), (0.1, 0.9)),
+                                      StudentTEmission((0.0, 2.0), (1.0, 1.0), 4.0)), burn_in=25), None,
+         regimes(120, lambda k: rv.gauss(3.0 * k, 1.0) + (30.0 if rv.random() < 0.04 else 0.0))),
+    ]
+    rf = random.Random(20261017)  # forecasting's own stream
+
+    def seasonal_rows(n, period, trend, noise):
+        level, out = 20.0, []
+        for i in range(n):
+            level += rf.gauss(0.0, 0.3)
+            out.append({"y": level + trend * i + 2.0 * math.sin(2.0 * math.pi * i / period) + rf.gauss(0.0, noise)})
+        return out
+
+    def ar_rows(n, phi, sd):
+        ys = [0.0] * len(phi)
+        for _ in range(n):
+            v = 0.5
+            for i, p in enumerate(phi):
+                v += p * ys[-1 - i]
+            ys.append(v + rf.gauss(0.0, sd))
+        return [{"y": y} for y in ys[len(phi):]]
+
+    def loss_rows(n):
+        return [{"a": min(3.0, abs(rf.gauss(0.0, 1.0))), "b": min(3.0, abs(rf.gauss(0.0, 1.2)))} for _ in range(n)]
+
+    forecasting = [
+        ("ets_fixed_seasonal",
+         ExponentialSmoothing(0.3, beta=0.02, gamma=0.1, trend="additive", period=6, initial_level=20.0,
+                              initial_trend=0.1, initial_seasonal=(0.0, 1.7, 1.7, 0.0, -1.7, -1.7), sigma=1.1,
+                              horizon=7), None, seasonal_rows(60, 6, 0.1, 1.0)),
+        ("ets_learnt_damped",
+         ExponentialSmoothing(0.4, beta=0.1, phi=0.9, trend="damped", horizon=3, coverage=0.8), None,
+         seasonal_rows(50, 4, 0.2, 0.7)),
+        ("ar_fixed", AutoRegressive(2, coefficients=(0.6, -0.2), intercept=0.5, sigma=0.9, horizon=5), None,
+         ar_rows(50, (0.6, -0.2), 0.9)),
+        ("ar_learnt_forgetting", AutoRegressive(3, forgetting=0.97, ridge=0.1, horizon=4), None,
+         ar_rows(80, (0.5, 0.2, -0.3), 1.0)),
+        ("model_averaging",
+         ModelAveraging([ExponentialSmoothing(0.2, horizon=3), ExponentialSmoothing(0.6, horizon=3),
+                         AutoRegressive(2, horizon=3)], weights=(1.0, 1.0, 2.0), forgetting=0.95), None,
+         ar_rows(70, (0.7,), 1.0)),
+        ("averaged_smoothing",
+         averaged_smoothing(trend="additive", period=4, alphas=(0.1, 0.4), betas=(0.1,), gammas=(0.05, 0.3),
+                            horizon=2), None, seasonal_rows(50, 4, 0.1, 0.8)),
+        ("conformal_forecast",
+         ConformalForecast(AutoRegressive(1, horizon=3), alpha=0.2, step_size=0.1), None,
+         ar_rows(70, (0.8,), 1.0)),
+        ("conformal_unnormalized",
+         ConformalForecast(ExponentialSmoothing(0.5, sigma=1.0, horizon=2), normalize=False, initial=1.5), None,
+         seasonal_rows(40, 5, 0.0, 1.5)),
+        ("forecast_comparison", ForecastComparison((0.0, 3.0), alpha=0.1), None, loss_rows(120)),
+    ]
+    rg = random.Random(20261018)  # the second forecasting round's own stream
+
+    def promo_rows(n, horizon, effect):
+        promo = [1.0 if rg.random() < 0.15 else 0.0 for _ in range(n + horizon)]
+        level, out = 50.0, []
+        for t in range(n):
+            level += rg.gauss(0.0, 0.5)
+            out.append({"y": level + 3.0 * math.sin(2.0 * math.pi * t / 5) + effect * promo[t] + rg.gauss(0.0, 1.0),
+                        "promo": promo[t:t + horizon + 1]})
+        return out
+
+    def count_rows(n, horizon):
+        out, log_rate = [], math.log(4.0)
+        hours = [1.0 + 0.5 * rg.random() for _ in range(n + horizon)]
+        for t in range(n):
+            log_rate += rg.gauss(0.0, 0.05)
+            mean, k, p = hours[t] * math.exp(log_rate), 0, rg.random()
+            limit = math.exp(-mean)
+            while p > limit:
+                k += 1
+                p *= rg.random()
+            out.append({"y": k, "hours": hours[t:t + horizon + 1]})
+        return out
+
+    def positive_rows(n):
+        level, out = 2.0, []
+        for _ in range(n):
+            level += rg.gauss(0.0, 0.05)
+            out.append({"y": math.exp(level + rg.gauss(0.0, 0.2))})
+        return out
+
+    inputs_round = [
+        ("ets_fixed_effects",
+         ExponentialSmoothing(0.3, gamma=0.1, period=5, initial_level=50.0, sigma=1.2, regressors=("promo",),
+                              coefficients=(8.0,), horizon=3), None, promo_rows(50, 3, 8.0)),
+        ("ets_learnt_effects",
+         ExponentialSmoothing(0.3, gamma=0.1, period=5, regressors=("promo",), forgetting=0.98, ridge=0.5,
+                              horizon=3), None, promo_rows(60, 3, 8.0)),
+        ("ar_learnt_regressor", AutoRegressive(2, regressors=("promo",), horizon=2), None, promo_rows(60, 2, 5.0)),
+        ("ar_fixed_log", AutoRegressive(1, coefficients=(0.7,), intercept=0.6, sigma=0.2, transform="log",
+                                        horizon=3), None, positive_rows(40)),
+        ("ets_log_learnt_sigma", ExponentialSmoothing(0.4, transform="log", horizon=2, coverage=0.8), None,
+         positive_rows(40)),
+        ("poisson_smoothing", PoissonSmoothing(0.9, exposure="hours", horizon=3), None, count_rows(60, 3)),
+        ("averaged_counts", averaged_counts(discounts=(0.7, 0.9, 1.0), horizon=2, coverage=0.8), None,
+         [{"y": r["y"]} for r in count_rows(60, 0)]),
+        ("averaged_log_and_raw",
+         ModelAveraging([ExponentialSmoothing(0.3, transform="log", horizon=2),
+                         ExponentialSmoothing(0.3, horizon=2)]), None, positive_rows(40)),
+    ]
+    rt = random.Random(20261019)  # traffic redirection's own stream
+
+    def redirected(n, rates, allocator, normal=False):
+        state, rows = allocator.initial_state(), []
+        for _ in range(n):
+            shares = list(state.shares)
+            u, arm, acc = rt.random(), len(shares) - 1, 0.0
+            for k, sh in enumerate(shares):
+                acc += sh
+                if u < acc:
+                    arm = k
+                    break
+            y = rt.gauss(rates[arm], 1.0) if normal else (1 if rt.random() < rates[arm] else 0)
+            rows.append({"arm": arm, "y": y, "p": shares})
+            state, _ = allocator.step(state, {"arm": arm, "y": y})
+        return rows
+
+    traffic = [
+        ("thompson_allocation",
+         ThompsonAllocation(3, floor=0.05, min_units=10, update_every=15, threshold=0.01), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             150, (0.2, 0.3, 0.5), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=15))]),
+        ("thompson_allocation_normal",
+         ThompsonAllocation(2, metric="normal", floor=0.1, min_units=5, update_every=10), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             100, (1.0, 1.6), ThompsonAllocation(2, metric="normal", floor=0.1, min_units=5, update_every=10),
+             normal=True)]),
+        ("bounded_ab_test_propensities",
+         BoundedABTest(0.0, 1.0, alpha=0.1, grid=40, backend="python", propensity_input="p", floor=0.1,
+                       arms=(1, 0)), None,
+         redirected(120, (0.2, 0.45), ThompsonAllocation(2, floor=0.1, min_units=10, update_every=10))),
+        ("thompson_allocation_reserve",
+         ThompsonAllocation(3, floor=0.05, min_units=10, update_every=12, control=0, reserve=0.25), None,
+         [{"arm": r["arm"], "y": r["y"]} for r in redirected(
+             120, (0.3, 0.2, 0.5), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=12, control=0,
+                                                      reserve=0.25))]),
+        ("bounded_ab_test_propensities_three_arms",
+         BoundedABTest(0.0, 1.0, alpha=0.1, grid=40, backend="python", propensity_input="p", arm_count=3,
+                       floor=0.05, arms=(2, 0)), None,
+         redirected(120, (0.2, 0.3, 0.6), ThompsonAllocation(3, floor=0.05, min_units=10, update_every=10))),
+    ]
+    return (existing + added + ported + later + round_four + stratified_logrank + ratio + online_hmm + emissions
+            + forecasting + inputs_round + traffic)
 
 
 def vector(label, procedure, seed, inputs):
@@ -464,12 +670,30 @@ def number_vectors(count=500):
     return [{"bits": f"{struct.unpack('<Q', struct.pack('<d', v))[0]:016x}", "json": _number(v)} for v in values]
 
 
+def guarantees():
+    """Each procedure's guarantee by name; a dict {"known sigma": ..., "estimated sigma": ...} where it depends."""
+    import inspect
+
+    import sequential_analysis.procedures as procedures
+    from sequential_analysis.core import Procedure
+
+    out = {}
+    for name in procedures.__all__:
+        cls = getattr(procedures, name)
+        if inspect.isclass(cls) and issubclass(cls, Procedure) and cls.name != "procedure":
+            value = cls.__dict__.get("guarantee", cls.guarantee)
+            out[cls.name] = ({"known sigma": "exact", "estimated sigma": "asymptotic"}
+                             if isinstance(value, property) else value)
+    return out
+
+
 def main():
     OUT.mkdir(exist_ok=True)
     vectors = [vector(*case) for case in cases()]  # novermin (not PEP 798)
     (OUT / "procedures.json").write_text(canonical_json(vectors) + "\n", encoding="utf-8")
     (OUT / "numbers.json").write_text(canonical_json(number_vectors()) + "\n", encoding="utf-8")
-    print(f"wrote {len(vectors)} procedure vectors and the number vectors to {OUT}")
+    (OUT / "guarantees.json").write_text(canonical_json(guarantees()) + "\n", encoding="utf-8")
+    print(f"wrote {len(vectors)} procedure vectors, the number vectors and the guarantees to {OUT}")
 
 
 if __name__ == "__main__":

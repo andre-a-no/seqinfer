@@ -241,6 +241,7 @@ class AnytimeLogRankTest(Procedure):
 
     name = "anytime_logrank_test"
     version = "1"
+    guarantee = "exact"
     e_value_field = "log_e_value"
 
     def __init__(self, alpha: float = 0.05, *, theta0: float = 1.0, alternative: str = "two-sided",

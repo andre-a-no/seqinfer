@@ -185,6 +185,7 @@ class BayesianChangePoint(Procedure):
 
     name = "bayesian_change_point"
     version = "1"
+    guarantee = "model"
 
     def __init__(
         self,

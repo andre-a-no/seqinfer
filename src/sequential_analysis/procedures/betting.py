@@ -138,6 +138,7 @@ class BettingMeanTest(_Betting):
     """
 
     name = "betting_mean_test"
+    guarantee = "exact"
     e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
@@ -199,6 +200,7 @@ class SequentialSignTest(_Betting):
     """
 
     name = "sequential_sign_test"
+    guarantee = "exact"
     e_value_field = "log_wealth"  # an e-process: usable by MultipleTests
     version = "1"
 
@@ -281,6 +283,7 @@ class BettingConfidenceSequence(Procedure):
 
     name = "betting_confidence_sequence"
     version = "1"
+    guarantee = "exact"
 
     def __init__(
         self, lower: float = 0.0, upper: float = 1.0, alpha: float = 0.05, *, grid: int = 1000,

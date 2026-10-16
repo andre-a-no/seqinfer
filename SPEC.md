@@ -371,11 +371,11 @@ Sums and products are reproduced exactly when they are evaluated in the
 reference order. Every procedure's sums are left-to-right or
 Neumaier-compensated, never pairwise. Decisions are compared exactly.
 
-In the TypeScript executor, 24 of the 65 cases agree bit for bit. The
+In the TypeScript executor, 28 of the 92 cases agree bit for bit. The
 others differ in the last bits only: by at most 5e-14 relative, except
-in six cases. Every such difference was traced to `Math.log`, `log1p`,
+in twelve cases. Every such difference was traced to `Math.log`, `log1p`,
 `exp`, `expm1` or `cos` rounding differently from the C library. In
-five of the six a small value is a difference of much larger terms,
+six of the seven a small value is a difference of much larger terms,
 so a last-bit difference in those terms is large relative to it: in
 `quantile_test` (1.6e-13) a log-evidence near zero is a difference of
 log-gamma terms of a few hundred; in `anytime_logrank_test_grow`
@@ -383,9 +383,21 @@ log-gamma terms of a few hundred; in `anytime_logrank_test_grow`
 `anytime_logrank_test_stratified_grow` (1.4e-13) the log e-value passes
 0.0025, 0.001 and -0.017, sums of log likelihood ratio factors of both
 signs; in `rate_ratio_test` (7.7e-14) the log e-value of one grid point
-is 0.017, a sum of per-pair terms of both signs. In
+is 0.017, a sum of per-pair terms of both signs; in `online_hmm_student_t`
+(6.4e-14) an estimated mean of -1.2e-4 is a weighted average of
+observations of both signs. In
 `catoni_confidence_sequence` (2.1e-13) the bounds are roots found to a
-relative 1e-12, and the search stops at a slightly different point. No
+relative 1e-12, and the search stops at a slightly different point. In
+`model_averaging` (8.3e-14), `averaged_smoothing` (5.9e-13) and
+`averaged_log_and_raw` (8.9e-14) the interval ends are quantiles of a
+mixture of forecasts, found by Newton steps to a relative 1e-13; a
+last-bit difference in the t distribution function moves the point
+where the search stops. In `averaged_counts` (8.0e-14) the mixture
+weights are exponentials of differences of log-likelihoods built from
+log-gamma terms. In `thompson_allocation` (9.4e-14) the probabilities
+that each arm is best are quadratures of products of Beta densities and
+distribution functions, which carry the last bits of `log`, `exp` and
+the incomplete beta function. No
 decision differs.
 
 The TypeScript executor implements the procedures listed by

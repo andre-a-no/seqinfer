@@ -71,6 +71,7 @@ class OnlineFDR(Procedure):
 
     name = "online_fdr_elond"
     version = "1"
+    guarantee = "exact"
 
     def __init__(self, alpha: float = 0.05, *, horizon: int | None = None, input: str = "log_e"):
         if not 0 < alpha < 1:

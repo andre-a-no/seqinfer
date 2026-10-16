@@ -180,6 +180,7 @@ class AnytimeLinearModel(Procedure):
 
     name = "anytime_linear_model"
     version = "1"
+    guarantee = "exact"
     e_value_field = "log_e_value"  # an e-process: usable by MultipleTests
 
     def __init__(

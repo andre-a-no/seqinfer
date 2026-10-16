@@ -90,6 +90,7 @@ class KalmanFilter(Procedure):
 
     name = "kalman_filter"
     version = "1"
+    guarantee = "model"
 
     def __init__(
         self,
@@ -237,6 +238,7 @@ class RobustKalmanFilter(KalmanFilter):
 
     name = "robust_kalman_filter"
     version = "1"
+    guarantee = "approximate"
 
     def __init__(self, *args, df: float = 4.0, **kwargs):
         super().__init__(*args, **kwargs)

@@ -12,8 +12,9 @@ heavy-tailed and bounded means), group sequential designs for clinical
 trials, A/B testing (exact conversion tests, sample ratio mismatch,
 covariate adjustment, many metrics with false discovery rate control),
 change-point detection (CUSUM, Shiryaev–Roberts, nonparametric
-e-detectors, Bayesian online change points), and Kalman, particle and
-hidden Markov filters with smoothing. Every procedure may be monitored
+e-detectors, Bayesian online change points), Kalman, particle and
+hidden Markov filters with smoothing, and forecasting with fixed or
+continuously learnt parameters. Every procedure may be monitored
 after each observation and stopped at any time, and a run is checkpointed
 and resumed bit for bit, in Python or in the TypeScript executor.
 
@@ -77,6 +78,13 @@ nonparametric monitoring, and a group sequential trial.
 
 <!-- --8<-- [start:methods] -->
 
+Each procedure states what it promises in its `guarantee` attribute:
+`exact` (error rates or coverage at every sample size, under the stated
+assumptions), `asymptotic`, `model` (exact under a stated model or
+prior), `approximate` or `none`. Where an exact procedure answers the
+question, it is the one the documentation recommends first; the full
+list is on the [which-method page](https://andre-a-no.github.io/sequential-analysis/choosing/).
+
 | Kind | Procedures |
 |---|---|
 | Tests of simple hypotheses | `SPRT` (Wald), `TwoSPRT` (Lorden's 2-SPRT for the Kiefer–Weiss problem), `PlanTest` (executes any precomputed plan) |
@@ -84,12 +92,13 @@ nonparametric monitoring, and a group sequential trial.
 | Anytime-valid inference | `NormalMixtureSPRT` (mSPRT, known variance), `TMixtureSPRT` (unknown variance); both with always-valid p-value and confidence sequence |
 | Nonparametric, anytime-valid | `QuantileTest`, `QuantileConfidenceSequence` (any quantile — median, 90th percentile — of any distribution, ties and atoms included; no moments), `KernelTwoSampleTest` (are A and B equally distributed? any difference: location, scale, shape; by betting), `BettingMeanTest`, `BettingConfidenceSequence` (mean of bounded data: conversion rates, scores), `SequentialSignTest` (P(X > m) = P(X < m); paired data via topology) |
 | Means without normality | `CatoniConfidenceSequence` (exact, needs only a bound on the standard deviation; heavy tails and outliers), `AsymptoticConfidenceSequence` (estimated variance; coverage asymptotic, for long runs) |
-| A/B tests | `BoundedABTest` (exact confidence sequence for an effect on any bounded metric), `RateRatioTest` (exact, events per unit of exposure, robust to a drifting common rate), `TwoProportionTest` (exact for any n, one- or two-sided; GROW e-values on blocks of units, 1.3–1.6 times the users of the asymptotic test; or universal inference for outcome-adaptive allocation), `SampleRatioMismatch` (is the traffic split as intended?), `ABTest` (difference of means with a pre-experiment covariate, CUPED-like, confidence sequence), `RatioABTest` (ratio metrics such as revenue per session or click-through rate, and relative lift: delta method on user totals, asymptotic confidence sequences for the difference and the lift), `MultipleTests` and `e_bh` (many metrics or arms, false discovery rate at any stopping time), `MultipleTests.versus_control` |
+| A/B tests | `BoundedABTest` (exact confidence sequence for an effect on any bounded metric), `RateRatioTest` (exact, events per unit of exposure, robust to a drifting common rate), `TwoProportionTest` (exact for any n, one- or two-sided; GROW e-values on blocks of units, 1.3–1.6 times the users of the asymptotic test; or universal inference for outcome-adaptive allocation), `SampleRatioMismatch` (is the traffic split as intended?), `ABTest` (difference of means with a pre-experiment covariate, CUPED-like, confidence sequence), `RatioABTest` (ratio metrics such as revenue per session or click-through rate, and relative lift: delta method on user totals, asymptotic confidence sequences for the difference and the lift), `MultipleTests` and `e_bh` (many metrics or arms, false discovery rate at any stopping time), `MultipleTests.versus_control`; `ThompsonAllocation` (redirects traffic to the arms likely to be best, with a floor and an optional reserve for the control; expected-loss deployment rule) with `BoundedABTest(propensity_input=...)`, exact under any allocation |
 | Regression and survival | `AnytimeLinearModel` (anytime-valid F/t tests and confidence sequences for regression coefficients, covariate-adjusted effects; exact under Gaussian errors), `AnytimeLogRankTest` (anytime-valid log-rank test and hazard-ratio confidence sequence, any baseline hazard; stratified with `strata=`) |
 | Experiment programmes and planning | `OnlineFDR` (e-LOND: false discovery rate over a series of experiments decided one by one), `sequential_analysis.planning.simulate` (power and stopping-time distribution of any procedure) |
 | Change-point detection | `CUSUM`, `ShiryaevRoberts`; `MeanEDetector`, `QuantileEDetector` (nonparametric e-detectors: average run length to a false alarm at least the target for every distribution with the given mean or quantile) |
-| Filtering and estimation | `KalmanFilter` (any linear Gaussian state-space model: trends, autoregressions, tracking, control input; exact likelihood), `RobustKalmanFilter` (Student-t observation noise: outliers discounted), `HiddenMarkovFilter` (which hidden regime now; categorical, Gaussian or Poisson observations), `ParticleFilter` (any model you can simulate: stochastic volatility, heavy tails; unbiased likelihood), `LocalLevelKalman`, `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
-| Smoothing (offline) | `sequential_analysis.smoothing`: `kalman_smoother` (Rauch–Tung–Striebel), `forward_backward` and `viterbi` for hidden Markov models |
+| Filtering and estimation | `KalmanFilter` (any linear Gaussian state-space model: trends, autoregressions, tracking, control input; exact likelihood), `RobustKalmanFilter` (Student-t observation noise: outliers discounted), `HiddenMarkovFilter` (which hidden regime now; categorical, Gaussian, Student-t, multivariate Gaussian or Poisson observations), `OnlineHMM` (the same while learning the transition and emission parameters on the stream: online EM), `ParticleFilter` (any model you can simulate: stochastic volatility, heavy tails; unbiased likelihood), `LocalLevelKalman`, `BootstrapParticleFilter`, `MeanDifference`, `EMA` |
+| Smoothing and fitting (offline) | `sequential_analysis.smoothing`: `kalman_smoother` (Rauch–Tung–Striebel), `forward_backward` and `viterbi` for hidden Markov models; `sequential_analysis.hmm_fit.fit_hmm` (Baum–Welch with restarts; agrees with hmmlearn) |
+| Forecasting | `ExponentialSmoothing` (ETS: level, additive or damped trend, additive season; forecasts and intervals agree with statsmodels), `AutoRegressive` (AR(p)), each with regressors known ahead (promotions, holidays, prices), an optional log scale, and fixed parameters from `sequential_analysis.forecasting.fit_ets` / `fit_ar` or learnt on the stream (Bayesian regression on the lags and regressors with forgetting; the noise level; the effects of regressors); `PoissonSmoothing` (counts: negative binomial forecasts with count intervals, `fit_counts`, `averaged_counts`); `ModelAveraging`, `averaged_smoothing` (weights forecasters by their predictive densities, with forgetting: learns the smoothing parameters); `ConformalForecast` (distribution-free intervals around any forecaster: long-run coverage for any data); `ForecastComparison` (anytime-valid: is forecaster A better than B?) |
 | Bayesian change points | `BayesianChangePoint` (Adams–MacKay run-length posterior; unknown parameters before and after the change; normal, Poisson, 0/1 data) |
 
 Likelihood-ratio procedures take a family: `Gaussian` (known variance),

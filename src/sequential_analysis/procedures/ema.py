@@ -27,6 +27,7 @@ class EMAOutput:
 class EMA(Procedure):
     name = "ema"
     version = "1"
+    guarantee = "none"
 
     def __init__(self, alpha: float, input: str = "x"):
         if not 0 < alpha <= 1:

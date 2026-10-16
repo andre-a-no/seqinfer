@@ -37,6 +37,7 @@ from sequential_analysis.procedures import (  # noqa: E402
     AnytimeLinearModel,
     AnytimeLogRankTest,
     AsymptoticConfidenceSequence,
+    AutoRegressive,
     BayesianChangePoint,
     Bernoulli,
     BettingConfidenceSequence,
@@ -44,6 +45,9 @@ from sequential_analysis.procedures import (  # noqa: E402
     BootstrapParticleFilter,
     BoundedABTest,
     CatoniConfidenceSequence,
+    ConformalForecast,
+    ExponentialSmoothing,
+    ForecastComparison,
     Gaussian,
     GaussianEmission,
     GroupSequentialLogRank,
@@ -61,8 +65,10 @@ from sequential_analysis.procedures import (  # noqa: E402
     NormalGammaModel,
     NormalMixtureSPRT,
     OnlineFDR,
+    OnlineHMM,
     ParticleFilter,
     PlanTest,
+    PoissonSmoothing,
     QuantileConfidenceSequence,
     QuantileEDetector,
     QuantileTest,
@@ -73,9 +79,12 @@ from sequential_analysis.procedures import (  # noqa: E402
     SequentialSignTest,
     ShiryaevRoberts,
     StochasticVolatilityModel,
+    ThompsonAllocation,
     TMixtureSPRT,
     TwoProportionTest,
     TwoSPRT,
+    averaged_counts,
+    averaged_smoothing,
 )
 from sequential_analysis.rng import SplitMix64  # noqa: E402
 from sequential_analysis.smoothing import forward_backward, kalman_smoother, viterbi  # noqa: E402
@@ -99,6 +108,27 @@ def observation(rnd):
 
 def pair(rnd):
     return {"a": rnd.gauss(0.0, 1.0), "b": rnd.gauss(0.0, 1.0)}
+
+
+def promo_day(rnd):
+    return {"y": 100.0 + rnd.gauss(0.0, 5.0), "promo": [float(rnd.random() < 0.1) for _ in range(8)],
+            "price": [1.0 + 0.1 * rnd.random() for _ in range(8)]}
+
+
+def three_arms(rnd):
+    return {"arm": rnd.randrange(3), "y": int(rnd.random() < 0.1)}
+
+
+def propensity_unit(rnd):
+    return {"arm": rnd.randrange(2), "y": rnd.random(), "p": [0.5, 0.5]}
+
+
+def count(rnd):
+    return {"y": rnd.randrange(6)}
+
+
+def loss_pair(rnd):
+    return {"a": rnd.random(), "b": rnd.random()}
 
 
 def two_d(rnd):
@@ -199,6 +229,30 @@ CASES = [
     ("HiddenMarkovFilter, 3 states",
      lambda b: HiddenMarkovFilter((1 / 3,) * 3, ((0.9, 0.05, 0.05), (0.05, 0.9, 0.05), (0.05, 0.05, 0.9)),
                                   GaussianEmission((-1.0, 0.0, 1.0), (1.0, 1.0, 1.0))), observation, (100,), False),
+    ("OnlineHMM, 3 states, Gaussian",
+     lambda b: OnlineHMM(HiddenMarkovFilter((1 / 3,) * 3, ((0.9, 0.05, 0.05), (0.05, 0.9, 0.05), (0.05, 0.05, 0.9)),
+                                            GaussianEmission((-1.0, 0.0, 1.0), (1.0, 1.0, 1.0))), burn_in=10),
+     observation, (100,), False),
+    ("ExponentialSmoothing, trend and season 12, fixed, 12 ahead",
+     lambda b: ExponentialSmoothing(0.3, beta=0.01, gamma=0.1, trend="additive", period=12, initial_level=0.0,
+                                    sigma=1.0, horizon=12), observation, (100,), False),
+    ("ExponentialSmoothing, learning sigma (t intervals)", lambda b: ExponentialSmoothing(0.3), observation, (100,),
+     False),
+    ("AutoRegressive, order 5, learnt", lambda b: AutoRegressive(5, forgetting=0.99), observation, (100,), False),
+    ("averaged_smoothing, trend and season 7 (63 models)",
+     lambda b: averaged_smoothing(trend="additive", period=7), observation, (100,), False),
+    ("ConformalForecast around learnt AutoRegressive(5)",
+     lambda b: ConformalForecast(AutoRegressive(5, forgetting=0.99)), observation, (100,), False),
+    ("ForecastComparison", lambda b: ForecastComparison((0.0, 1.0)), loss_pair, (100,), False),
+    ("ExponentialSmoothing, season 7, 2 learnt regressors, 7 ahead",
+     lambda b: ExponentialSmoothing(0.3, gamma=0.1, period=7, regressors=("promo", "price"), horizon=7), promo_day,
+     (100,), False),
+    ("PoissonSmoothing, 7 ahead", lambda b: PoissonSmoothing(0.9, horizon=7), count, (100,), False),
+    ("averaged_counts (8 discounts)", lambda b: averaged_counts(), count, (100,), False),
+    ("ThompsonAllocation, 3 binary arms, split every unit",
+     lambda b: ThompsonAllocation(3, min_units=10, update_every=1), three_arms, (1000,), False),
+    ("BoundedABTest with propensities, grid 1000",
+     lambda b: BoundedABTest(propensity_input="p", floor=0.1, backend=b), propensity_unit, (100,), True),
     ("BayesianChangePoint (normal-gamma)", lambda b: BayesianChangePoint(NormalGammaModel(), 0.01), normal,
      (100, 1000, 3000), False),
     ("BootstrapParticleFilter, 256 particles", lambda b: BootstrapParticleFilter(0.1, 1.0, particles=256),

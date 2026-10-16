@@ -35,6 +35,7 @@ class ParticleOutput:
 class BootstrapParticleFilter(Procedure):
     name = "bootstrap_particle_filter"
     version = "1"
+    guarantee = "approximate"
     randomized = True
 
     def __init__(self, q: float, r: float, m0: float = 0.0, p0: float = 1.0, particles: int = 256):

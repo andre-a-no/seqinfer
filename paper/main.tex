@@ -1778,7 +1778,7 @@ state is a single 64-bit integer~\cite{steele2014}, so it is trivial to
 checkpoint and to reproduce in another language. A checkpoint is a
 plain JSON value.
 
-The implementation includes forty-one procedures. For testing simple
+The implementation includes forty-nine procedures. For testing simple
 hypotheses: Wald's SPRT, the 2-SPRT of \cref{sec:kw}, and an executor for
 precomputed sampling plans. For clinical trials: group sequential
 tests with efficacy and non-binding futility boundaries for one mean and
@@ -1860,7 +1860,12 @@ estimation: the Kalman filter~\cite{kalman1960} of any linear Gaussian
 state-space model, with control input and the exact likelihood, and a
 variant with Student-$t$ observation noise by variational
 Bayes~\cite{piche2012}; the forward algorithm of a hidden Markov
-model~\cite{rabiner1989}; Bayesian online change-point
+model~\cite{rabiner1989}, with categorical, Poisson, Gaussian, Student-$t$
+and multivariate Gaussian emissions, whose parameters are learnt either
+from a recorded series by the Baum--Welch algorithm (one step agrees
+with hmmlearn to $10^{-10}$) or on the stream by online
+EM~\cite{cappe2011}, with Polyak--Ruppert averaging of the statistics;
+Bayesian online change-point
 detection~\cite{adams2007} with conjugate models; a particle
 filter~\cite{gordon1993,doucet2001} for any model that can be simulated,
 with an unbiased likelihood estimate~\cite{delmoral2004}; a filter for the
@@ -1873,7 +1878,25 @@ and change-point filters, which agree to $10^{-15}$; a filter by
 numerical integration for the particle filter. Offline smoothers -- the
 Rauch--Tung--Striebel smoother~\cite{rauch1965}, forward-backward and
 Viterbi -- reuse the filters' models and are tested against the same
-references. Likelihood-ratio procedures take one of four
+references. Forecasters give, after each value, predictive distributions
+for the next steps and score each value by its log predictive density:
+exponential smoothing in the additive-error state-space
+form~\cite{hyndman2008} and autoregressions, with regressors known ahead
+and an optional log scale, and counts by a Poisson local level model with
+a discounted gamma rate~\cite{harvey1989}, with parameters either
+fitted to a history by maximum likelihood (forecasts and intervals agree
+with statsmodels) or learnt on the stream by conjugate Bayesian updating
+with exponential forgetting, and by dynamic model
+averaging~\cite{raftery2010} over a grid of smoothing parameters;
+conformal intervals by online quantile
+tracking~\cite{gibbs2021,angelopoulos2023}, whose long-run coverage holds
+for any sequence; and an anytime-valid comparison of two
+forecasters~\cite{choe2024} by the empirical Bernstein confidence
+sequence of~\cite{howard2021}. For experiments that redirect traffic as they run, an
+allocation rule by Thompson sampling~\cite{thompson1933} with a floor per
+arm gives each arm's share and the expected loss of deploying it, and the
+exact test for bounded metrics weights each unit by the shares it was
+assigned with, so that it stays valid under any allocation rule. Likelihood-ratio procedures take one of four
 families (normal with known variance, Bernoulli, Poisson, exponential).
 A design module computes operating characteristics and optimal plans
 for Bernoulli, Poisson, normal and exponential data, for a fixed or the
@@ -1906,11 +1929,11 @@ trusted, so that a damaged or foreign one is reported as such.
 
 The invariants of \cref{sec:invariants} are executable tests.
 Checkpoint equivalence, batch transparency, and consumer
-non-interference are checked for forty-two combinations of procedure and
+non-interference are checked for fifty-five combinations of procedure and
 topology, including the randomized particle filter and topologies whose
 buffers are non-empty at the checkpoint. The remaining invariants are
 checked on representative cases. All seven hold bitwise. The suite has
-$650$ tests in total, including property-based tests that generate histories, split points and values; the remainder cover transactional updates,
+$765$ tests in total, including property-based tests that generate histories, split points and values; the remainder cover transactional updates,
 lifecycle transitions, delivery policies, invalid-input policies,
 compatibility checks on restore, the observation log, and the
 statistical properties claimed for each procedure: error rates under
@@ -1924,10 +1947,10 @@ by a script in the repository from a fixed seed.
 The formats are specified in the repository (\code{SPEC.md}), and a
 second executor in TypeScript implements the run, the delivery policies,
 the topologies, checkpoints and the observation log, and all
-forty-one procedures (with the pure-Python backend where a procedure
+forty-nine procedures (with the pure-Python backend where a procedure
 offers numpy), rebuilt from the identities recorded in checkpoints. It
-reproduces all sixty-five conformance vectors: twenty-four bit for bit,
-the others to a relative $4.5\cdot 10^{-13}$, every difference traced to
+reproduces all ninety-two conformance vectors: twenty-eight bit for bit,
+the others to a relative $5.9\cdot 10^{-13}$, every difference traced to
 the last bit of \code{log}, \code{log1p}, \code{exp}, \code{expm1} or \code{cos},
 which the C library and the JavaScript engine round differently, and
 amplified at most by cancellation in a log-evidence or log e-value near zero, or by the stopping
@@ -1967,7 +1990,7 @@ methods must carry the data they revisit in their state, at the
 corresponding cost in checkpoint size.
 
 \paragraph{Limitations.}
-The reference implementation covers forty-one procedures; optimal
+The reference implementation covers forty-nine procedures; optimal
 design is limited to simple hypotheses about one-parameter families, and
 continuous data are designed on a lattice. It demonstrates the contract and the
 conformance tests; it is not yet the general-purpose library that the
